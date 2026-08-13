@@ -8,14 +8,14 @@ flowchart LR
   WA --> DEV["每 endpoint 一个 EndpointContext / IMMNotificationClient 防抖"]
   WA --> COORD["ApplicationRouteCoordinator / generation / LWW"]
   COORD --> ROUTE["AudioPolicyConfig 三 role 事务与读回"]
-  EXT["Chrome / Edge MV3"] --> OFF["真实 tabCapture offscreen Web Audio: Gain / Pan / Sink"]
+  EXT["Chrome / Edge MV3"] --> OFF["真实 tabCapture offscreen Web Audio: EQ / Gain / Pan / Sink"]
   AUTH["可见输出授权页 / 用户手势"] --> EXT
   EXT <-->|"Native Messaging JSON"| HOST["Native Host"]
   HOST <-->|"当前用户 Named Pipe"| BRIDGE["BrowserBridgeServer"]
   BRIDGE --> WPF
 ```
 
-`AudioSourceMixer.Core` 包含不可变模型、服务接口、配置、回滚日志、浏览器协议和 Named Pipe 服务。`WindowsAudio` 是唯一持有 Core Audio COM 对象的层；`Desktop` 只消费快照和服务接口。普通 Windows session 始终使用原生 0–100% 音量，不存在运行时 PCM 捕获/重放 helper。Chrome/Edge 只有在用户主动捕获标签页后才使用 0–200% Web Audio 图。
+`AudioSourceMixer.Core` 包含不可变模型、服务接口、配置、回滚日志、浏览器协议和 Named Pipe 服务。`WindowsAudio` 是唯一持有 Core Audio COM 对象的层；`Desktop` 只消费快照和服务接口。普通 Windows session 始终使用原生 0–100% 音量，不存在运行时 PCM 捕获/重放 helper，也不伪装支持逐会话 EQ。Chrome/Edge 只有在用户主动捕获标签页后才使用 0–200% Web Audio 图。
 
 ## 路由一致性
 
@@ -27,4 +27,8 @@ flowchart LR
 
 `profiles.json` schemaVersion 2 增加来源类型。普通来源最大值为 1，浏览器来源最大值为 2。单项恢复删除对应 stable key；全部恢复在一个 guarded 流程中取消防抖/路由，恢复音频和浏览器图，清除配置及内存应用状态。“记住应用设置”关闭时采用“保留但忽略”语义。
 
-浏览器协议 2 传递 gain、balance/mute、Windows endpoint catalog 和 correlation ID。可见授权页保存 browser + Windows endpoint ID 到 browser deviceId/label/groupId 的映射；offscreen 只对实际捕获标签页的 `AudioContext` 调用 `setSinkId()` 并回读 `sinkId`。
+浏览器输出授权把系统选择结果先作为内存候选；只有用户播放低音量测试声并明确确认后才持久化 browser + Windows endpoint ID 到 browser deviceId/label/groupId 的映射。offscreen 只对实际捕获标签页的 `AudioContext` 调用 `setSinkId()` 并回读 `sinkId`。空闲 service worker 不连接 Native Host，Native Host 也不会启动桌面程序。
+
+## 安装边界
+
+安装器用同卷 staging → backup → target 原子提交。安装路径贯穿快捷方式、Native Messaging、卸载项和启动项；卸载前同时校验 `install-identity.json` 与注册表 `InstallLocation`。发行负载由机器可读 allowlist 组装，开发文档、测试、探针和构建机路径不进入用户目录。

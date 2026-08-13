@@ -14,4 +14,6 @@
 
 ## 浏览器标签页
 
-浏览器增强仍支持 0–200%，但只作用于用户点击后实际捕获的标签页 Web Audio 图。API 页面或设置页临时 Context 的 `setSinkId()` 只能作为能力诊断，不能替代真实 tabCapture 验收。
+浏览器增强仍支持 0–200%，并可在同一真实 tabCapture Web Audio 图内提供逐标签页 EQ。主音量、静音、平衡、EQ 和输出 sink 是彼此独立的参数；停止增强时整个图被断开并关闭。API 页面或设置页临时 Context 的 `setSinkId()` 只能作为能力诊断，不能替代真实 tabCapture 验收。
+
+普通 Windows 会话的 `ISimpleAudioVolume`、`IChannelAudioVolume` 和 AudioPolicyConfig 不提供任意逐会话 PCM EQ。`ProcessLoopbackProbe` 仅保留为显式开发研究工具，不参与常规构建或发行；v0.2.1 不引入捕获重放 helper、虚拟驱动或全局设备 EQ。

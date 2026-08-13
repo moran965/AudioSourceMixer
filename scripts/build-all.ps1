@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 
 $root = Get-RepositoryRoot
 $artifacts = Join-Path $root 'artifacts'
-$baseline = Join-Path $artifacts 'AudioSourceMixer-0.1.2-win-x64-setup.exe'
+$baseline = Join-Path $artifacts 'AudioSourceMixer-0.2.0-win-x64-setup.exe'
 
 Push-Location $root
 try {
