@@ -1,13 +1,14 @@
 # Audio Source Mixer
 
-当前版本：`0.2.1`。这是面向 Windows 11 x64 的本地音频源控制工具，可分别控制 Windows Core Audio 会话及用户主动启用的 Chrome/Edge 增强标签页。
+当前版本：`0.2.2`。这是面向 Windows 11 x64 的本地音频源控制工具，可分别控制 Windows Core Audio 会话及用户主动启用的 Chrome/Edge 增强标签页。
 
 ## 功能
 
 - 普通 Windows 会话：0–100% 主音量、静音、声道平衡、峰值和按应用输出设备路由。
 - 浏览器增强标签页：0–200% Web Audio 增益、平衡、静音、10 段均衡器和经用户授权的输出 sink；多标签页相互独立。
 - 输出授权向导：系统设备选择、低音量短测试音、明确确认、名称不匹配二次确认、修改/删除/清空映射。
-- 独立“混音器 / 设置”页；设置页管理窗口行为、记忆、浏览器授权、日志、安装目录和恢复默认。
+- Fluent 风格“混音器 / 浏览器增强 / 设置”导航；来源卡、10 段 EQ、长文本和 880×600 最小窗口使用响应式布局，来源列表保留 Recycling 并按像素连续滚动。
+- 新用户可选浏览器增强向导；旧用户升级不会被强制打扰，设置页可随时重新打开。扩展首次安装也只显示一次本地欢迎页。
 - 可选用户级开机启动。默认关闭；安装版使用 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，可选择 `--background` 托盘启动。
 - 平衡滑块在中心有 ±5 进入、±8 离开的迟滞吸附；只处理用户输入，不改写快照或配置恢复值。
 - 正常或安装器请求退出时恢复音频；异常恢复使用本地回滚日志。
@@ -16,9 +17,9 @@
 
 ## 使用交付物
 
-便携版：解压 `AudioSourceMixer-0.2.1-win-x64-portable.zip` 并运行 `AudioSourceMixer.exe`。
+便携版：解压 `AudioSourceMixer-0.2.2-win-x64-portable.zip` 并运行 `AudioSourceMixer.exe`。
 
-安装版：运行 `AudioSourceMixer-0.2.1-win-x64-setup.exe`。安装界面可选择路径、桌面快捷方式和开机启动；默认路径是 `%LocalAppData%\Programs\AudioSourceMixer`，开机启动默认关闭。路径可包含空格或中文，但不能是磁盘根、Windows/Program Files、用户根或仓库根，也不会覆盖含无关文件的目录。
+安装版：运行 `AudioSourceMixer-0.2.2-win-x64-setup.exe`。安装界面可选择路径、桌面快捷方式和开机启动，并可选择“安装完成后设置浏览器标签页增强”；该项默认关闭，静默安装也不会自行打开浏览器或桌面向导。默认路径是 `%LocalAppData%\Programs\AudioSourceMixer`，开机启动默认关闭。路径可包含空格或中文，但不能是磁盘根、Windows/Program Files、用户根或仓库根，也不会覆盖含无关文件的目录。
 
 安装目录中的 `AudioSourceMixer.Uninstall.exe` 无参数双击会直接显示卸载页。默认保留用户设置；卸载会先通知正在运行的程序恢复音频并退出，再清理本产品的快捷方式、Native Messaging、卸载项和开机启动值。
 
@@ -27,11 +28,12 @@
 扩展固定 ID：`edbfelppckjcfhadggldaifbleoofkio`。
 
 1. 安装版会注册 Native Messaging Host；便携版先运行 `scripts\register-native-host.ps1`。
-2. 在 `chrome://extensions` 或 `edge://extensions` 开启开发者模式，加载 `BrowserExtension` 目录。
-3. 先启动 Audio Source Mixer，再在有声音的标签页点击扩展按钮。桌面程序未运行时扩展只提示“请先打开 Audio Source Mixer”，不会替你启动桌面程序。
-4. 为增强标签页选择非默认输出时，浏览器会打开设备管理页。点击系统设备选择器，试听约 0.7 秒的保守音量提示音，确认实际设备后才保存。
-5. 管理页可测试、修改/重新授权、删除单条映射，或只清除当前浏览器配置的全部映射。
-6. 在来源卡片展开“音效”，可启用平直、低频增强、人声清晰、高频增强、温暖或自定义 10 段 EQ。正增益会自动保留防削波余量，主音量数值不会被改写。
+2. 在桌面程序的“浏览器增强”页选择 Chrome 或 Edge；程序会用对应浏览器打开扩展管理页，并可打开或复制 `BrowserExtension` 目录。
+3. 当前扩展尚未发布到 Chrome Web Store 或 Edge Add-ons，因此需要在扩展管理页开启开发者模式并手动选择“加载已解压的扩展程序”。程序不会修改浏览器配置、企业策略或模拟安全确认。若以后配置官方商店页面，只接受与明确受信扩展 ID 匹配的官方 HTTPS URL。
+4. 先启动 Audio Source Mixer，再在有声音的标签页点击扩展按钮。首次安装会显示一次扩展自带指南；阅读完成后返回原标签页再次点击。桌面程序未运行时扩展只提示“请先打开 Audio Source Mixer”，不会替你启动桌面程序。
+5. 为增强标签页选择非默认输出时，浏览器会打开设备管理页。点击系统设备选择器，试听约 0.7 秒的保守音量提示音，确认实际设备后才保存。
+6. 管理页可测试、修改/重新授权、删除单条映射，或只清除当前浏览器配置的全部映射。确认操作使用不可变快照和串行事务；映射已保存但标签通知失败时可以安全重试。
+7. 在来源卡片展开“音效”，可启用平直、低频增强、人声清晰、高频增强、温暖或自定义 10 段 EQ。正增益会自动保留防削波余量，主音量数值不会被改写。
 
 授权映射以浏览器 + Windows endpoint ID 为键，schema 3 保存验证状态。0.1.2 映射会迁移并保留，但标记为“未验证”，必须经过新试听流程才重新可信。扩展不请求 `audioCapture`、`<all_urls>` 或 host permissions。
 
@@ -43,7 +45,7 @@
 .\scripts\test.ps1 -Configuration Release
 .\scripts\package-portable.ps1 -Configuration Release
 .\scripts\package-installer.ps1 -Configuration Release
-.\scripts\verify-installer.ps1 -BaselineInstallerPath .\artifacts\AudioSourceMixer-0.2.0-win-x64-setup.exe
+.\scripts\verify-installer.ps1 -BaselineInstallerPath .\artifacts\AudioSourceMixer-0.2.1-win-x64-setup.exe
 ```
 
 一键完整构建：
@@ -52,7 +54,7 @@
 .\scripts\build-all.ps1
 ```
 
-完整流程执行 Release restore/build、全部 .NET/Node 测试、源码/portable/installed WPF UI smoke、严格发行 allowlist、默认/自定义路径安装、同版本 repair、故障回滚、0.2.0 原位升级、开机启动、后台托盘、无参数卸载 UI、运行中优雅卸载、注册表清理，以及 publish/portable/installed SHA-256 和扩展清单比较。详见 [测试报告](docs/testing.md) 和 [核心代码图](docs/core-code-map.md)。
+完整流程执行 Release restore/build、全部 .NET/Node 测试、系统 Chrome/Edge 隔离 profile 的扩展授权与 Web Audio 运行验证、源码/portable/installed WPF UI smoke、严格发行 allowlist、默认/自定义路径安装、同版本 repair、故障回滚、0.2.1 原位升级、可选引导、开机启动、后台托盘、无参数卸载 UI、运行中优雅卸载、注册表清理，以及 publish/portable/installed SHA-256 和扩展清单比较。详见 [测试报告](docs/testing.md)、[隐私说明](docs/privacy.md)、[商店资料草案](CHROMEWEBSTORE.md) 和 [核心代码图](docs/core-code-map.md)。
 
 ## 数据与限制
 

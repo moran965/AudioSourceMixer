@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Audio Source Mixer 标签页增强",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "在用户点击后，将当前标签页音频交给 Audio Source Mixer 独立控制。",
   "minimum_chrome_version": "116",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtLpSrwo/Da7F/7UIPQa/eQ6qAxdfk0olY/V9tjhCpsrqhrnBv+nhQKFEaNbqYQDyMi+u3o/3JHIaR6gighfAsPyQc5nfob2w5eGzX14HHK+KSlWMfcxng3Z38Tb5UUn+mhBEkb5jcycpjdO+NVmH2iQhWFtODGcMQiaPH1y4JjzwULp+mPQ4g1oReNil6yH8PZRE3FDILkwA6IZeRc92BOSFbuPv0bf8QGlDujcBc7farL16jAXeM9jNXZWHzRoHRCA/RSZ5Yz66XkmZOWDKUPtJML2Cj+A7LUFMV4T7jsBh7LJdXabyK72+YIjTKpu7KDLPnyVNRk6kuTuz2s2RfQIDAQAB",

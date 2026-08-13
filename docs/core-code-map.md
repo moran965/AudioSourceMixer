@@ -1,4 +1,4 @@
-# Audio Source Mixer 0.2.1 核心代码图
+# Audio Source Mixer 0.2.2 核心代码图
 
 ## 桌面、设置和启动
 

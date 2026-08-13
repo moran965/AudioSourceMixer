@@ -1,4 +1,67 @@
-# Audio Source Mixer 0.2.1 测试报告
+# Audio Source Mixer 0.2.2 测试报告
+
+测试日期：2026-08-14。环境：Windows 11 x64（build 26200）、.NET SDK 8.0.423、Node 24.18.1、Google Chrome 151、Microsoft Edge 151。
+
+## 最终自动化结果
+
+最终命令 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build-all.ps1` 退出码为 0，覆盖 Release restore/build、测试、真实 WPF 窗口、系统浏览器隔离运行、打包、安装、升级、卸载和最终清单/哈希检查。
+
+- Release：11 个项目，0 警告、0 错误。
+- .NET：107/107 通过（Core 84、WindowsAudio 10、Installer 8、Desktop/WPF 3、NativeHost 2）。
+- 浏览器扩展 Node：39/39 通过；其中 9 项直接执行授权事务并覆盖同步/异步 storage 事件、双击、候选重选、waiter 精确删除、通知失败与重试、无未处理 rejection。
+- Web Audio EQ：Chrome、Edge 各通过；100%→50% RMS 比均为 0.5，左声道测试的右侧泄漏比均为 0。为避免 branded browser 首次模块加载偶发提前 `dump-dom`，测试只对仍为 `WAIT` 的状态使用全新 profile 有界重试；任何 `FAIL` 不重试。
+- 源码 Release、portable、每个安装路径和最终实际安装版的 UI smoke 均退出 0。
+- 最终实际安装版普通可见启动：`WindowShown=True; Sources=11; MaterializedItems=3`，随后应用自有退出信号完成恢复并以退出码 0 结束。
+
+## 授权竞态与 Chrome/Edge 实际运行
+
+授权控制器在任何 `await` 之前冻结 candidate、request、browser、endpoint、waiter 和 operation token；单飞门防止重复确认，storage 刷新在事务后合并一次。保存映射与通知标签页分阶段处理：通知失败保留映射并允许幂等重试。
+
+真实运行脚本通过 CDP `Extensions.loadUnpacked` 在完全独立、测试完成即删除的临时 profile 中加载源码或 portable 扩展，不读取或修改用户浏览器配置。Chrome 与 Edge 各执行 4 次授权操作（添加、修改、删除、重复授权），最终结果均为：
+
+- `Runtime.exceptionThrown = 0`
+- `Log.entryAdded` error = 0
+- 页面 `unhandledrejection = 0`
+- service worker error = 0
+
+空闲运行还确认扩展版本 0.2.2、MV3、`setSinkId` 可用，且打开浏览器/启动 service worker 不请求 Native Messaging；packaged 运行在明确启动 portable 桌面端后收到 `bridge.status`。Native Host 注册值和 `%LocalAppData%\AudioSourceMixer` 在测试前逐字节/逐哈希备份，测试使用全新数据目录，结束后恢复并比较；没有触碰个人浏览器 profile。
+
+## WPF、响应式布局与绑定
+
+UI smoke 必须调用真实 `MainWindow.Show()`，等待 `Loaded`、ApplicationIdle 和 Render，并注入三个确定性来源：普通 Windows 会话、超长中文 Edge 标签、超长英文 Chrome 标签。场景同时覆盖 200% 增益、非默认长设备名、路由/授权错误、EQ 展开和实时峰值。验证器强制物化每个 `ListBoxItem`、来源卡、ProgressBar 和 10 段 EQ DataTemplate；缺少容器、绑定错误、XAML 错误、Dispatcher 异常或未观察异步异常都会返回非零。
+
+STA 回归在 880×600、1180×760、1600×900 三种窗口尺寸验证标签/数值不相交、输出选择框至少 180 DIP、可见按钮不裁剪和无横向溢出。来源列表保持 `CanContentScroll=True`、Recycling、`ScrollUnit=Pixel`、`IsDeferredScrollingEnabled=False`、`PanningMode=VerticalOnly` 和横向滚动禁用。设置页与浏览器引导页也被真实物化并包含可键盘聚焦控件。
+
+全部产品 XAML `{Binding}` 都显式声明模式。只读显示属性（包括 `PeakPercent`、名称、状态、命令、可见性、设备集合、音量/平衡显示文本及 EQ 汇总）均为 OneWay；有效 TwoWay 仅包括具有 public setter 的 `VolumePercent`、`BalancePercent`、`IsEqualizerExpanded`、`IsEqualizerEnabled`、`SelectedEqualizerPresetId`、`EqualizerPreampDb`、`EqualizerBandViewModel.GainDb` 和设置 CheckBox 属性。峰值快照触发 `PropertyChanged(PeakPercent)` 后 ProgressBar 实测更新到 73%。
+
+最终六张截图由安装版 0.2.2 的真实 WPF 窗口生成，位于 `artifacts\screenshots-v0.2.2`：普通混音器、浏览器增强来源、EQ 展开、浏览器引导、设置页和最小窗口。
+
+## 安装、升级和发行负载
+
+安装验证全部通过：fresh install、同版本 repair、backup 后注入失败回滚、空格路径、中文路径、开机启动/后台托盘、默认不打开浏览器向导、显式 `--browser-setup` 显示真实窗口、无参数卸载 UI、运行中优雅卸载、0.2.1→0.2.2 原位升级、最终普通启动和注册表清理。验证完成后又在用户原默认路径安装最终 0.2.2，恢复原有选择：桌面快捷方式开启、开机启动关闭。
+
+严格 allowlist 下安装目录为 29 个文件、486,981,657 字节：
+
+- 三个可执行文件：`AudioSourceMixer.exe`、`AudioSourceMixer.NativeHost.exe`、`AudioSourceMixer.Uninstall.exe`。
+- 身份/桥配置：`install-identity.json`、`native-host-manifest.json`、`browser-extension-origins.json`。
+- 法律文件：`LICENSE`、`THIRD_PARTY_NOTICES.md`。
+- 扩展 21 个文件：4 个图标、manifest、offscreen 2 个、onboarding 4 个、授权页/控制器 6 个、service worker 2 个、shared 2 个。
+
+安装目录不含 docs、tests、tools、源码、PDB、package.json、测试脚本或构建机绝对路径。机器可读完整清单和安装矩阵位于 `artifacts\AudioSourceMixer-0.2.2-build-manifest.json`。
+
+## 最终交付物与哈希
+
+- publish / portable / installed `AudioSourceMixer.exe`：`251259922CD8D15F69311B348FE18C09C45C186AEF8DC5DB43E7241BB4FDB4D2`（三者完全一致）。
+- portable ZIP：95,445,477 字节，SHA-256 `277D8C2D77B7599519123E647AA28C89B556DBFE741805F0F5C4155F2F61FED1`。
+- installer：257,105,505 字节，SHA-256 `8B9EE153ECF61E6F4563D13AD688D67321608F0EA012EBDCF4D7CB586A368789`。
+
+## 人工边界
+
+自动化没有把 API 状态伪装成真人听感。当前扩展尚未发布到 Chrome Web Store/Edge Add-ons，普通用户仍需在程序内向导指引下手动开启开发者模式并“加载已解压的扩展程序”。真实硬件的扬声器/蓝牙听感、受保护内容、DRM、休眠、标签丢弃和触控板主观手感仍需人工矩阵；测试不会修改个人浏览器配置或模拟安全确认。
+
+---
+
+## 历史记录：v0.2.1
 
 测试日期：2026-08-13。环境：Windows 11 x64（build 26200）、.NET SDK 8.0.423、Node 24.18.1、Chrome/Edge 151。自动测试、浏览器 API 客观验证和必须由用户完成的真人听感严格分开。
 
