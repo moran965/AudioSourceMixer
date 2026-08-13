@@ -1,0 +1,15 @@
+<Project>
+  <PropertyGroup>
+    <AudioSourceMixerVersion>0.2.0</AudioSourceMixerVersion>
+    <Version>$(AudioSourceMixerVersion)</Version>
+    <AssemblyVersion>0.2.0.0</AssemblyVersion>
+    <FileVersion>0.2.0.0</FileVersion>
+    <InformationalVersion>$(AudioSourceMixerVersion)</InformationalVersion>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+</Project>

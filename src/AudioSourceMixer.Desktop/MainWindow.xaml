@@ -1,0 +1,127 @@
+<Window x:Class="AudioSourceMixer.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:AudioSourceMixer.Desktop.Controls"
+        Title="Audio Source Mixer" Width="1320" Height="760" MinWidth="1080" MinHeight="600"
+        Background="#F1F5F9" WindowStartupLocation="CenterScreen">
+    <Grid Margin="24">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <DockPanel Grid.Row="0" Margin="0,0,0,14">
+            <StackPanel DockPanel.Dock="Left">
+                <TextBlock Text="Audio Source Mixer" FontSize="26" FontWeight="SemiBold" Foreground="#0F172A"/>
+                <TextBlock Text="独立控制音频源；浏览器增强标签页支持最高 200% 增益和输出设备选择"
+                           Foreground="{StaticResource MutedTextBrush}" Margin="0,4,0,0"/>
+            </StackPanel>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <Button Content="刷新" Command="{Binding RefreshCommand, Mode=OneWay}"/>
+                <Button Content="全部恢复默认" Command="{Binding RestoreAllCommand, Mode=OneWay}" Background="#E2E8F0"/>
+            </StackPanel>
+        </DockPanel>
+        <TabControl Grid.Row="1" Background="Transparent" BorderThickness="0">
+            <TabItem x:Name="MixerTab" Header="混音器">
+                <Grid Margin="0,14,0,0">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                    <Border Grid.Row="0" Background="White" CornerRadius="10" Padding="14" Margin="0,0,0,14">
+                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <StackPanel><TextBlock Text="当前默认输出设备" FontSize="12" Foreground="{StaticResource MutedTextBrush}"/>
+                                <TextBlock Text="{Binding DeviceName, Mode=OneWay}" FontSize="16" FontWeight="SemiBold" Margin="0,3,0,0"/></StackPanel>
+                            <StackPanel Grid.Column="1"><TextBlock Text="浏览器增强" FontSize="12" Foreground="{StaticResource MutedTextBrush}" HorizontalAlignment="Right"/>
+                                <TextBlock Text="{Binding BrowserStatus, Mode=OneWay}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" Margin="0,3,0,0"/></StackPanel>
+                        </Grid>
+                    </Border>
+                    <Border Grid.Row="1" Background="White" CornerRadius="10" Padding="8">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsControl x:Name="SourcesItemsControl" ItemsSource="{Binding Sources, Mode=OneWay}">
+                                <ItemsControl.ItemTemplate><DataTemplate>
+                                    <Border BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="14,12">
+                                        <Grid><Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="190"/><ColumnDefinition Width="75"/><ColumnDefinition Width="190"/>
+                                            <ColumnDefinition Width="190"/><ColumnDefinition Width="220"/><ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding DisplayName, Mode=OneWay}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding SourceDescription, Mode=OneWay}" FontSize="11" Foreground="{StaticResource MutedTextBrush}" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding Limitation, Mode=OneWay}" FontSize="10" Foreground="#B45309" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Margin="8,0" VerticalAlignment="Center">
+                                                <ProgressBar Value="{Binding PeakPercent, Mode=OneWay}" Maximum="100" Height="7"/>
+                                                <TextBlock Text="{Binding StateText, Mode=OneWay}" FontSize="10" Foreground="{StaticResource MutedTextBrush}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                                <StackPanel Orientation="Horizontal"><Slider Width="132" Minimum="0" Maximum="{Binding VolumeMaximum, Mode=OneWay}" TickFrequency="10" TickPlacement="BottomRight"
+                                                    Value="{Binding VolumePercent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                                    <TextBlock Width="48" Text="{Binding VolumePercent, Mode=OneWay, StringFormat={}{0:F0}%}" VerticalAlignment="Center"/></StackPanel>
+                                                <Grid Margin="0,2,48,0"><TextBlock Text="{Binding VolumeScaleText, Mode=OneWay}" FontSize="9" Foreground="{StaticResource MutedTextBrush}"/>
+                                                    <TextBlock Text="{Binding GainWarning, Mode=OneWay}" FontSize="9" Foreground="#B45309" HorizontalAlignment="Right" Visibility="{Binding EnhancedStatusVisibility, Mode=OneWay}"/></Grid>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="3" VerticalAlignment="Center">
+                                                <TextBlock Text="声道平衡" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                                <controls:CenterDetentSlider Minimum="-100" Maximum="100" TickFrequency="1"
+                                                    Value="{Binding BalancePercent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding SupportsBalance, Mode=OneWay}"/>
+                                                <Grid><TextBlock Text="左" FontSize="9" Foreground="{StaticResource MutedTextBrush}" HorizontalAlignment="Left"/>
+                                                    <TextBlock Text="居中" FontSize="9" Foreground="{StaticResource MutedTextBrush}" HorizontalAlignment="Center"/>
+                                                    <TextBlock Text="右" FontSize="9" Foreground="{StaticResource MutedTextBrush}" HorizontalAlignment="Right"/></Grid>
+                                                <TextBlock Text="{Binding BalanceText, Mode=OneWay}" FontSize="10" Foreground="{StaticResource MutedTextBrush}" HorizontalAlignment="Center"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="4" Margin="12,0" VerticalAlignment="Center">
+                                                <ComboBox ItemsSource="{Binding OutputDevices, Mode=OneWay}" SelectedValuePath="Id"
+                                                    SelectedValue="{Binding SelectedOutputDeviceId, Mode=OneWay}" IsEnabled="{Binding SupportsOutputRouting, Mode=OneWay}"
+                                                    PreviewMouseLeftButtonUp="OutputDeviceItemClicked" PreviewKeyDown="OutputDeviceKeyDown"
+                                                    DisplayMemberPath="Name" ToolTip="{Binding OutputStatus, Mode=OneWay}"/>
+                                                <TextBlock Text="{Binding OutputStatus, Mode=OneWay}" FontSize="10" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap"/>
+                                                <Button Content="管理/重新授权输出设备" Command="{Binding ReauthorizeOutputCommand, Mode=OneWay}"
+                                                    Visibility="{Binding ReauthorizeOutputVisibility, Mode=OneWay}" Margin="0,4,0,0"/>
+                                                <TextBlock Text="{Binding RoutingGranularityText, Mode=OneWay}" FontSize="9" Foreground="{StaticResource MutedTextBrush}"/>
+                                                <TextBlock Text="{Binding ProcessingModeText, Mode=OneWay}" FontSize="10" Foreground="{StaticResource MutedTextBrush}" HorizontalAlignment="Center"
+                                                    Visibility="{Binding EnhancedStatusVisibility, Mode=OneWay}"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="5" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                <Button Content="{Binding MuteLabel, Mode=OneWay}" Command="{Binding ToggleMuteCommand, Mode=OneWay}"/>
+                                                <Button Content="恢复" Command="{Binding RestoreCommand, Mode=OneWay}"/>
+                                                <Button Content="停止增强" Command="{Binding StopCommand, Mode=OneWay}" Visibility="{Binding StopVisibility, Mode=OneWay}"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate></ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+            </TabItem>
+            <TabItem x:Name="SettingsTab" Header="设置">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,14,0,0">
+                    <StackPanel>
+                        <GroupBox Header="启动与窗口" Margin="0,0,0,12"><StackPanel Margin="12">
+                            <CheckBox Content="登录 Windows 后启动 Audio Source Mixer" IsChecked="{Binding StartupEnabled, Mode=TwoWay}" IsEnabled="{Binding StartupAvailable, Mode=OneWay}"/>
+                            <CheckBox Content="启动后最小化到系统托盘" IsChecked="{Binding StartMinimizedToTray, Mode=TwoWay}" IsEnabled="{Binding StartupEnabled, Mode=OneWay}" Margin="0,8,0,0"/>
+                            <CheckBox Content="关闭窗口时最小化到托盘（退出请使用托盘菜单）" IsChecked="{Binding CloseToTray, Mode=TwoWay}" Margin="0,8,0,0"/>
+                            <TextBlock Text="便携版不写入开机启动项；安装版选项以 Windows 注册表实际状态为准。" Foreground="{StaticResource MutedTextBrush}" Margin="0,8,0,0"/>
+                        </StackPanel></GroupBox>
+                        <GroupBox Header="会话与记忆" Margin="0,0,0,12"><StackPanel Margin="12">
+                            <CheckBox Content="显示当前无声会话" IsChecked="{Binding ShowInactiveSessions, Mode=TwoWay}"/>
+                            <CheckBox Content="记住应用设置" IsChecked="{Binding RememberProfiles, Mode=TwoWay}" Margin="0,8,0,0"/>
+                            <CheckBox Content="自动应用保存的设置" IsChecked="{Binding AutoApplyProfiles, Mode=TwoWay}" IsEnabled="{Binding AutoApplyProfilesEnabled, Mode=OneWay}" Margin="0,8,0,0"/>
+                            <Button Content="清除已保存的应用配置" Command="{Binding ClearProfilesCommand, Mode=OneWay}" HorizontalAlignment="Left" Margin="0,10,0,0"/>
+                        </StackPanel></GroupBox>
+                        <GroupBox Header="浏览器增强" Margin="0,0,0,12"><StackPanel Margin="12">
+                            <TextBlock Text="{Binding EdgeConnectionStatus, Mode=OneWay}"/><TextBlock Text="{Binding ChromeConnectionStatus, Mode=OneWay}" Margin="0,4,0,0"/>
+                            <TextBlock Text="首次授权必须由你在浏览器可见页面中选择设备并试听确认；桌面程序不会读取其他浏览器配置文件。"
+                                Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                            <WrapPanel Margin="0,10,0,0"><Button Content="管理 Edge 输出设备" Command="{Binding ManageEdgeOutputsCommand, Mode=OneWay}"/>
+                                <Button Content="清除 Edge 映射" Command="{Binding ClearEdgeMappingsCommand, Mode=OneWay}" Background="#E2E8F0"/>
+                                <Button Content="管理 Chrome 输出设备" Command="{Binding ManageChromeOutputsCommand, Mode=OneWay}"/>
+                                <Button Content="清除 Chrome 映射" Command="{Binding ClearChromeMappingsCommand, Mode=OneWay}" Background="#E2E8F0"/></WrapPanel>
+                        </StackPanel></GroupBox>
+                        <GroupBox Header="维护与关于"><StackPanel Margin="12">
+                            <StackPanel Orientation="Horizontal"><TextBlock Text="{Binding VersionText, Mode=OneWay}" FontWeight="SemiBold"/>
+                                <TextBlock Text=" · "/><TextBlock Text="{Binding DeploymentText, Mode=OneWay}"/></StackPanel>
+                            <WrapPanel Margin="0,10,0,0"><Button Content="全部恢复默认" Command="{Binding ResetAllCommand, Mode=OneWay}"/>
+                                <Button Content="打开日志目录" Command="{Binding OpenLogsCommand, Mode=OneWay}"/>
+                                <Button Content="打开程序目录" Command="{Binding OpenInstallDirectoryCommand, Mode=OneWay}"/></WrapPanel>
+                        </StackPanel></GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</Window>

@@ -1,0 +1,6 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0f172a; color: #e2e8f0; }
+main { width: min(34rem, calc(100% - 3rem)); padding: 2.5rem; border: 1px solid #475569; border-radius: 1rem; background: #1e293b; box-shadow: 0 1.2rem 3rem #02061780; }
+button { min-width: 12rem; padding: .8rem 1.2rem; border: 0; border-radius: .6rem; font: inherit; font-weight: 700; color: #082f49; background: #7dd3fc; cursor: pointer; }
+button[data-running="true"] { color: #450a0a; background: #fca5a5; }
+#status { font-variant-numeric: tabular-nums; }

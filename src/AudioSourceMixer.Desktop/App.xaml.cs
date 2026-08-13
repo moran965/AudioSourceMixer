@@ -1,0 +1,432 @@
+using System.Drawing;
+using System.IO;
+using System.Windows;
+using System.Windows.Threading;
+using AudioSourceMixer.Core.Browser;
+using AudioSourceMixer.Core.Infrastructure;
+using AudioSourceMixer.Core.Persistence;
+using AudioSourceMixer.Desktop.Diagnostics;
+using AudioSourceMixer.Desktop.ViewModels;
+using AudioSourceMixer.WindowsAudio;
+using Forms = System.Windows.Forms;
+
+namespace AudioSourceMixer.Desktop;
+
+public partial class App : System.Windows.Application
+{
+    private Mutex? _singleInstance;
+    private bool _ownsMutex;
+    private Forms.NotifyIcon? _tray;
+    private WindowsAudioService? _audio;
+    private BrowserBridgeServer? _bridge;
+    private MainViewModel? _viewModel;
+    private MainWindow? _window;
+    private RollingFileLogger? _logger;
+    private UiSmokeMonitor? _uiSmokeMonitor;
+    private StartupStage _startupStage;
+    private bool _uiSmokeTest;
+    private int _fatalReported;
+    private int _exiting;
+    private int _exitCode;
+    private bool _background;
+    private EventWaitHandle? _exitSignal;
+    private RegisteredWaitHandle? _exitSignalRegistration;
+
+    protected override async void OnStartup(StartupEventArgs e)
+    {
+        base.OnStartup(e);
+        _uiSmokeTest = e.Args.Contains("--ui-smoke-test", StringComparer.OrdinalIgnoreCase) ||
+                       e.Args.Contains("--smoke-test", StringComparer.OrdinalIgnoreCase);
+        _background = e.Args.Contains("--background", StringComparer.OrdinalIgnoreCase) && !_uiSmokeTest;
+        var dataDirectory = _uiSmokeTest
+            ? Path.Combine(Path.GetTempPath(), "AudioSourceMixer", "ui-smoke", Environment.ProcessId.ToString())
+            : AppPaths.LocalDataDirectory;
+
+        try
+        {
+            _startupStage = StartupStage.Logging;
+            InitializeLogger(Path.Combine(dataDirectory, "logs"));
+            AttachExceptionHandlers();
+            _logger!.Info($"Application startup began. Version={GetType().Assembly.GetName().Version}; OS={Environment.OSVersion.VersionString}; UiSmoke={_uiSmokeTest}.");
+            if (_uiSmokeTest) _uiSmokeMonitor = new UiSmokeMonitor();
+
+            _startupStage = StartupStage.SingleInstance;
+            var mutexName = _uiSmokeTest
+                ? $"Local\\AudioSourceMixer.Desktop.UiSmoke.{Environment.ProcessId}"
+                : "Local\\AudioSourceMixer.Desktop";
+            _singleInstance = new Mutex(true, mutexName, out _ownsMutex);
+            if (!_ownsMutex)
+            {
+                if (!_uiSmokeTest)
+                    System.Windows.MessageBox.Show("Audio Source Mixer 已在运行。", "Audio Source Mixer", MessageBoxButton.OK, MessageBoxImage.Information);
+                Shutdown(0);
+                return;
+            }
+            RegisterGracefulExitSignal();
+
+            var profileStore = new JsonAudioProfileStore(dataDirectory);
+            var settingsStore = new JsonApplicationSettingsStore(dataDirectory);
+            _audio = new WindowsAudioService(new JsonRollbackJournal(dataDirectory), _logger);
+
+            _startupStage = StartupStage.BrowserBridge;
+            _bridge = new BrowserBridgeServer(logger: _logger);
+            _bridge.Start();
+
+            _startupStage = StartupStage.ViewModel;
+            _viewModel = new MainViewModel(_audio, _audio, _audio, _bridge, profileStore, settingsStore, _logger);
+            await _viewModel.LoadSettingsAsync();
+
+            _startupStage = StartupStage.WindowCreation;
+            _window = new MainWindow(_viewModel);
+            if (_uiSmokeTest) ConfigureUiSmokeWindow(_window);
+
+            _startupStage = StartupStage.TrayCreation;
+            CreateTray(visible: !_uiSmokeTest);
+
+            _startupStage = StartupStage.AudioInitialization;
+            var diagnosticSource = _uiSmokeTest ? UiSmokeVerifier.CreateDiagnosticSource() : null;
+            await _viewModel.InitializeAsync(diagnosticSource);
+
+            _startupStage = StartupStage.WindowDisplay;
+            if (_background)
+            {
+                _startupStage = StartupStage.Complete;
+                _logger.Info($"Application startup completed successfully in background tray mode. Sources={_viewModel.Sources.Count}.");
+                return;
+            }
+            var loaded = WaitForLoadedAsync(_window);
+            _window.Show();
+            await loaded;
+            await Dispatcher.InvokeAsync(() => _window.UpdateLayout(), DispatcherPriority.ApplicationIdle);
+
+            if (_uiSmokeTest)
+            {
+                var source = _viewModel.Sources.Single(item => item.Id == diagnosticSource!.Id);
+                var result = await UiSmokeVerifier.VerifyAsync(_window, source);
+                await FlushAsynchronousFailuresAsync();
+                _uiSmokeMonitor!.ThrowIfFailed();
+                _startupStage = StartupStage.Complete;
+                _logger.Info($"UI smoke test succeeded. WindowShown={_window.IsVisible}; Items={result.ItemCount}; Container={result.ContainerType}; Peak={result.PeakValue:F1}; AuditedBindings={result.Bindings.Count}.");
+                await ExitAndRestoreAsync(0);
+                return;
+            }
+
+            var materializedItems = await WaitForNormalUiMaterializationAsync(_window, _viewModel);
+            _startupStage = StartupStage.Complete;
+            _logger.Info($"Application startup completed successfully. WindowShown={_window.IsVisible}; Sources={_viewModel.Sources.Count}; MaterializedItems={materializedItems}.");
+        }
+        catch (Exception exception)
+        {
+            _uiSmokeMonitor?.Record($"Startup/{_startupStage}", exception);
+            await HandleStartupFailureAsync(exception);
+        }
+    }
+
+    private void InitializeLogger(string preferredDirectory)
+    {
+        try
+        {
+            _logger = new RollingFileLogger(preferredDirectory);
+            _logger.Info("Logging initialized.");
+        }
+        catch (Exception primaryException)
+        {
+            var fallback = Path.Combine(Path.GetTempPath(), "AudioSourceMixer", "fallback-logs");
+            _logger = new RollingFileLogger(fallback);
+            _logger.Error($"Could not initialize the preferred log directory '{preferredDirectory}'.", primaryException);
+        }
+    }
+
+    private void AttachExceptionHandlers()
+    {
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+        SessionEnding += OnSessionEnding;
+    }
+
+    private void DetachExceptionHandlers()
+    {
+        DispatcherUnhandledException -= OnDispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException -= OnDomainUnhandledException;
+        TaskScheduler.UnobservedTaskException -= OnUnobservedTaskException;
+        SessionEnding -= OnSessionEnding;
+    }
+
+    private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs args)
+    {
+        args.Handled = true;
+        _uiSmokeMonitor?.Record("DispatcherUnhandledException", args.Exception);
+        QueueFatalExit("Unhandled UI exception.", args.Exception);
+    }
+
+    private void OnDomainUnhandledException(object sender, UnhandledExceptionEventArgs args)
+    {
+        var exception = args.ExceptionObject as Exception ?? new InvalidOperationException(args.ExceptionObject?.ToString() ?? "Unknown AppDomain exception.");
+        _uiSmokeMonitor?.Record("AppDomain.UnhandledException", exception);
+        QueueFatalExit("Unhandled AppDomain exception.", exception);
+    }
+
+    private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs args)
+    {
+        args.SetObserved();
+        _uiSmokeMonitor?.Record("TaskScheduler.UnobservedTaskException", args.Exception);
+        QueueFatalExit("Unobserved asynchronous exception.", args.Exception);
+    }
+
+    private void OnSessionEnding(object sender, SessionEndingCancelEventArgs args)
+        => ExitAndRestoreAsync().GetAwaiter().GetResult();
+
+    private void QueueFatalExit(string message, Exception exception)
+    {
+        if (Interlocked.Exchange(ref _fatalReported, 1) != 0) return;
+        TryLogError(message, exception);
+        try
+        {
+            _ = Dispatcher.InvokeAsync(async () =>
+            {
+                if (!_uiSmokeTest) ShowFailureMessage("程序遇到未处理错误，完整信息已写入日志。程序将恢复音频设置并退出。");
+                await ExitAndRestoreAsync(1);
+            }, DispatcherPriority.Send);
+        }
+        catch (Exception dispatchException) { TryLogError("Could not dispatch fatal shutdown.", dispatchException); }
+    }
+
+    private async Task HandleStartupFailureAsync(Exception exception)
+    {
+        if (Interlocked.Exchange(ref _fatalReported, 1) == 0)
+        {
+            TryLogError($"Application startup failed during {_startupStage}.", exception);
+            if (!_uiSmokeTest) ShowFailureMessage(GetStartupFailureMessage(_startupStage, exception));
+        }
+        await ExitAndRestoreAsync(1);
+    }
+
+    private static string GetStartupFailureMessage(StartupStage stage, Exception exception)
+    {
+        var prefix = stage == StartupStage.AudioInitialization
+            ? "音频系统初始化失败"
+            : stage is StartupStage.WindowCreation or StartupStage.WindowDisplay
+                ? "界面创建或显示失败"
+                : "应用启动失败";
+        return $"{prefix}：{exception.Message}{Environment.NewLine}完整异常信息已写入日志。";
+    }
+
+    private void ShowFailureMessage(string message)
+    {
+        try { System.Windows.MessageBox.Show(message, "Audio Source Mixer", MessageBoxButton.OK, MessageBoxImage.Error); }
+        catch (Exception exception) { TryLogError("Could not display the fatal error dialog.", exception); }
+    }
+
+    private static Task WaitForLoadedAsync(Window window)
+    {
+        if (window.IsLoaded) return Task.CompletedTask;
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        window.Loaded += Loaded;
+        return completion.Task;
+
+        void Loaded(object sender, RoutedEventArgs args)
+        {
+            window.Loaded -= Loaded;
+            completion.TrySetResult();
+        }
+    }
+
+    private static void ConfigureUiSmokeWindow(Window window)
+    {
+        window.WindowStartupLocation = WindowStartupLocation.Manual;
+        window.Left = -10000;
+        window.Top = -10000;
+        window.ShowInTaskbar = false;
+        window.ShowActivated = false;
+    }
+
+    private static int CountMaterializedItems(MainWindow window)
+    {
+        window.SourceItems.UpdateLayout();
+        var count = 0;
+        for (var index = 0; index < window.SourceItems.Items.Count; index++)
+            if (window.SourceItems.ItemContainerGenerator.ContainerFromIndex(index) is not null) count++;
+        return count;
+    }
+
+    private static async Task<int> WaitForNormalUiMaterializationAsync(MainWindow window, MainViewModel viewModel)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+        var materialized = CountMaterializedItems(window);
+        while (viewModel.Sources.Count == 0 && DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(100);
+            await window.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.ApplicationIdle);
+            materialized = CountMaterializedItems(window);
+        }
+        return materialized;
+    }
+
+    private async Task FlushAsynchronousFailuresAsync()
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        await Task.Delay(100);
+        await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+    }
+
+    private void CreateTray(bool visible)
+    {
+        _tray = new Forms.NotifyIcon { Icon = SystemIcons.Application, Text = "Audio Source Mixer", Visible = visible };
+        var menu = new Forms.ContextMenuStrip();
+        menu.Items.Add("打开主窗口", null, (_, _) => ShowMainWindow());
+        menu.Items.Add("全部恢复默认", null, async (_, _) =>
+        {
+            try
+            {
+                await InvokeOnDispatcherAsync(async () =>
+                {
+                    if (_viewModel is not null) await _viewModel.RestoreAllAsync();
+                });
+            }
+            catch (Exception exception) { QueueFatalExit("Tray restore command failed.", exception); }
+        });
+        menu.Items.Add(new Forms.ToolStripSeparator());
+        menu.Items.Add("退出并恢复音频设置", null, async (_, _) => await ExitAndRestoreAsync());
+        _tray.ContextMenuStrip = menu;
+        _tray.DoubleClick += (_, _) => ShowMainWindow();
+    }
+
+    private void RegisterGracefulExitSignal()
+    {
+        _exitSignal = new EventWaitHandle(false, EventResetMode.AutoReset, "Local\\AudioSourceMixer.Exit");
+        _exitSignalRegistration = ThreadPool.RegisterWaitForSingleObject(_exitSignal, (_, timedOut) =>
+        {
+            if (!timedOut) _ = Dispatcher.InvokeAsync(() => ExitAndRestoreAsync(), DispatcherPriority.Send).Task.Unwrap();
+        }, null, Timeout.Infinite, true);
+    }
+
+    public void HideToTray()
+    {
+        _window?.Hide();
+        _tray?.ShowBalloonTip(1500, "Audio Source Mixer", "程序仍在托盘运行；退出时会恢复音频设置。", Forms.ToolTipIcon.Info);
+    }
+
+    private void ShowMainWindow()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            _ = Dispatcher.InvokeAsync(ShowMainWindow, DispatcherPriority.Normal);
+            return;
+        }
+        if (_window is null) return;
+        _logger?.Info("Tray action started. Operation=Open main window; DispatcherAccess=True.");
+        _window.Show();
+        if (_window.WindowState == WindowState.Minimized) _window.WindowState = WindowState.Normal;
+        _window.Activate();
+    }
+
+    private async Task InvokeOnDispatcherAsync(Func<Task> action)
+    {
+        if (Dispatcher.CheckAccess())
+        {
+            await action();
+            return;
+        }
+        await Dispatcher.InvokeAsync(action, DispatcherPriority.Normal).Task.Unwrap();
+    }
+
+    public async Task ExitAndRestoreAsync(int exitCode = 0)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            await Dispatcher.InvokeAsync(() => ExitAndRestoreAsync(exitCode), DispatcherPriority.Send).Task.Unwrap();
+            return;
+        }
+        if (exitCode != 0) Interlocked.Exchange(ref _exitCode, exitCode);
+        if (Interlocked.Exchange(ref _exiting, 1) != 0) return;
+
+        await CleanupAsync("View model settings flush and pending operations", async () =>
+        {
+            if (_viewModel is not null) await _viewModel.PrepareForExitAsync();
+        });
+        await CleanupAsync("Core Audio restore/dispose", async () =>
+        {
+            if (_audio is not null) await _audio.DisposeAsync();
+        });
+        await CleanupAsync("Browser bridge dispose", async () =>
+        {
+            if (_bridge is not null) await _bridge.DisposeAsync();
+        });
+        await CleanupAsync("View model dispose", () =>
+        {
+            _viewModel?.Dispose();
+            return Task.CompletedTask;
+        });
+        await CleanupAsync("Main window close", () =>
+        {
+            if (_window is not null)
+            {
+                _window.AllowClose = true;
+                _window.Close();
+            }
+            return Task.CompletedTask;
+        });
+        await CleanupAsync("Tray dispose", () =>
+        {
+            _tray?.Dispose();
+            return Task.CompletedTask;
+        });
+        await CleanupAsync("Single-instance mutex release", () =>
+        {
+            if (_ownsMutex) _singleInstance?.ReleaseMutex();
+            _ownsMutex = false;
+            _singleInstance?.Dispose();
+            return Task.CompletedTask;
+        });
+        await CleanupAsync("Graceful-exit signal dispose", () =>
+        {
+            _exitSignalRegistration?.Unregister(null);
+            _exitSignalRegistration = null;
+            _exitSignal?.Dispose();
+            _exitSignal = null;
+            return Task.CompletedTask;
+        });
+
+        if (_uiSmokeTest && Volatile.Read(ref _exitCode) == 0)
+        {
+            try { _uiSmokeMonitor?.ThrowIfFailed(); }
+            catch (Exception exception) { TryLogError("UI smoke test captured a failure during shutdown.", exception); Interlocked.Exchange(ref _exitCode, 1); }
+        }
+        try { _uiSmokeMonitor?.Dispose(); }
+        catch (Exception exception) { TryLogError("UI smoke monitor dispose failed.", exception); Interlocked.Exchange(ref _exitCode, 1); }
+        DetachExceptionHandlers();
+        Shutdown(Volatile.Read(ref _exitCode));
+    }
+
+    private async Task CleanupAsync(string operation, Func<Task> cleanup)
+    {
+        try { await cleanup(); }
+        catch (Exception exception)
+        {
+            Interlocked.Exchange(ref _exitCode, 1);
+            TryLogError($"{operation} failed.", exception);
+        }
+    }
+
+    private void TryLogError(string message, Exception exception)
+    {
+        try { _logger?.Error(message, exception); }
+        catch { System.Diagnostics.Trace.WriteLine($"{message}{Environment.NewLine}{exception}"); }
+    }
+
+    private enum StartupStage
+    {
+        Logging,
+        SingleInstance,
+        BrowserBridge,
+        ViewModel,
+        WindowCreation,
+        TrayCreation,
+        AudioInitialization,
+        WindowDisplay,
+        Complete
+    }
+}

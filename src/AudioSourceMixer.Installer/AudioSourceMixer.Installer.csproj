@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>AudioSourceMixer-Setup-x64</AssemblyName>
+    <RootNamespace>AudioSourceMixer.Installer</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <InstallerPayloadPath Condition="'$(InstallerPayloadPath)' == ''">..\..\installer\payload.zip</InstallerPayloadPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="$(InstallerPayloadPath)" LogicalName="AudioSourceMixer.Payload.zip" Condition="Exists('$(InstallerPayloadPath)')" />
+  </ItemGroup>
+</Project>

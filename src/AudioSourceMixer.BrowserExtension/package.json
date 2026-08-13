@@ -1,0 +1,6 @@
+{
+  "name": "audio-source-mixer-browser-extension",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test ../../tests/browser-extension-tests/*.test.mjs" }
+}

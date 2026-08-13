@@ -1,0 +1,99 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{956683BF-86B6-4186-BDD2-784FEB884279}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AudioSourceMixer.CapabilityProbe", "src\AudioSourceMixer.CapabilityProbe\AudioSourceMixer.CapabilityProbe.csproj", "{831644DC-F6EE-442D-BCC0-B0DFE8186B8D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AudioSourceMixer.Core", "src\AudioSourceMixer.Core\AudioSourceMixer.Core.csproj", "{4E7A22CD-225D-4FCC-B911-EB09724CF370}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AudioSourceMixer.Desktop", "src\AudioSourceMixer.Desktop\AudioSourceMixer.Desktop.csproj", "{5F3BBBB9-FCB0-468B-93A4-8DCDC37D0238}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AudioSourceMixer.NativeHost", "src\AudioSourceMixer.NativeHost\AudioSourceMixer.NativeHost.csproj", "{D465B352-C13F-4E44-AB96-E8C84A44EB09}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AudioSourceMixer.WindowsAudio", "src\AudioSourceMixer.WindowsAudio\AudioSourceMixer.WindowsAudio.csproj", "{50E69DAF-EAD4-44DA-8A28-3F9B65C37D46}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{CE9DCE8A-F510-40FF-B2DE-13A2F000DD66}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AudioSourceMixer.Core.Tests", "tests\AudioSourceMixer.Core.Tests\AudioSourceMixer.Core.Tests.csproj", "{F92164F8-1003-435D-BE91-99C4A97CC8B3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AudioSourceMixer.NativeHost.Tests", "tests\AudioSourceMixer.NativeHost.Tests\AudioSourceMixer.NativeHost.Tests.csproj", "{9B929881-6222-42C9-9164-CA7E83084255}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AudioSourceMixer.WindowsAudio.Tests", "tests\AudioSourceMixer.WindowsAudio.Tests\AudioSourceMixer.WindowsAudio.Tests.csproj", "{1CAF6B43-03FB-4C15-977D-BAD2B13BDB6D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AudioSourceMixer.Installer", "src\AudioSourceMixer.Installer\AudioSourceMixer.Installer.csproj", "{182FE413-D931-45B1-A641-4E16117214CC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AudioSourceMixer.Desktop.Tests", "tests\AudioSourceMixer.Desktop.Tests\AudioSourceMixer.Desktop.Tests.csproj", "{B4B16790-A279-4F9F-9018-5F0F585AA6E2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AudioSourceMixer.Installer.Tests", "tests\AudioSourceMixer.Installer.Tests\AudioSourceMixer.Installer.Tests.csproj", "{6AD48C15-BEE5-4F9A-80A3-AE14B0B3C78B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{831644DC-F6EE-442D-BCC0-B0DFE8186B8D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{831644DC-F6EE-442D-BCC0-B0DFE8186B8D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{831644DC-F6EE-442D-BCC0-B0DFE8186B8D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{831644DC-F6EE-442D-BCC0-B0DFE8186B8D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4E7A22CD-225D-4FCC-B911-EB09724CF370}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4E7A22CD-225D-4FCC-B911-EB09724CF370}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4E7A22CD-225D-4FCC-B911-EB09724CF370}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4E7A22CD-225D-4FCC-B911-EB09724CF370}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5F3BBBB9-FCB0-468B-93A4-8DCDC37D0238}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5F3BBBB9-FCB0-468B-93A4-8DCDC37D0238}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5F3BBBB9-FCB0-468B-93A4-8DCDC37D0238}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5F3BBBB9-FCB0-468B-93A4-8DCDC37D0238}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D465B352-C13F-4E44-AB96-E8C84A44EB09}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D465B352-C13F-4E44-AB96-E8C84A44EB09}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D465B352-C13F-4E44-AB96-E8C84A44EB09}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D465B352-C13F-4E44-AB96-E8C84A44EB09}.Release|Any CPU.Build.0 = Release|Any CPU
+		{50E69DAF-EAD4-44DA-8A28-3F9B65C37D46}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{50E69DAF-EAD4-44DA-8A28-3F9B65C37D46}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{50E69DAF-EAD4-44DA-8A28-3F9B65C37D46}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{50E69DAF-EAD4-44DA-8A28-3F9B65C37D46}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F92164F8-1003-435D-BE91-99C4A97CC8B3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F92164F8-1003-435D-BE91-99C4A97CC8B3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F92164F8-1003-435D-BE91-99C4A97CC8B3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F92164F8-1003-435D-BE91-99C4A97CC8B3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9B929881-6222-42C9-9164-CA7E83084255}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9B929881-6222-42C9-9164-CA7E83084255}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9B929881-6222-42C9-9164-CA7E83084255}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9B929881-6222-42C9-9164-CA7E83084255}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1CAF6B43-03FB-4C15-977D-BAD2B13BDB6D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1CAF6B43-03FB-4C15-977D-BAD2B13BDB6D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1CAF6B43-03FB-4C15-977D-BAD2B13BDB6D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1CAF6B43-03FB-4C15-977D-BAD2B13BDB6D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{182FE413-D931-45B1-A641-4E16117214CC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{182FE413-D931-45B1-A641-4E16117214CC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{182FE413-D931-45B1-A641-4E16117214CC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{182FE413-D931-45B1-A641-4E16117214CC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B4B16790-A279-4F9F-9018-5F0F585AA6E2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B4B16790-A279-4F9F-9018-5F0F585AA6E2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B4B16790-A279-4F9F-9018-5F0F585AA6E2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B4B16790-A279-4F9F-9018-5F0F585AA6E2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6AD48C15-BEE5-4F9A-80A3-AE14B0B3C78B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6AD48C15-BEE5-4F9A-80A3-AE14B0B3C78B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6AD48C15-BEE5-4F9A-80A3-AE14B0B3C78B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6AD48C15-BEE5-4F9A-80A3-AE14B0B3C78B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{831644DC-F6EE-442D-BCC0-B0DFE8186B8D} = {956683BF-86B6-4186-BDD2-784FEB884279}
+		{4E7A22CD-225D-4FCC-B911-EB09724CF370} = {956683BF-86B6-4186-BDD2-784FEB884279}
+		{5F3BBBB9-FCB0-468B-93A4-8DCDC37D0238} = {956683BF-86B6-4186-BDD2-784FEB884279}
+		{D465B352-C13F-4E44-AB96-E8C84A44EB09} = {956683BF-86B6-4186-BDD2-784FEB884279}
+		{50E69DAF-EAD4-44DA-8A28-3F9B65C37D46} = {956683BF-86B6-4186-BDD2-784FEB884279}
+		{F92164F8-1003-435D-BE91-99C4A97CC8B3} = {CE9DCE8A-F510-40FF-B2DE-13A2F000DD66}
+		{9B929881-6222-42C9-9164-CA7E83084255} = {CE9DCE8A-F510-40FF-B2DE-13A2F000DD66}
+		{1CAF6B43-03FB-4C15-977D-BAD2B13BDB6D} = {CE9DCE8A-F510-40FF-B2DE-13A2F000DD66}
+		{182FE413-D931-45B1-A641-4E16117214CC} = {956683BF-86B6-4186-BDD2-784FEB884279}
+		{B4B16790-A279-4F9F-9018-5F0F585AA6E2} = {CE9DCE8A-F510-40FF-B2DE-13A2F000DD66}
+		{6AD48C15-BEE5-4F9A-80A3-AE14B0B3C78B} = {CE9DCE8A-F510-40FF-B2DE-13A2F000DD66}
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,30 @@
+# 架构
+
+```mermaid
+flowchart LR
+  WPF["WPF UI / 托盘"] --> Core["Core 模型、偏好、回滚日志"]
+  WPF --> WA["WindowsAudio 专用 MTA 线程"]
+  WA --> COM["IMMDevice / IAudioSession* / IChannelAudioVolume"]
+  WA --> DEV["每 endpoint 一个 EndpointContext / IMMNotificationClient 防抖"]
+  WA --> COORD["ApplicationRouteCoordinator / generation / LWW"]
+  COORD --> ROUTE["AudioPolicyConfig 三 role 事务与读回"]
+  EXT["Chrome / Edge MV3"] --> OFF["真实 tabCapture offscreen Web Audio: Gain / Pan / Sink"]
+  AUTH["可见输出授权页 / 用户手势"] --> EXT
+  EXT <-->|"Native Messaging JSON"| HOST["Native Host"]
+  HOST <-->|"当前用户 Named Pipe"| BRIDGE["BrowserBridgeServer"]
+  BRIDGE --> WPF
+```
+
+`AudioSourceMixer.Core` 包含不可变模型、服务接口、配置、回滚日志、浏览器协议和 Named Pipe 服务。`WindowsAudio` 是唯一持有 Core Audio COM 对象的层；`Desktop` 只消费快照和服务接口。普通 Windows session 始终使用原生 0–100% 音量，不存在运行时 PCM 捕获/重放 helper。Chrome/Edge 只有在用户主动捕获标签页后才使用 0–200% Web Audio 图。
+
+## 路由一致性
+
+普通应用的持久 profile 仍按可执行文件稳定身份匹配；本次运行的路由事务再加入 PID 和进程启动时间，防止 PID 复用。所有 sibling session 共享同一 coordinator slot。请求 generation、取消令牌和单 slot gate 提供 last-write-wins；同目标请求幂等。策略写入后读取三个 role，并同时观察所有活动 endpoint。只有全部活动流在目标并稳定 750 ms 才进入 `Applied`，没有活动流或旧流不迁移则保留策略并进入 `PendingStreamRestart`。
+
+第一次修改会话或路由前，WindowsAudio 将原生音量、静音、声道值、三个持久 role 和安全进程身份写入 `rollback.json`。恢复校验 PID、路径和进程开始时间。恢复流程不会等待应用立刻迁移流，也不会因等待超时撤销已确认的策略。
+
+## 配置与浏览器
+
+`profiles.json` schemaVersion 2 增加来源类型。普通来源最大值为 1，浏览器来源最大值为 2。单项恢复删除对应 stable key；全部恢复在一个 guarded 流程中取消防抖/路由，恢复音频和浏览器图，清除配置及内存应用状态。“记住应用设置”关闭时采用“保留但忽略”语义。
+
+浏览器协议 2 传递 gain、balance/mute、Windows endpoint catalog 和 correlation ID。可见授权页保存 browser + Windows endpoint ID 到 browser deviceId/label/groupId 的映射；offscreen 只对实际捕获标签页的 `AudioContext` 调用 `setSinkId()` 并回读 `sinkId`。
