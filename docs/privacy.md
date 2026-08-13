@@ -1,12 +1,13 @@
-# 隐私说明
+# Audio Source Mixer 标签页增强隐私说明
 
-- 软件不把音频录制成文件、不持久化 PCM、不上传数据，不包含遥测或联网服务。
-- WindowsAudio 只读取 Core Audio 会话元数据、音量、静音、声道值和瞬时峰值。
-- 浏览器音频只在本地 offscreen Web Audio 图中流动。IPC 不传 PCM、频谱或网页正文，只传浏览器类型、tab ID、用户可见标题、origin、捕获状态、0–2 增益、静音、平衡、0–1 峰值、10 段 EQ 参数、用户选择的设备显示名称和输出状态。
-- origin 只保留 scheme/host/port；查询参数和页面路径不会写入配置或日志。
-- 扩展权限及用途见 README。没有 host permissions，也不读取 Cookie、历史、密码、表单或正文。
-- 输出选择使用扩展上下文中的 `enumerateDevices()` 与 `AudioContext.setSinkId()`；不把完整设备列表上传或写入遥测。映射保存 Windows endpoint ID/名称和 browser deviceId/label/groupId；日志只记录 browser ID 的截断哈希。
-- 普通 Windows 会话只调用 Core Audio 原生控制和应用路由策略，不捕获、复制或重新渲染目标进程 PCM；开发用 `ProcessLoopbackProbe` 不进入产品运行时或交付包。
-- 日志只记录版本/设备切换/会话生命周期/API 错误/恢复与桥接状态，默认单文件约 1 MiB 后滚动为一个备份。
-- 配置、回滚和日志位于 `%LocalAppData%\AudioSourceMixer`。主界面可清除偏好；完全清理可在退出后删除该目录。
-- Native Messaging 注册可运行 `scripts\unregister-native-host.ps1` 删除。
+最后更新：2026-08-14
+
+Audio Source Mixer 标签页增强不向开发者、广告平台或任何第三方服务器收集或传输个人数据、浏览记录、网页内容或音频。
+
+扩展只在用户点击工具栏图标后处理当前标签页音频。为在同一台电脑上的桌面混音器中显示和控制该来源，扩展会在本机处理标签页标题、站点来源（不含路径和查询参数）、音量、声道平衡、静音、均衡器、输出设备选择和实时电平。音频不会被录制、写入文件或上传。
+
+输出设备映射和首次使用完成状态保存在浏览器本地存储中；活动标签页的短期状态保存在浏览器会话存储中。扩展通过受限的 Native Messaging 连接把控制状态发送给同一台电脑上的 Audio Source Mixer，`allowed_origins` 仅列出明确配置的受信扩展 ID。
+
+扩展不使用 cookies、分析、遥测、广告或第三方服务，也不使用 `chrome.storage.sync`。用户可在浏览器输出设备管理页清除映射，或卸载扩展以删除扩展存储。
+
+如果以后数据实践发生变化，本说明会随版本更新。商店发布前将补充可公开访问的支持地址与隐私联系邮箱。

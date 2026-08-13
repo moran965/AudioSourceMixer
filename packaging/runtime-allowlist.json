@@ -3,6 +3,7 @@
   "runtimeFiles": [
     { "path": "AudioSourceMixer.exe", "purpose": "WPF desktop application and self-contained .NET runtime" },
     { "path": "AudioSourceMixer.NativeHost.exe", "purpose": "Chrome/Edge Native Messaging bridge" },
+    { "path": "browser-extension-origins.json", "purpose": "strict trusted extension ID configuration for Native Messaging" },
     { "path": "LICENSE", "purpose": "product license" },
     { "path": "THIRD_PARTY_NOTICES.md", "purpose": "third-party legal notices" },
     { "path": "BrowserExtension/assets/icon-16.png", "purpose": "16px extension action icon" },
@@ -12,6 +13,10 @@
     { "path": "BrowserExtension/manifest.json", "purpose": "Manifest V3 extension declaration" },
     { "path": "BrowserExtension/offscreen/offscreen.html", "purpose": "offscreen audio document" },
     { "path": "BrowserExtension/offscreen/offscreen.js", "purpose": "tab audio graph runtime" },
+    { "path": "BrowserExtension/onboarding/onboarding-policy.js", "purpose": "first-run onboarding state and migration policy" },
+    { "path": "BrowserExtension/onboarding/welcome.css", "purpose": "first-run welcome page styles" },
+    { "path": "BrowserExtension/onboarding/welcome.html", "purpose": "extension-owned first-run welcome page" },
+    { "path": "BrowserExtension/onboarding/welcome.js", "purpose": "first-run welcome interactions" },
     { "path": "BrowserExtension/output-authorization/authorization-controller.js", "purpose": "serialized output authorization transaction runtime" },
     { "path": "BrowserExtension/output-authorization/authorization-workflow.js", "purpose": "output authorization candidate and test tone" },
     { "path": "BrowserExtension/output-authorization/authorize.css", "purpose": "output authorization page styles" },

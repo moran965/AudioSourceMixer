@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Win32;
 using Forms = System.Windows.Forms;
 
@@ -11,13 +12,13 @@ internal static class Program
 {
     internal const string ProductId = "AudioSourceMixer";
     internal const string HostName = "com.audiosourcemixer.bridge";
-    internal const string ExtensionId = "edbfelppckjcfhadggldaifbleoofkio";
+    internal const string DevelopmentExtensionId = "edbfelppckjcfhadggldaifbleoofkio";
     internal const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     internal const string UninstallKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\AudioSourceMixer";
     internal static readonly string DefaultInstallDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "AudioSourceMixer");
     internal static readonly string ProductVersion = Assembly.GetExecutingAssembly()
-        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.2.1";
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.2.2";
     private static readonly string LogPath = Path.Combine(Path.GetTempPath(), "AudioSourceMixer-Installer.log");
 
     [STAThread]
@@ -51,7 +52,7 @@ internal static class Program
                 var startup = startupSpecified ? !Has(args, "--no-startup") : existingDirectory is not null && existingStartup;
                 var background = Has(args, "--startup-background") || (!startupSpecified && existingBackground);
                 return Install(new InstallOptions(target, Has(args, "--desktop-shortcut"), startup, background,
-                    Has(args, "--test-fail-after-backup")), showCompletion: false);
+                    Has(args, "--test-fail-after-backup"), Has(args, "--browser-setup")), showCompletion: false);
             }
 
             using var form = new InstallerForm(target, existingDirectory is not null && existingStartup, existingBackground);
@@ -105,6 +106,7 @@ internal static class Program
             if (previousMoved) Directory.Delete(backup, true);
             Log($"Install completed. Target={target}; Startup={options.StartWithWindows}; Background={options.StartInBackground}");
             if (showCompletion) Forms.MessageBox.Show($"安装/升级完成。\r\n位置：{target}", "Audio Source Mixer", Forms.MessageBoxButtons.OK, Forms.MessageBoxIcon.Information);
+            if (options.BrowserSetup) LaunchBrowserSetup(target);
             return 0;
         }
         catch
@@ -230,11 +232,41 @@ internal static class Program
     private static void RegisterNativeHost(string directory)
     {
         var manifestPath = Path.Combine(directory, "native-host-manifest.json");
+        var allowedOrigins = LoadTrustedExtensionOrigins(Path.Combine(directory, "browser-extension-origins.json"));
         File.WriteAllText(manifestPath, JsonSerializer.Serialize(new { name = HostName,
             description = "Audio Source Mixer browser bridge", path = Path.Combine(directory, "AudioSourceMixer.NativeHost.exe"),
-            type = "stdio", allowed_origins = new[] { $"chrome-extension://{ExtensionId}/" } }, new JsonSerializerOptions { WriteIndented = true }));
+            type = "stdio", allowed_origins = allowedOrigins }, new JsonSerializerOptions { WriteIndented = true }));
         SetDefaultValue($@"Software\Google\Chrome\NativeMessagingHosts\{HostName}", manifestPath);
         SetDefaultValue($@"Software\Microsoft\Edge\NativeMessagingHosts\{HostName}", manifestPath);
+    }
+
+    internal static string[] LoadTrustedExtensionOrigins(string configurationPath)
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(configurationPath));
+        var root = document.RootElement;
+        if (root.GetProperty("schemaVersion").GetInt32() != 1)
+            throw new InvalidDataException("不支持的浏览器扩展信任配置版本。");
+        var ids = new[] { "developmentExtensionId", "chromeStoreExtensionId", "edgeStoreExtensionId" }
+            .Select(name => root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+                ? value.GetString() : null)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Cast<string>()
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (ids.Length == 0 || ids.Any(id => !Regex.IsMatch(id, "^[a-p]{32}$", RegexOptions.CultureInvariant)))
+            throw new InvalidDataException("浏览器扩展信任配置包含缺失或无效的扩展 ID。");
+        if (!ids.Contains(DevelopmentExtensionId, StringComparer.Ordinal))
+            throw new InvalidDataException("浏览器扩展信任配置缺少当前开发版扩展 ID。");
+        return ids.Select(id => $"chrome-extension://{id}/").ToArray();
+    }
+
+    private static void LaunchBrowserSetup(string directory)
+    {
+        Process.Start(new ProcessStartInfo(Path.Combine(directory, "AudioSourceMixer.exe"), "--browser-setup")
+        {
+            UseShellExecute = true
+        });
+        Log("Browser enhancement setup was explicitly requested after installation.");
     }
 
     private static void UnregisterNativeHost()
@@ -343,7 +375,7 @@ internal static class Program
     private static void Log(string message, Exception? exception = null) { try { File.AppendAllText(LogPath, $"{DateTimeOffset.Now:O} {message}{Environment.NewLine}{exception}{Environment.NewLine}"); } catch { } }
 
     internal sealed record InstallOptions(string InstallDirectory, bool DesktopShortcut, bool StartWithWindows,
-        bool StartInBackground, bool TestFailAfterBackup = false);
+        bool StartInBackground, bool TestFailAfterBackup = false, bool BrowserSetup = false);
 
     private sealed class InstallerForm : Forms.Form
     {
@@ -351,17 +383,19 @@ internal static class Program
         private readonly Forms.CheckBox _desktop = new() { Text = "创建桌面快捷方式", Checked = true, AutoSize = true };
         private readonly Forms.CheckBox _startup = new() { Text = "登录 Windows 后启动 Audio Source Mixer", AutoSize = true };
         private readonly Forms.CheckBox _background = new() { Text = "启动后最小化到系统托盘", AutoSize = true, Checked = true };
-        private readonly Forms.ProgressBar _progress = new() { Left = 27, Top = 244, Width = 583, Height = 10, Style = Forms.ProgressBarStyle.Continuous };
-        private readonly Forms.Label _status = new() { Text = "准备安装", AutoSize = true, Left = 27, Top = 266 };
-        private readonly Forms.Button _install = new() { Text = "安装/升级", Left = 500, Top = 292, Width = 110, Height = 34 };
-        private readonly Forms.Button _cancel = new() { Text = "取消", DialogResult = Forms.DialogResult.Cancel, Left = 380, Top = 292, Width = 110, Height = 34 };
+        private readonly Forms.CheckBox _browserSetup = new() { Text = "安装完成后设置浏览器标签页增强（可选）", AutoSize = true };
+        private readonly Forms.ProgressBar _progress = new() { Left = 27, Top = 317, Width = 583, Height = 10, Style = Forms.ProgressBarStyle.Continuous };
+        private readonly Forms.Label _status = new() { Text = "准备安装", AutoSize = true, Left = 27, Top = 339 };
+        private readonly Forms.Button _install = new() { Text = "安装/升级", Left = 500, Top = 365, Width = 110, Height = 34 };
+        private readonly Forms.Button _cancel = new() { Text = "取消", DialogResult = Forms.DialogResult.Cancel, Left = 380, Top = 365, Width = 110, Height = 34 };
         private bool _finished;
-        public InstallOptions Options => new(NormalizeAndValidateInstallPath(_path.Text), _desktop.Checked, _startup.Checked, _background.Checked);
+        public InstallOptions Options => new(NormalizeAndValidateInstallPath(_path.Text), _desktop.Checked, _startup.Checked,
+            _background.Checked, BrowserSetup: _browserSetup.Checked);
         public int ResultCode { get; private set; } = 1;
 
         public InstallerForm(string initialPath, bool startup, bool background)
         {
-            Text = "安装 Audio Source Mixer"; Width = 650; Height = 390; StartPosition = Forms.FormStartPosition.CenterScreen;
+            Text = "安装 Audio Source Mixer"; Width = 650; Height = 465; StartPosition = Forms.FormStartPosition.CenterScreen;
             Icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? throw new InvalidOperationException("无法读取安装器图标。");
             FormBorderStyle = Forms.FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false;
             Controls.Add(new Forms.Label { Text = "Audio Source Mixer", Font = new System.Drawing.Font("Segoe UI", 18, System.Drawing.FontStyle.Bold), AutoSize = true, Left = 24, Top = 20 });
@@ -371,9 +405,16 @@ internal static class Program
             browse.Click += (_, _) => { using var dialog = new Forms.FolderBrowserDialog { SelectedPath = _path.Text, Description = "选择 Audio Source Mixer 安装目录" }; if (dialog.ShowDialog() == Forms.DialogResult.OK) _path.Text = dialog.SelectedPath; };
             _desktop.SetBounds(27, 145, 400, 24); _startup.SetBounds(27, 178, 400, 24); _startup.Checked = startup;
             _background.SetBounds(52, 209, 400, 24); _background.Checked = background; _background.Enabled = _startup.Checked;
+            _browserSetup.SetBounds(27, 244, 480, 24); _browserSetup.Checked = false;
+            var browserExplanation = new Forms.Label
+            {
+                Text = "分别控制 Chrome/Edge 标签页；需要你在浏览器确认加载。不录音、不上传网页或音频，不影响普通应用控制。",
+                AutoSize = false, Left = 52, Top = 271, Width = 545, Height = 38
+            };
             _startup.CheckedChanged += (_, _) => _background.Enabled = _startup.Checked;
             _install.Click += InstallClicked;
-            Controls.AddRange([_path, browse, _desktop, _startup, _background, _progress, _status, _install, _cancel]);
+            Controls.AddRange([_path, browse, _desktop, _startup, _background, _browserSetup, browserExplanation,
+                _progress, _status, _install, _cancel]);
             AcceptButton = _install; CancelButton = _cancel;
         }
 

@@ -35,6 +35,8 @@ function Assert-ExtensionRuntimeGraph([string] $PayloadDirectory) {
     $queue.Enqueue('manifest.json')
     $queue.Enqueue([string]$manifest.background.service_worker)
     $queue.Enqueue([string]$manifest.options_ui.page)
+    # Opened dynamically only after a fresh install or an unfinished first action.
+    $queue.Enqueue('onboarding/welcome.html')
     # The MV3 offscreen document is opened dynamically through chrome.offscreen.createDocument,
     # so it is a runtime root even though manifest.json cannot declare it.
     $queue.Enqueue('offscreen/offscreen.html')

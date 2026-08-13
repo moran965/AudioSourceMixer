@@ -19,9 +19,15 @@ import {
 } from '../output-authorization/mappings.js';
 import { shouldConnectNativeOnRecovery } from './lifecycle-policy.js';
 import { createEqualizerPreset } from '../shared/equalizer.js';
+import {
+  ONBOARDING_KEY,
+  installationPlan,
+  needsOnboarding
+} from '../onboarding/onboarding-policy.js';
 
 const OFFSCREEN_URL = 'offscreen/offscreen.html';
 const AUTHORIZATION_URL = 'output-authorization/authorize.html';
+const WELCOME_URL = 'onboarding/welcome.html';
 const NATIVE_RETRY_DELAY_MS = 5000;
 let nativePort = null;
 let nativeReady = null;
@@ -61,12 +67,21 @@ async function executeEventTask(name, action) {
   }
 }
 
-async function handleInstalled() {
-  await recoverRuntimeState('extension-installed');
+async function handleInstalled(details) {
+  const stored = await chrome.storage.local.get(ONBOARDING_KEY);
+  const plan = installationPlan(details, stored[ONBOARDING_KEY], chrome.runtime.getManifest().version);
+  await chrome.storage.local.set({ [ONBOARDING_KEY]: plan.state });
+  if (plan.openWelcome) await openWelcomePage();
+  await recoverRuntimeState(`extension-${details?.reason || 'unknown'}`);
 }
 
 async function toggleTab(tab) {
   if (!Number.isInteger(tab.id)) return;
+  const stored = await chrome.storage.local.get(ONBOARDING_KEY);
+  if (needsOnboarding(stored[ONBOARDING_KEY])) {
+    await openWelcomePage();
+    return;
+  }
   const browser = browserName();
   await withSourceLock(sourceId(browser, tab.id), async () => {
     const state = await getTabState(browser, tab.id);
@@ -74,6 +89,16 @@ async function toggleTab(tab) {
     if (state?.state === 'active') await stopTabCore(browser, tab.id, false, state);
     else await startTabCore(browser, tab);
   });
+}
+
+async function openWelcomePage() {
+  const url = chrome.runtime.getURL(WELCOME_URL);
+  const existing = await chrome.tabs.query({ url });
+  if (existing.length > 0) {
+    await chrome.tabs.update(existing[0].id, { active: true });
+    return;
+  }
+  await chrome.tabs.create({ url });
 }
 
 async function startTabCore(browser, tab) {
