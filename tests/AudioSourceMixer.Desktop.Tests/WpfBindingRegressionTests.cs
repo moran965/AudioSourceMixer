@@ -146,8 +146,11 @@ public sealed class WpfBindingRegressionTests
                 var twoWay = sourceBindings.Where(entry => entry.DeclaredMode == BindingMode.TwoWay).ToArray();
                 Assert.Equal(
                     [nameof(MainViewModel.AutoApplyProfiles), nameof(AudioSourceViewModel.BalancePercent), nameof(MainViewModel.CloseToTray),
-                     nameof(MainViewModel.RememberProfiles), nameof(MainViewModel.ShowInactiveSessions),
-                     nameof(MainViewModel.ShowOperationTips), nameof(MainViewModel.StartMinimizedToTray), nameof(MainViewModel.StartupEnabled),
+                     nameof(AudioSourceViewModel.EqualizerPreampDb), nameof(EqualizerBandViewModel.GainDb),
+                     nameof(AudioSourceViewModel.IsEqualizerEnabled), nameof(AudioSourceViewModel.IsEqualizerExpanded),
+                     nameof(MainViewModel.RememberProfiles), nameof(AudioSourceViewModel.SelectedEqualizerPresetId),
+                     nameof(MainViewModel.ShowInactiveSessions), nameof(MainViewModel.ShowOperationTips),
+                     nameof(MainViewModel.StartMinimizedToTray), nameof(MainViewModel.StartupEnabled),
                      nameof(AudioSourceViewModel.VolumePercent)],
                     twoWay.Select(entry => entry.SourceProperty).OrderBy(value => value).ToArray());
                 Assert.All(twoWay, entry => Assert.True(entry.HasPublicSetter));
@@ -164,7 +167,8 @@ public sealed class WpfBindingRegressionTests
                 await fakeAudio.WaitForControlsAsync(0.42f, -0.25f);
                 Assert.All(viewModel.Sources.Where(item => item.Snapshot.Kind == AudioSourceKind.WindowsSession),
                     item => Assert.Equal(100, item.VolumeMaximum));
-                var outputSelector = Assert.Single(Descendants(window).OfType<ComboBox>());
+                var outputSelector = Assert.Single(Descendants(window).OfType<ComboBox>()
+                    .Where(comboBox => System.Windows.Automation.AutomationProperties.GetName(comboBox) == "输出设备"));
                 outputSelector.Focus();
                 var stableDeviceCollection = viewModel.Sources.Single().OutputDevices;
                 for (var refresh = 0; refresh < 100; refresh++)
@@ -210,7 +214,9 @@ public sealed class WpfBindingRegressionTests
                 RoutingState = AudioRoutingState.Applied,
                 ProcessingMode = AudioProcessingMode.Advanced,
                 Capabilities = new AudioSourceCapabilities(true, true, true, 2, true, true, true,
-                    SupportsExtendedGain: true, SupportsOutputRouting: true, SupportsDeviceHotSwitch: true)
+                    SupportsExtendedGain: true, SupportsOutputRouting: true, SupportsDeviceHotSwitch: true,
+                    SupportsEqualizer: true),
+                Effects = EqualizerCatalog.CreatePreset("bass")
             };
             using (var browserViewModel = new AudioSourceViewModel(browserSnapshot, fakeAudio, bridge, profiles,
                        () => new ApplicationSettings(), logger, [OutputDeviceInfo.SystemDefault]))
@@ -224,6 +230,21 @@ public sealed class WpfBindingRegressionTests
                     new OutputDeviceInfo("usb-endpoint", "USB DAC", ChannelCount: 2, SampleRate: 48000)]);
                 Assert.True(browserViewModel.SelectedOutputDevice!.IsAvailable);
                 Assert.Equal("usb-endpoint", browserViewModel.SelectedOutputDevice.Id);
+                Assert.True(browserViewModel.SupportsEqualizer);
+                Assert.Equal("bass", browserViewModel.SelectedEqualizerPresetId);
+                browserViewModel.EqualizerBands[3].GainDb = 4;
+                Assert.Equal(EqualizerCatalog.CustomPresetId, browserViewModel.SelectedEqualizerPresetId);
+                Assert.Equal(4, browserViewModel.Effects.Bands[3].GainDb);
+                var preservedVolume = browserViewModel.VolumePercent;
+                var preservedBalance = browserViewModel.BalancePercent;
+                var preservedOutput = browserViewModel.SelectedOutputDeviceId;
+                browserViewModel.SelectedEqualizerPresetId = "vocal";
+                Assert.Equal(preservedVolume, browserViewModel.VolumePercent);
+                Assert.Equal(preservedBalance, browserViewModel.BalancePercent);
+                Assert.Equal(preservedOutput, browserViewModel.SelectedOutputDeviceId);
+                browserViewModel.ResetEqualizerCommand.Execute(null);
+                Assert.False(browserViewModel.Effects.Enabled);
+                Assert.All(browserViewModel.Effects.Bands, band => Assert.Equal(0, band.GainDb));
             }
 
             using (var windowsViewModel = new AudioSourceViewModel(source with
@@ -507,8 +528,9 @@ public sealed class WpfBindingRegressionTests
         var entries = new List<SourceBinding>();
         foreach (var element in document.Descendants())
         {
-            var sourceType = element.Ancestors().Any(ancestor => ancestor.Name.LocalName == "DataTemplate")
-                ? typeof(AudioSourceViewModel)
+            var templateDepth = element.Ancestors().Count(ancestor => ancestor.Name.LocalName == "DataTemplate");
+            var sourceType = templateDepth > 1 ? typeof(EqualizerBandViewModel)
+                : templateDepth == 1 ? typeof(AudioSourceViewModel)
                 : typeof(MainViewModel);
             foreach (var attribute in element.Attributes().Where(attribute => attribute.Value.StartsWith("{Binding", StringComparison.Ordinal)))
             {

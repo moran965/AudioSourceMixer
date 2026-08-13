@@ -43,6 +43,43 @@ public sealed class InstallerSafetyTests : IDisposable
         Assert.Contains("安装/升级完成", source);
     }
 
+    [Fact]
+    public void RuntimeAllowlistIsExplicitUniqueAndContainsOnlyReachableProductFiles()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(
+            Path.Combine(root, "packaging", "runtime-allowlist.json")));
+        var runtime = document.RootElement.GetProperty("runtimeFiles").EnumerateArray()
+            .Select(item => item.GetProperty("path").GetString()!).ToArray();
+        var portableOnly = document.RootElement.GetProperty("portableOnlyFiles").EnumerateArray()
+            .Select(item => item.GetProperty("path").GetString()!).ToArray();
+        var generated = document.RootElement.GetProperty("installerGeneratedFiles").EnumerateArray()
+            .Select(item => item.GetProperty("path").GetString()!).ToArray();
+        var all = runtime.Concat(portableOnly).Concat(generated).ToArray();
+
+        Assert.Equal(all.Length, all.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.All(all, path =>
+        {
+            Assert.DoesNotContain('\\', path);
+            Assert.DoesNotContain("..", path);
+            Assert.DoesNotMatch(@"(^|/)(docs|tests|tools|diagnostics)(/|$)", path);
+            Assert.DoesNotMatch(@"\.(pdb|cs|csproj|sln|map)$", path);
+        });
+        Assert.Contains("BrowserExtension/shared/equalizer.js", runtime);
+        Assert.DoesNotContain(runtime, path => path.EndsWith("package.json", StringComparison.OrdinalIgnoreCase));
+
+        foreach (var path in runtime.Where(path => path.StartsWith("BrowserExtension/", StringComparison.Ordinal)))
+            Assert.True(File.Exists(Path.Combine(root, "src", "AudioSourceMixer.BrowserExtension",
+                path["BrowserExtension/".Length..].Replace('/', Path.DirectorySeparatorChar))), path);
+
+        var portableScript = File.ReadAllText(Path.Combine(root, "scripts", "package-portable.ps1"));
+        var installerScript = File.ReadAllText(Path.Combine(root, "scripts", "package-installer.ps1"));
+        Assert.Contains("Assert-RuntimePayload $portable 'Portable'", portableScript);
+        Assert.DoesNotContain("Copy-Item -LiteralPath '.\\docs'", portableScript);
+        Assert.Contains("Get-ExpectedPayloadPaths 'InstallerPayload'", installerScript);
+        Assert.Contains("Assert-RuntimePayload $payloadDirectory 'InstallerPayload'", installerScript);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_root)) Directory.Delete(_root, true);

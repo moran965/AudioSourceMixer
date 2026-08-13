@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using AudioSourceMixer.Core.Browser;
+using AudioSourceMixer.Core.Models;
 
 namespace AudioSourceMixer.Core.Tests;
 
@@ -22,7 +23,7 @@ public sealed class BrowserProtocolTests
     }
 
     [Theory]
-    [InlineData("""{"protocolVersion":3,"type":"bridge.hello"}""")]
+    [InlineData("""{"protocolVersion":4,"type":"bridge.hello"}""")]
     [InlineData("""{"protocolVersion":1,"type":"unknown"}""")]
     [InlineData("""{"protocolVersion":1,"type":"tab.setAudio","volume":2}""")]
     [InlineData("""{"protocolVersion":1,"type":"tab.setAudio","volume":0.5}""")]
@@ -38,6 +39,26 @@ public sealed class BrowserProtocolTests
         var message = BrowserProtocol.Parse(Encoding.UTF8.GetBytes(json));
         Assert.Equal(2, message.Volume);
         Assert.Equal("endpoint", message.OutputDeviceId);
+    }
+
+    [Fact]
+    public void Version3CarriesValidatedEqualizerWhileVersion2RemainsCompatibleWithoutIt()
+    {
+        var equalizer = EqualizerCatalog.CreatePreset("vocal");
+        var payload = BrowserProtocol.Serialize(new BrowserMessage
+        {
+            ProtocolVersion = 3, Type = "tab.setAudio", Browser = "chrome", TabId = 7,
+            Volume = 1.5f, Equalizer = equalizer
+        });
+        var parsed = BrowserProtocol.Parse(payload);
+        Assert.Equal("vocal", parsed.Equalizer!.PresetId);
+        Assert.Equal(10, parsed.Equalizer.Bands.Count);
+
+        var legacy = BrowserProtocol.Parse(Encoding.UTF8.GetBytes(
+            """{"protocolVersion":2,"type":"tab.setAudio","browser":"chrome","tabId":7,"volume":1.5}"""));
+        Assert.Null(legacy.Equalizer);
+        Assert.Throws<InvalidDataException>(() => BrowserProtocol.Parse(Encoding.UTF8.GetBytes(
+            """{"protocolVersion":2,"type":"tab.setAudio","browser":"chrome","tabId":7,"equalizer":{"enabled":false,"presetId":"off","preampDb":0,"bands":[]}}""")));
     }
 
     [Fact]

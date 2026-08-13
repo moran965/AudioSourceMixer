@@ -1,6 +1,7 @@
 using System.IO.Pipes;
 using System.Text;
 using AudioSourceMixer.Core.Browser;
+using AudioSourceMixer.Core.Models;
 
 namespace AudioSourceMixer.Core.Tests;
 
@@ -61,6 +62,7 @@ public sealed class BrowserBridgeServerTests
         Assert.Equal(1.5f, command.Volume);
         Assert.Equal("windows-endpoint", command.OutputDeviceId);
         Assert.Equal("USB DAC", command.OutputDeviceName);
+        Assert.Null(command.Equalizer);
         Assert.False(string.IsNullOrWhiteSpace(command.CorrelationId));
         var endpoint = Assert.Single(command.OutputDevices!);
         Assert.Equal("windows-endpoint", endpoint.EndpointId);
@@ -76,6 +78,36 @@ public sealed class BrowserBridgeServerTests
         Assert.Equal("browser-usb", tab.EffectiveBrowserSinkId);
         Assert.Equal("browser-usb", tab.EffectiveOutputDeviceId);
         Assert.Equal(command.CorrelationId, tab.CorrelationId);
+    }
+
+    [Fact]
+    public async Task Protocol3SendsEqualizerWithoutChangingAudioOrRouteFields()
+    {
+        var pipeName = TestPipeName();
+        await using var server = new BrowserBridgeServer(pipeName);
+        server.Start();
+        await using var client = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        await client.ConnectAsync(5000);
+        await using var writer = new StreamWriter(client, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true };
+        using var reader = new StreamReader(client, Encoding.UTF8, leaveOpen: true);
+        await writer.WriteLineAsync("""{"protocolVersion":3,"type":"tab.register","browser":"chrome","tabId":21,"title":"EQ","generation":5} """);
+        await WaitUntilAsync(() => server.GetTabs().Count == 1);
+
+        var source = AudioSourceId.ForBrowserTab("chrome", 21);
+        var pending = server.SetAudioAsync(source, 1.25f, 0.4f, true, "endpoint", "Headphones",
+            effects: EqualizerCatalog.CreatePreset("warm"));
+        var command = BrowserProtocol.Parse(Encoding.UTF8.GetBytes(
+            (await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5)))!));
+        Assert.Equal(1.25f, command.Volume);
+        Assert.Equal(0.4f, command.Balance);
+        Assert.True(command.Muted);
+        Assert.Equal("endpoint", command.OutputDeviceId);
+        Assert.Equal("warm", command.Equalizer!.PresetId);
+        Assert.Equal([3f, 3f, 2f, 1f, 1f, 0f, -1f, -1f, -2f, -2f],
+            command.Equalizer.Bands.Select(band => band.GainDb).ToArray());
+        await writer.WriteLineAsync($$"""{"protocolVersion":3,"type":"tab.update","browser":"chrome","tabId":21,"routingState":"Applied","correlationId":"{{command.CorrelationId}}","generation":{{command.Generation}},"equalizer":{{System.Text.Json.JsonSerializer.Serialize(command.Equalizer, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))}}} """);
+        await pending;
+        Assert.Equal("warm", Assert.Single(server.GetTabs()).Effects!.PresetId);
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createEqualizerPreset } from '../../src/AudioSourceMixer.BrowserExtension/shared/equalizer.js';
 
 test('offscreen graph applies 200 percent gain, verifies the effective sink, never silently falls back, and closes', async () => {
   const original = {
@@ -25,6 +26,10 @@ test('offscreen graph applies 200 percent gain, verifies the effective sink, nev
     connect() { return this; }
     disconnect() { this.disconnected = true; }
   }
+  class FakeParam {
+    constructor(value = 0) { this.value = value; this.targets = []; }
+    setTargetAtTime(value, time, constant) { this.value = value; this.targets.push({ value, time, constant }); }
+  }
   class FakeAudioContext {
     constructor() {
       activeContext = this;
@@ -32,12 +37,19 @@ test('offscreen graph applies 200 percent gain, verifies the effective sink, nev
       this.currentTime = 0;
       this.sinkId = '';
       this.destination = new FakeNode();
-      this.gain = { value: 1, setTargetAtTime: (value) => { this.gain.value = value; } };
-      this.pan = { value: 0, setTargetAtTime: (value) => { this.pan.value = value; } };
+      this.gainNodes = [];
+      this.filters = [];
+      this.pan = new FakeParam();
     }
     async resume() {}
     createMediaStreamSource() { return new FakeNode(); }
-    createGain() { const node = new FakeNode(); node.gain = this.gain; return node; }
+    createGain() { const node = new FakeNode(); node.gain = new FakeParam(1); this.gainNodes.push(node); return node; }
+    createBiquadFilter() {
+      const node = new FakeNode();
+      node.frequency = new FakeParam(); node.Q = new FakeParam(); node.gain = new FakeParam();
+      this.filters.push(node);
+      return node;
+    }
     createStereoPanner() { const node = new FakeNode(); node.pan = this.pan; return node; }
     createAnalyser() {
       const node = new FakeNode();
@@ -73,13 +85,19 @@ test('offscreen graph applies 200 percent gain, verifies the effective sink, nev
     assert.equal(typeof runtimeListener, 'function');
     const started = await runtimeListener({ type: 'audio.start', tabId: 7, streamId: 'stream' });
     assert.equal(started.ok, true);
+    const firstContext = activeContext;
+    assert.equal(firstContext.filters.length, 10);
+    assert.equal(firstContext.gainNodes.length, 2);
+    const bass = createEqualizerPreset('bass');
     const updated = await runtimeListener({ type: 'audio.update', browser: 'chrome', tabId: 7, generation: 10, volume: 2, balance: -0.5,
       muted: false, outputDeviceId: 'windows-usb', outputDeviceName: 'Windows USB Name', correlationId: 'corr-applied',
-      browserOutputDeviceId: 'browser-usb', browserOutputDeviceLabel: 'USB DAC', browserGroupId: 'usb-group' });
+      browserOutputDeviceId: 'browser-usb', browserOutputDeviceLabel: 'USB DAC', browserGroupId: 'usb-group', equalizer: bass });
     assert.equal(updated.ok, true);
-    assert.equal(activeContext.gain.value, 2);
-    assert.equal(activeContext.pan.value, -0.5);
-    assert.equal(activeContext.sinkId, 'browser-usb');
+    assert.equal(firstContext.gainNodes[1].gain.value, 2);
+    assert.equal(firstContext.pan.value, -0.5);
+    assert.equal(firstContext.sinkId, 'browser-usb');
+    assert.deepEqual(firstContext.filters.map((filter) => filter.gain.value), bass.bands.map((band) => band.gainDb));
+    assert.ok(Math.abs(firstContext.gainNodes[0].gain.value - 0.501187) < 0.000001);
     assert.equal(updated.routingState, 'Applied');
     assert.equal(updated.effectiveSinkId, 'browser-usb');
     assert.equal(updated.browserDeviceId, 'browser-usb');
@@ -93,16 +111,19 @@ test('offscreen graph applies 200 percent gain, verifies the effective sink, nev
     assert.equal(virtualMapping.routingState, 'Applied');
     assert.equal(virtualMapping.effectiveSinkId, 'browser-usb');
     assert.equal(virtualMapping.mappingRebound.matchKind, 'groupId+label');
+    assert.deepEqual(virtualMapping.equalizer.bands.map((band) => band.gainDb), bass.bands.map((band) => band.gainDb));
 
     const stale = await runtimeListener({ type: 'audio.update', browser: 'chrome', tabId: 7, generation: 9,
-      volume: 0.25, balance: 0, muted: false, outputDeviceId: 'windows-usb', outputDeviceName: 'USB DAC' });
+      volume: 0.25, balance: 0, muted: false, outputDeviceId: 'windows-usb', outputDeviceName: 'USB DAC',
+      equalizer: createEqualizerPreset('treble') });
     assert.equal(stale.staleIgnored, true);
-    assert.equal(activeContext.gain.value, 2);
+    assert.equal(firstContext.gainNodes[1].gain.value, 2);
+    assert.deepEqual(firstContext.filters.map((filter) => filter.gain.value), bass.bands.map((band) => band.gainDb));
 
     devices = [{ kind: 'audiooutput', deviceId: 'default', label: 'Default - Speakers' }];
     deviceChangeListener();
     await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(activeContext.sinkId, 'browser-usb');
+    assert.equal(firstContext.sinkId, 'browser-usb');
     assert.ok(runtimeMessages.some((message) => message.type === 'offscreen.outputChanged' &&
       message.routingState === 'PendingAuthorization' && message.effectiveSinkId === 'browser-usb'));
 
@@ -110,7 +131,7 @@ test('offscreen graph applies 200 percent gain, verifies the effective sink, nev
     deviceChangeListener();
     await new Promise((resolve) => setImmediate(resolve));
     await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(activeContext.sinkId, 'browser-usb-rebound');
+    assert.equal(firstContext.sinkId, 'browser-usb-rebound');
     assert.ok(runtimeMessages.some((message) => message.type === 'offscreen.outputChanged' &&
       message.routingState === 'Applied' && message.mappingRebound?.matchKind === 'groupId+label'));
 
@@ -135,10 +156,29 @@ test('offscreen graph applies 200 percent gain, verifies the effective sink, nev
     assert.deepEqual(afterIndependentStop.graphs.map((graph) => `${graph.browser}:${graph.tabId}`), ['chrome:7']);
     assert.equal(contexts[0].closed, undefined);
 
+    const disabled = await runtimeListener({ type: 'audio.update', browser: 'chrome', tabId: 7, generation: 13,
+      volume: 2, balance: 0, muted: false, outputDeviceId: '', equalizer: createEqualizerPreset('off') });
+    assert.equal(disabled.equalizer.enabled, false);
+    assert.ok(firstContext.filters.every((filter) => filter.gain.value === 0));
+    assert.equal(firstContext.gainNodes[0].gain.value, 1);
+
+    const rapidOne = createEqualizerPreset('flat');
+    rapidOne.presetId = 'custom'; rapidOne.bands[0].gainDb = 2;
+    const rapidTwo = createEqualizerPreset('flat');
+    rapidTwo.presetId = 'custom'; rapidTwo.bands[0].gainDb = 7;
+    await runtimeListener({ type: 'audio.update', browser: 'chrome', tabId: 7, generation: 14,
+      volume: 2, balance: 0, muted: false, outputDeviceId: '', equalizer: rapidOne });
+    const rapidFinal = await runtimeListener({ type: 'audio.update', browser: 'chrome', tabId: 7, generation: 15,
+      volume: 2, balance: 0, muted: false, outputDeviceId: '', equalizer: rapidTwo });
+    assert.equal(rapidFinal.equalizer.bands[0].gainDb, 7);
+    assert.equal(firstContext.filters[0].gain.value, 7);
+
     const stopped = await runtimeListener({ type: 'audio.stop', browser: 'chrome', tabId: 7 });
     assert.equal(stopped.ok, true);
     assert.equal(track.stopCalled, true);
     assert.equal(contexts[0].closed, true);
+    assert.ok(firstContext.filters.every((filter) => filter.disconnected));
+    assert.ok(firstContext.gainNodes.every((node) => node.disconnected));
   } finally {
     globalThis.chrome = original.chrome;
     if (original.navigator === undefined) delete globalThis.navigator;

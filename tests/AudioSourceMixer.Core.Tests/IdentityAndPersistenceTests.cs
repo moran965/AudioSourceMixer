@@ -71,7 +71,7 @@ public sealed class IdentityAndPersistenceTests : IDisposable
         Assert.Equal(0.75f, loaded["stable"].Volume);
         Assert.Equal(75f, loaded["stable"].Volume * 100f);
         var migrated = await File.ReadAllTextAsync(Path.Combine(_directory, "profiles.json"));
-        Assert.Contains("\"schemaVersion\": 2", migrated);
+        Assert.Contains("\"schemaVersion\": 3", migrated);
         Assert.Contains("\"profiles\"", migrated);
     }
 
@@ -86,7 +86,7 @@ public sealed class IdentityAndPersistenceTests : IDisposable
         var loaded = await new JsonAudioProfileStore(_directory).LoadAsync();
 
         Assert.Equal(0.75f, loaded["stable"].Volume);
-        Assert.Contains("\"schemaVersion\": 2", await File.ReadAllTextAsync(Path.Combine(_directory, "profiles.json")));
+        Assert.Contains("\"schemaVersion\": 3", await File.ReadAllTextAsync(Path.Combine(_directory, "profiles.json")));
     }
 
     [Fact]
@@ -99,6 +99,19 @@ public sealed class IdentityAndPersistenceTests : IDisposable
         Assert.Equal(1.5f, loaded.Volume);
         Assert.Equal("endpoint", loaded.OutputDeviceId);
         Assert.Equal("USB DAC", loaded.OutputDeviceName);
+        Assert.False(loaded.Effects!.Enabled);
+    }
+
+    [Fact]
+    public async Task V2BrowserProfileMigratesToSchema3WithEqualizerOff()
+    {
+        Directory.CreateDirectory(_directory);
+        await File.WriteAllTextAsync(Path.Combine(_directory, "profiles.json"),
+            """{"schemaVersion":2,"profiles":{"browser":{"stableKey":"browser","volume":1.25,"balance":0,"muted":false,"sourceKind":1}}}""");
+        var loaded = (await new JsonAudioProfileStore(_directory).LoadAsync())["browser"];
+        Assert.False(loaded.Effects!.Enabled);
+        Assert.All(loaded.Effects.Bands, band => Assert.Equal(0, band.GainDb));
+        Assert.Contains("\"schemaVersion\": 3", await File.ReadAllTextAsync(Path.Combine(_directory, "profiles.json")));
     }
 
     [Fact]

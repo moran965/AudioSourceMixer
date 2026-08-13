@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { browserName, clamp, matchOutputDevice, normalizeDeviceLabel, sanitizeOrigin, sourceId, validateAudioCommand } from '../../src/AudioSourceMixer.BrowserExtension/shared/protocol.js';
+import { createEqualizerPreset } from '../../src/AudioSourceMixer.BrowserExtension/shared/equalizer.js';
 import {
   clearBrowserOutputMappings, confirmOutputMapping, findOutputMapping, mappingIsVisible, migrateOutputMappingStore,
   outputMappingKey, outputMappings, removeOutputMapping, saveOutputMapping,
@@ -39,13 +40,14 @@ test('Edge user agent is detected', () => {
 });
 
 test('native audio command carries endpoint catalog and correlation ID', () => {
-  assert.deepEqual(validateAudioCommand({ protocolVersion: 2, type: 'tab.setAudio', volume: 1.5, balance: -1, muted: true,
+  const equalizer = createEqualizerPreset('bass');
+  assert.deepEqual(validateAudioCommand({ protocolVersion: 3, type: 'tab.setAudio', volume: 1.5, balance: -1, muted: true,
     outputDeviceId: 'windows-endpoint', outputDeviceName: 'USB DAC', correlationId: 'corr-1',
-    outputDevices: [{ endpointId: 'windows-endpoint', friendlyName: 'USB DAC' }] }),
+    outputDevices: [{ endpointId: 'windows-endpoint', friendlyName: 'USB DAC' }], equalizer }),
   { volume: 1.5, balance: -1, muted: true, outputDeviceId: 'windows-endpoint', outputDeviceName: 'USB DAC',
     outputDevices: [{ endpointId: 'windows-endpoint', friendlyName: 'USB DAC' }], correlationId: 'corr-1',
-    generation: 0, requestSource: 'ProfileRestore', forceAuthorization: false });
-  assert.throws(() => validateAudioCommand({ protocolVersion: 1, type: 'tab.setAudio' }));
+    generation: 0, requestSource: 'ProfileRestore', forceAuthorization: false, equalizer });
+  assert.throws(() => validateAudioCommand({ protocolVersion: 2, type: 'tab.setAudio' }));
 });
 
 test('name matching remains a controlled compatibility helper only', () => {
