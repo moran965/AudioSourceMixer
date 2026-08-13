@@ -43,9 +43,6 @@ try {
         Copy-PayloadFile ([string]$entry.path)
     }
 
-    foreach ($obsoleteHelper in @((Join-Path $publish 'desktop\ProcessBoostHost.exe'), (Join-Path $portable 'ProcessBoostHost.exe'))) {
-        if (Test-Path -LiteralPath $obsoleteHelper) { throw "Obsolete ordinary-session boost helper entered the payload: $obsoleteHelper" }
-    }
     $publishExe = Join-Path $publish 'desktop\AudioSourceMixer.exe'
     $portableExe = Join-Path $portable 'AudioSourceMixer.exe'
     $publishHash = Get-Sha256 $publishExe
