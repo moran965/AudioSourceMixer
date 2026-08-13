@@ -13,22 +13,29 @@ const extensionDirectory = resolve(extensionArgument);
 const extensionId = 'edbfelppckjcfhadggldaifbleoofkio';
 const profileDirectory = await mkdtemp(join(tmpdir(), `AudioSourceMixer-${expectedBrowser}-`));
 const devToolsPortFile = join(profileDirectory, 'DevToolsActivePort');
-const extensionPage = `chrome-extension://${extensionId}/diagnostics/runtime-probe.html`;
+const extensionPage = `chrome-extension://${extensionId}/onboarding/welcome.html`;
+const expectedVersion = JSON.parse(await readFile(join(extensionDirectory, 'manifest.json'), 'utf8')).version;
 let browser;
+let browserClient;
 
 try {
   browser = spawn(executable, [
     `--user-data-dir=${profileDirectory}`,
     '--remote-debugging-port=0',
+    '--enable-unsafe-extension-debugging',
     '--no-first-run',
     '--no-default-browser-check',
     '--disable-component-update',
-    `--disable-extensions-except=${extensionDirectory}`,
-    `--load-extension=${extensionDirectory}`,
-    extensionPage
+    'about:blank'
   ], { windowsHide: true, stdio: 'ignore' });
 
   const port = await waitForPort(devToolsPortFile);
+  const versionTarget = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
+  browserClient = await connectCdp(versionTarget.webSocketDebuggerUrl);
+  const loaded = await browserClient.send('Extensions.loadUnpacked', { path: extensionDirectory });
+  if (loaded.result?.id !== extensionId)
+    throw new Error(`CDP loaded unexpected extension ID ${loaded.result?.id || 'none'}; expected ${extensionId}.`);
+  await browserClient.send('Target.createTarget', { url: extensionPage });
   const targets = await waitForTargets(port);
   const page = targets.find((target) => target.type === 'page' && target.url.startsWith(`chrome-extension://${extensionId}/`));
   if (!page) throw new Error(`The ${expectedBrowser} runtime did not load the fixed-ID extension page.`);
@@ -68,7 +75,7 @@ try {
         port.postMessage({ protocolVersion: 2, type: 'bridge.hello' });
       }))()`);
     const result = { ...pageDetails, nativeMessage };
-    if (result.manifestVersion !== '0.2.1' || result.manifestV3 !== 3) throw new Error(`Unexpected extension manifest: ${JSON.stringify(result)}`);
+    if (result.manifestVersion !== expectedVersion || result.manifestV3 !== 3) throw new Error(`Unexpected extension manifest: ${JSON.stringify(result)}`);
     if (mode !== 'idle' && (result.nativeMessage?.type !== 'bridge.status' || result.nativeMessage?.protocolVersion !== 2 || result.nativeMessage?.error)) {
       throw new Error(`Native Messaging handshake failed: ${JSON.stringify(result.nativeMessage)}`);
     }
@@ -77,13 +84,16 @@ try {
     console.log(JSON.stringify({ browser: expectedBrowser, ...result }, null, 2));
   } finally {
     workerClient?.close();
-    try { await client.send('Browser.close'); } catch { /* Process cleanup below is the fallback. */ }
     client.close();
+    try { await browserClient.send('Browser.close'); } catch { /* Process cleanup below is the fallback. */ }
+    browserClient.close();
+    browserClient = null;
   }
 
   await waitForExit(browser, 10000);
 } finally {
   if (browser && browser.exitCode === null) browser.kill();
+  browserClient?.close();
   await rm(profileDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
 

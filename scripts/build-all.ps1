@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 
 $root = Get-RepositoryRoot
 $artifacts = Join-Path $root 'artifacts'
-$baseline = Join-Path $artifacts 'AudioSourceMixer-0.2.0-win-x64-setup.exe'
+$baseline = Join-Path $artifacts 'AudioSourceMixer-0.2.1-win-x64-setup.exe'
 
 Push-Location $root
 try {
@@ -17,5 +17,7 @@ try {
         & (Join-Path $PSScriptRoot 'verify-installer.ps1')
     }
     if ($LASTEXITCODE -ne 0) { throw "Installer verification failed with exit code $LASTEXITCODE." }
+    & (Join-Path $PSScriptRoot 'verify-browser-runtime.ps1') -Browser Both
+    if ($LASTEXITCODE -ne 0) { throw "Packaged Chrome/Edge runtime verification failed with exit code $LASTEXITCODE." }
     Write-Output "All v$(Get-ProductVersion) deliverables are under $artifacts."
 } finally { Pop-Location }

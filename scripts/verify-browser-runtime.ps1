@@ -16,18 +16,43 @@ $dataDirectory = Join-Path $env:LOCALAPPDATA 'AudioSourceMixer'
 $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) "AudioSourceMixer-browser-runtime-$PID-$([Guid]::NewGuid().ToString('N'))"
 $dataBackup = Join-Path $temporaryRoot 'user-data'
 $dataExisted = Test-Path -LiteralPath $dataDirectory
+$nativeHostKeys = @(
+    'HKCU:\Software\Google\Chrome\NativeMessagingHosts\com.audiosourcemixer.bridge',
+    'HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\com.audiosourcemixer.bridge'
+)
+$nativeHostBackup = @{}
 $desktopProcess = $null
+
+function Get-Inventory([string] $Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return @() }
+    $prefix = [IO.Path]::GetFullPath($Path).TrimEnd('\') + '\'
+    return @(Get-ChildItem -LiteralPath $Path -File -Recurse | ForEach-Object {
+        "$($_.FullName.Substring($prefix.Length))|$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)"
+    } | Sort-Object)
+}
 
 foreach ($required in @($desktop,$extension,$register,$unregister,$chrome,$edge)) {
     if (-not (Test-Path -LiteralPath $required)) { throw "Browser runtime verification input is missing: $required" }
 }
 
 New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
-if ($dataExisted) { Copy-Item -LiteralPath $dataDirectory -Destination $dataBackup -Recurse -Force }
+$dataInventory = @(Get-Inventory $dataDirectory)
+if ($dataExisted) {
+    Copy-Item -LiteralPath $dataDirectory -Destination $dataBackup -Recurse -Force
+    if (@(Compare-Object $dataInventory (Get-Inventory $dataBackup)).Count -ne 0) {
+        throw 'Could not verify the user-data backup before browser runtime isolation.'
+    }
+    Remove-Item -LiteralPath $dataDirectory -Recurse -Force
+}
+foreach ($key in $nativeHostKeys) {
+    $nativeHostBackup[$key] = if (Test-Path -LiteralPath $key) {
+        [ordered]@{ Exists = $true; Value = [string](Get-Item -LiteralPath $key).GetValue('') }
+    } else { [ordered]@{ Exists = $false; Value = $null } }
+}
 
 try {
     New-Item -ItemType Directory -Path $dataDirectory -Force | Out-Null
-    $settings = '{"CloseToTray":false,"AutoApplyProfiles":true,"RememberProfiles":true,"ShowInactiveSessions":true}'
+    $settings = '{"CloseToTray":false,"AutoApplyProfiles":true,"RememberProfiles":true,"ShowInactiveSessions":true,"BrowserOnboardingChoice":"runtime-test","OnboardingCompletedVersion":"0.2.2","BrowserGuideDismissed":true,"SchemaVersion":4}'
     [System.IO.File]::WriteAllText((Join-Path $dataDirectory 'settings.json'), $settings, [System.Text.UTF8Encoding]::new($false))
 
     & $register
@@ -44,10 +69,14 @@ try {
     if ($Browser -in @('Both','Chrome')) {
         & node (Join-Path $PSScriptRoot 'verify-browser-runtime.mjs') $chrome $extension 'chrome'
         if ($LASTEXITCODE -ne 0) { throw "Chrome runtime verification failed with exit code $LASTEXITCODE." }
+        & node (Join-Path $PSScriptRoot 'verify-browser-authorization-runtime.mjs') $chrome $extension 'chrome'
+        if ($LASTEXITCODE -ne 0) { throw "Chrome authorization runtime verification failed with exit code $LASTEXITCODE." }
     }
     if ($Browser -in @('Both','Edge')) {
         & node (Join-Path $PSScriptRoot 'verify-browser-runtime.mjs') $edge $extension 'edge'
         if ($LASTEXITCODE -ne 0) { throw "Edge runtime verification failed with exit code $LASTEXITCODE." }
+        & node (Join-Path $PSScriptRoot 'verify-browser-authorization-runtime.mjs') $edge $extension 'edge'
+        if ($LASTEXITCODE -ne 0) { throw "Edge authorization runtime verification failed with exit code $LASTEXITCODE." }
     }
 
     if (-not $desktopProcess.CloseMainWindow()) { throw 'Could not close portable desktop normally after browser testing.' }
@@ -69,8 +98,18 @@ finally {
         }
     }
     try { & $unregister } catch { Write-Warning "Could not unregister the temporary portable Native Host: $_" }
+    foreach ($key in $nativeHostKeys) {
+        $saved = $nativeHostBackup[$key]
+        if ($saved.Exists) {
+            New-Item -Path $key -Force | Out-Null
+            (Get-Item -LiteralPath $key).SetValue('', [string]$saved.Value)
+        }
+    }
     if (Test-Path -LiteralPath $generatedManifest) { Remove-Item -LiteralPath $generatedManifest -Force }
     if (Test-Path -LiteralPath $dataDirectory) { Remove-Item -LiteralPath $dataDirectory -Recurse -Force }
     if ($dataExisted) { Copy-Item -LiteralPath $dataBackup -Destination $dataDirectory -Recurse -Force }
+    if (@(Compare-Object $dataInventory (Get-Inventory $dataDirectory)).Count -ne 0) {
+        throw 'User data was not restored byte-for-byte after browser runtime verification.'
+    }
     if (Test-Path -LiteralPath $temporaryRoot) { Remove-Item -LiteralPath $temporaryRoot -Recurse -Force }
 }

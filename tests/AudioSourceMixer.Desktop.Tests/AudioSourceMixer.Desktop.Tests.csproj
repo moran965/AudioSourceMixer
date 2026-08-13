@@ -19,5 +19,14 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\src\AudioSourceMixer.Desktop\MainWindow.xaml" Link="MainWindow.source.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\AudioSourceMixer.Desktop\Views\MixerView.xaml" Link="SourceXaml\MixerView.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\AudioSourceMixer.Desktop\Views\SettingsView.xaml" Link="SourceXaml\SettingsView.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\AudioSourceMixer.Desktop\Views\BrowserSetupView.xaml" Link="SourceXaml\BrowserSetupView.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\AudioSourceMixer.Desktop\Controls\AudioSourceCard.xaml" Link="SourceXaml\AudioSourceCard.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\AudioSourceMixer.Desktop\Controls\EqualizerPanel.xaml" Link="SourceXaml\EqualizerPanel.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\AudioSourceMixer.Desktop\App.xaml" Link="SourceXaml\App.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\AudioSourceMixer.Desktop\Themes\Colors.xaml" Link="SourceXaml\Themes\Colors.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\AudioSourceMixer.Desktop\Themes\Typography.xaml" Link="SourceXaml\Themes\Typography.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\AudioSourceMixer.Desktop\Themes\Controls.xaml" Link="SourceXaml\Themes\Controls.xaml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

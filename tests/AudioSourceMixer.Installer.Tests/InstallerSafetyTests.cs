@@ -27,6 +27,7 @@ public sealed class InstallerSafetyTests : IDisposable
         var options = new Program.InstallOptions(Path.Combine(_root, "default"), false, false, true);
         Assert.False(options.StartWithWindows);
         Assert.True(options.StartInBackground);
+        Assert.False(options.BrowserSetup);
     }
 
     [Fact]
@@ -79,6 +80,7 @@ public sealed class InstallerSafetyTests : IDisposable
             Assert.DoesNotMatch(@"\.(pdb|cs|csproj|sln|map)$", path);
         });
         Assert.Contains("BrowserExtension/shared/equalizer.js", runtime);
+        Assert.Contains("browser-extension-origins.json", runtime);
         Assert.DoesNotContain(runtime, path => path.EndsWith("package.json", StringComparison.OrdinalIgnoreCase));
 
         foreach (var path in runtime.Where(path => path.StartsWith("BrowserExtension/", StringComparison.Ordinal)))
@@ -91,6 +93,22 @@ public sealed class InstallerSafetyTests : IDisposable
         Assert.DoesNotContain("Copy-Item -LiteralPath '.\\docs'", portableScript);
         Assert.Contains("Get-ExpectedPayloadPaths 'InstallerPayload'", installerScript);
         Assert.Contains("Assert-RuntimePayload $payloadDirectory 'InstallerPayload'", installerScript);
+    }
+
+    [Fact]
+    public void NativeMessagingOriginsAcceptOnlyConfiguredTrustedExtensionIds()
+    {
+        Directory.CreateDirectory(_root);
+        var valid = Path.Combine(_root, "valid.json");
+        File.WriteAllText(valid, $$"""{"schemaVersion":1,"developmentExtensionId":"{{Program.DevelopmentExtensionId}}","chromeStoreExtensionId":"abcdefghijklmnopabcdefghijklmnop","edgeStoreExtensionId":null}""");
+        Assert.Equal([
+            $"chrome-extension://{Program.DevelopmentExtensionId}/",
+            "chrome-extension://abcdefghijklmnopabcdefghijklmnop/"
+        ], Program.LoadTrustedExtensionOrigins(valid));
+
+        var invalid = Path.Combine(_root, "invalid.json");
+        File.WriteAllText(invalid, $$"""{"schemaVersion":1,"developmentExtensionId":"{{Program.DevelopmentExtensionId}}","chromeStoreExtensionId":"*"}""");
+        Assert.Throws<InvalidDataException>(() => Program.LoadTrustedExtensionOrigins(invalid));
     }
 
     public void Dispose()

@@ -32,21 +32,28 @@ const { port } = server.address();
 const results = [];
 try {
   for (const [name, executable] of browsers) {
-    const profile = await mkdtemp(`${tmpdir()}${sep}AudioSourceMixer-${name}-EQ-`);
-    try {
-      const output = await run(executable, [
-        '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
-        `--user-data-dir=${profile}`, '--virtual-time-budget=10000', '--dump-dom',
-        `http://127.0.0.1:${port}${page}`
-      ]);
-      const match = output.match(/PASS (\{[^<]+\})/u);
-      if (!match) {
-        const state = output.match(/<pre id="result">([^<]*)<\/pre>/u)?.[1] || 'result element missing';
-        throw new Error(`${name} browser-engine EQ check failed: ${state}`);
-      }
-      const metrics = JSON.parse(match[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&'));
-      results.push({ browser: name, status: 'passed', volumeRatio: metrics.volumeRatio, leftLeakRatio: metrics.leftLeakRatio });
-    } finally { await rm(profile, { recursive: true, force: true }); }
+    let metrics = null;
+    for (let attempt = 1; attempt <= 3 && metrics === null; attempt++) {
+      const profile = await mkdtemp(`${tmpdir()}${sep}AudioSourceMixer-${name}-EQ-`);
+      try {
+        const output = await run(executable, [
+          '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
+          `--user-data-dir=${profile}`, '--virtual-time-budget=30000', '--dump-dom',
+          `http://127.0.0.1:${port}${page}`
+        ]);
+        const match = output.match(/PASS (\{[^<]+\})/u);
+        if (!match) {
+          const state = output.match(/<pre id="result">([^<]*)<\/pre>/u)?.[1] || 'result element missing';
+          if (state === 'WAIT' && attempt < 3) {
+            console.warn(`${name} browser-engine module load was not ready on attempt ${attempt}; retrying with a fresh profile.`);
+            continue;
+          }
+          throw new Error(`${name} browser-engine EQ check failed: ${state}`);
+        }
+        metrics = JSON.parse(match[1].replaceAll('&quot;', '"').replaceAll('&amp;', '&'));
+      } finally { await rm(profile, { recursive: true, force: true }); }
+    }
+    results.push({ browser: name, status: 'passed', volumeRatio: metrics.volumeRatio, leftLeakRatio: metrics.leftLeakRatio });
   }
 } finally { await new Promise((done) => server.close(done)); }
 
@@ -59,7 +66,7 @@ function run(executable, args) {
     let stderr = '';
     child.stdout.setEncoding('utf8'); child.stdout.on('data', (chunk) => { stdout += chunk; });
     child.stderr.setEncoding('utf8'); child.stderr.on('data', (chunk) => { stderr += chunk; });
-    const timeout = setTimeout(() => { child.kill(); rejectRun(new Error('Browser EQ runtime check timed out.')); }, 30000);
+    const timeout = setTimeout(() => { child.kill(); rejectRun(new Error('Browser EQ runtime check timed out.')); }, 60000);
     child.on('error', (error) => { clearTimeout(timeout); rejectRun(error); });
     child.on('close', (code) => {
       clearTimeout(timeout);

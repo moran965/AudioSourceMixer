@@ -20,9 +20,9 @@ $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $chromeKey = 'HKCU:\Software\Google\Chrome\NativeMessagingHosts\com.audiosourcemixer.bridge'
 $edgeKey = 'HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\com.audiosourcemixer.bridge'
 $dataDirectory = Join-Path $env:LOCALAPPDATA 'AudioSourceMixer'
-$temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "AudioSourceMixer-v021-$PID-$([Guid]::NewGuid().ToString('N'))"
+$temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "AudioSourceMixer-v022-$PID-$([Guid]::NewGuid().ToString('N'))"
 $dataBackup = Join-Path $temporaryRoot 'user-data'
-$baselineCopy = Join-Path $temporaryRoot 'AudioSourceMixer-0.2.0-win-x64-setup.exe'
+$baselineCopy = Join-Path $temporaryRoot 'AudioSourceMixer-0.2.1-win-x64-setup.exe'
 $preexistingRun = $null
 $installedHash = $null
 $results = [ordered]@{}
@@ -70,6 +70,16 @@ function Assert-Install([string] $Directory, [bool] $StartupExpected = $false) {
     $hostManifest = Get-Content -LiteralPath (Join-Path $directory 'native-host-manifest.json') -Raw | ConvertFrom-Json
     if (-not ([IO.Path]::GetFullPath([string]$hostManifest.path).Equals((Join-Path $directory 'AudioSourceMixer.NativeHost.exe'), [StringComparison]::OrdinalIgnoreCase))) {
         throw 'Native host executable path is not the selected install directory.'
+    }
+    $trusted = Get-Content -LiteralPath (Join-Path $directory 'browser-extension-origins.json') -Raw | ConvertFrom-Json
+    $trustedIds = @($trusted.developmentExtensionId,$trusted.chromeStoreExtensionId,$trusted.edgeStoreExtensionId) |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
+    if ($trustedIds.Count -eq 0 -or @($trustedIds | Where-Object { $_ -notmatch '^[a-p]{32}$' }).Count -ne 0) {
+        throw 'Installed trusted extension ID configuration is invalid.'
+    }
+    $expectedOrigins = @($trustedIds | ForEach-Object { "chrome-extension://$_/" } | Sort-Object)
+    if (@(Compare-Object $expectedOrigins @($hostManifest.allowed_origins | Sort-Object)).Count -ne 0) {
+        throw 'Native host allowed_origins does not exactly match the trusted extension ID configuration.'
     }
     $run = if (Test-Path -LiteralPath $runKey) { [string](Get-ItemProperty -LiteralPath $runKey -Name AudioSourceMixer -ErrorAction SilentlyContinue).AudioSourceMixer } else { '' }
     if ($StartupExpected) {
@@ -149,6 +159,63 @@ function Uninstall-Checked([string] $Directory, [switch] $WithRunningApp) {
     Wait-Removed $Directory
 }
 
+function Wait-BrowserSetupLaunch([string] $Directory, [DateTimeOffset] $Started) {
+    $expected = [IO.Path]::GetFullPath((Join-Path $Directory 'AudioSourceMixer.exe'))
+    $deadline = [DateTimeOffset]::Now.AddSeconds(30)
+    do {
+        Start-Sleep -Milliseconds 200
+        $match = Get-Process -Name AudioSourceMixer -ErrorAction SilentlyContinue | Where-Object {
+            try { [IO.Path]::GetFullPath($_.Path).Equals($expected, [StringComparison]::OrdinalIgnoreCase) } catch { $false }
+        } | Select-Object -First 1
+    } while ($null -eq $match -and [DateTimeOffset]::Now -lt $deadline)
+    if ($null -eq $match) { throw 'Explicit --browser-setup did not launch the installed desktop program.' }
+    $windowDeadline = [DateTimeOffset]::Now.AddSeconds(30)
+    do {
+        Start-Sleep -Milliseconds 200
+        $match.Refresh()
+    } while (-not $match.HasExited -and $match.MainWindowHandle -eq 0 -and [DateTimeOffset]::Now -lt $windowDeadline)
+    if ($match.HasExited -or $match.MainWindowHandle -eq 0 -or $match.MainWindowTitle -ne 'Audio Source Mixer') {
+        throw 'Explicit --browser-setup did not display the installed main window.'
+    }
+    $logDeadline = [DateTimeOffset]::Now.AddSeconds(15)
+    do {
+        Start-Sleep -Milliseconds 200
+        $confirmed = $false
+        $startupComplete = $false
+        foreach ($logFile in @(Get-ChildItem -LiteralPath (Join-Path $dataDirectory 'logs') -Filter '*.log' -ErrorAction SilentlyContinue)) {
+            foreach ($line in @(Get-Content -LiteralPath $logFile.FullName -Tail 100 -ErrorAction SilentlyContinue)) {
+                try {
+                    if ([DateTimeOffset]::Parse($line.Split(' ')[0]) -lt $Started.AddSeconds(-1)) { continue }
+                    if ($line -like '*Browser setup page requested by command line.*') { $confirmed = $true }
+                    if ($line -like '*Application startup completed successfully. WindowShown=True;*') { $startupComplete = $true }
+                } catch { }
+            }
+            if ($confirmed -and $startupComplete) { break }
+        }
+    } while ((-not $confirmed -or -not $startupComplete) -and [DateTimeOffset]::Now -lt $logDeadline)
+    if (-not $confirmed -or -not $startupComplete) { throw 'Installed desktop did not confirm browser setup navigation and completed startup.' }
+    $signal = [Threading.EventWaitHandle]::OpenExisting('Local\AudioSourceMixer.Exit')
+    try { $signal.Set() | Out-Null } finally { $signal.Dispose() }
+    if (-not $match.WaitForExit(30000)) {
+        throw 'Browser setup launch did not exit after the graceful restore signal.'
+    }
+    $cleanupFailure = $null
+    foreach ($logFile in @(Get-ChildItem -LiteralPath (Join-Path $dataDirectory 'logs') -Filter '*.log' -ErrorAction SilentlyContinue)) {
+        foreach ($line in @(Get-Content -LiteralPath $logFile.FullName -Tail 100 -ErrorAction SilentlyContinue)) {
+            try {
+                if ([DateTimeOffset]::Parse($line.Split(' ')[0]) -ge $Started.AddSeconds(-1) -and
+                    $line -match '(View model settings flush|Core Audio restore/dispose|Browser bridge dispose|View model dispose|Main window close|Tray dispose|Single-instance mutex release|Graceful-exit signal dispose) failed\.') {
+                    $cleanupFailure = $line
+                    break
+                }
+            } catch { }
+        }
+        if ($null -ne $cleanupFailure) { break }
+    }
+    if ($null -ne $cleanupFailure) { throw "Browser setup launch cleanup failed: $cleanupFailure" }
+    Write-Output 'Explicit browser setup launch passed and exited cleanly.'
+}
+
 foreach ($required in @($setup,$publishExe,$portableExe,$manifestPath)) { if (-not (Test-Path -LiteralPath $required)) { throw "Missing verification input: $required" } }
 if (Test-Path -LiteralPath $uninstallKey) { throw 'Installer verification refuses to replace a pre-existing Audio Source Mixer installation.' }
 foreach ($path in @($defaultInstall,$customSpace,$customChinese)) { if (Test-Path -LiteralPath $path) { throw "Verification target already exists: $path" } }
@@ -164,6 +231,7 @@ if (-not [string]::IsNullOrWhiteSpace($BaselineInstallerPath) -and (Test-Path -L
 
 try {
     Start-Checked $setup @('--silent-install','--install-dir',(Quote-Argument $defaultInstall)) 'Fresh default install'
+    if (Get-Process -Name AudioSourceMixer -ErrorAction SilentlyContinue) { throw 'Silent install unexpectedly launched the desktop program without --browser-setup.' }
     Assert-Install $defaultInstall
     Verify-UninstallerWindow $defaultInstall
     $firstHash = Get-Sha256 (Join-Path $defaultInstall 'AudioSourceMixer.exe')
@@ -179,10 +247,12 @@ try {
     $results.defaultInstall = 'passed'; $results.sameVersionRepair = 'passed'; $results.rollback = 'passed'; $results.manualUninstallerMode = 'passed'
     Uninstall-Checked $defaultInstall -WithRunningApp
 
-    Start-Checked $setup @('--silent-install','--install-dir',(Quote-Argument $customSpace)) 'Custom path with spaces install'
+    $browserSetupStarted = [DateTimeOffset]::Now
+    Start-Checked $setup @('--silent-install','--install-dir',(Quote-Argument $customSpace),'--browser-setup') 'Custom path with explicit browser setup install'
+    Wait-BrowserSetupLaunch $customSpace $browserSetupStarted
     Assert-Install $customSpace
     Uninstall-Checked $customSpace
-    $results.customPathWithSpaces = 'passed'
+    $results.customPathWithSpaces = 'passed'; $results.browserSetupDefaultOff = 'passed'; $results.browserSetupExplicitLaunch = 'passed'
 
     Start-Checked $setup @('--silent-install','--install-dir',(Quote-Argument $customChinese),'--startup-background') 'Chinese custom path and startup install'
     Assert-Install $customChinese $true
@@ -190,18 +260,18 @@ try {
     $results.customChinesePath = 'passed'; $results.startupEnableDisableCleanup = 'passed'; $results.backgroundTrayStartup = 'passed'
 
     if (Test-Path -LiteralPath $baselineCopy) {
-        Start-Checked $baselineCopy @('--silent-install') 'Install 0.2.0 upgrade baseline'
+        Start-Checked $baselineCopy @('--silent-install') 'Install 0.2.1 upgrade baseline'
         $baselineExe = Join-Path $defaultInstall 'AudioSourceMixer.exe'
-        if ([string](Get-Item -LiteralPath $baselineExe).VersionInfo.FileVersion -ne '0.2.0.0') { throw 'Baseline installer is not 0.2.0.' }
-        $upgradeSentinel = Join-Path $defaultInstall 'v0.2.0-upgrade-sentinel.txt'; Set-Content -LiteralPath $upgradeSentinel -Value 'old payload'
+        if ([string](Get-Item -LiteralPath $baselineExe).VersionInfo.FileVersion -ne '0.2.1.0') { throw 'Baseline installer is not 0.2.1.' }
+        $upgradeSentinel = Join-Path $defaultInstall 'v0.2.1-upgrade-sentinel.txt'; Set-Content -LiteralPath $upgradeSentinel -Value 'old payload'
         $baselineHash = Get-Sha256 $baselineExe
-        Start-Checked $setup @('--silent-install') 'In-place 0.2.0 to 0.2.1 upgrade'
+        Start-Checked $setup @('--silent-install') 'In-place 0.2.1 to 0.2.2 upgrade'
         Assert-Install $defaultInstall
         if (Test-Path -LiteralPath $upgradeSentinel) { throw 'Upgrade retained an old payload sentinel.' }
         if ((Get-Sha256 (Join-Path $defaultInstall 'AudioSourceMixer.exe')) -eq $baselineHash) { throw 'Upgrade executable hash did not change.' }
-        $results.inPlaceUpgradeFrom020 = 'passed'
+        $results.inPlaceUpgradeFrom021 = 'passed'
         Uninstall-Checked $defaultInstall
-    } else { $results.inPlaceUpgradeFrom020 = 'not executed: baseline artifact unavailable' }
+    } else { $results.inPlaceUpgradeFrom021 = 'not executed: baseline artifact unavailable' }
 
     Start-Checked $setup @('--silent-install','--install-dir',(Quote-Argument $defaultInstall)) 'Final hash verification install'
     Assert-Install $defaultInstall

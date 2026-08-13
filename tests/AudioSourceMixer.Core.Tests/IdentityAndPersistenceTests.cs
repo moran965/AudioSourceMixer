@@ -180,6 +180,31 @@ public sealed class IdentityAndPersistenceTests : IDisposable
         Assert.Equal(expected, await store.LoadAsync());
     }
 
+    [Fact]
+    public async Task FreshSettingsRequestOptionalBrowserOnboarding()
+    {
+        var loaded = await new JsonApplicationSettingsStore(_directory).LoadAsync();
+        Assert.Equal(4, loaded.SchemaVersion);
+        Assert.Equal("undecided", loaded.BrowserOnboardingChoice);
+        Assert.Null(loaded.OnboardingCompletedVersion);
+        Assert.False(loaded.BrowserGuideDismissed);
+    }
+
+    [Fact]
+    public async Task ExistingSettingsMigrateWithoutForcingNewOnboarding()
+    {
+        Directory.CreateDirectory(_directory);
+        await File.WriteAllTextAsync(Path.Combine(_directory, "settings.json"),
+            """{"CloseToTray":false,"ShowInactiveSessions":false,"SchemaVersion":3}""");
+        var loaded = await new JsonApplicationSettingsStore(_directory).LoadAsync();
+        Assert.Equal(4, loaded.SchemaVersion);
+        Assert.False(loaded.CloseToTray);
+        Assert.False(loaded.ShowInactiveSessions);
+        Assert.Equal("existing-user", loaded.BrowserOnboardingChoice);
+        Assert.Equal("0.2.1", loaded.OnboardingCompletedVersion);
+        Assert.True(loaded.BrowserGuideDismissed);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory)) Directory.Delete(_directory, true);

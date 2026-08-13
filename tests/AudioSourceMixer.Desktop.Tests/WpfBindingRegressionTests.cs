@@ -134,6 +134,7 @@ public sealed class WpfBindingRegressionTests
                 Assert.Equal(UiSmokeVerifier.UpdatedPeak * 100d, result.PeakValue, 3);
                 Assert.True(result.Bindings.Count >= 11);
 
+                AssertEveryBindingDeclaresMode();
                 var sourceBindings = AuditSourceXaml();
                 Assert.True(sourceBindings.Count >= 30);
                 var peak = Assert.Single(sourceBindings.Where(entry => entry.SourceProperty == nameof(AudioSourceViewModel.PeakPercent)));
@@ -157,6 +158,9 @@ public sealed class WpfBindingRegressionTests
                 var sourceList = Assert.IsType<ListBox>(window.SourceItems);
                 Assert.True(VirtualizingPanel.GetIsVirtualizing(sourceList));
                 Assert.Equal(VirtualizationMode.Recycling, VirtualizingPanel.GetVirtualizationMode(sourceList));
+                Assert.Equal(ScrollUnit.Pixel, VirtualizingPanel.GetScrollUnit(sourceList));
+                Assert.False(ScrollViewer.GetIsDeferredScrollingEnabled(sourceList));
+                Assert.Equal(PanningMode.VerticalOnly, ScrollViewer.GetPanningMode(sourceList));
                 Assert.Equal(ScrollBarVisibility.Disabled, ScrollViewer.GetHorizontalScrollBarVisibility(sourceList));
 
                 var sliders = Descendants(window).OfType<Slider>().ToArray();
@@ -191,6 +195,13 @@ public sealed class WpfBindingRegressionTests
                 outputSelector.RaiseEvent(enter);
                 await WaitUntilAsync(() => fakeAudio.RouteCalls == 1);
                 monitor.ThrowIfFailed();
+
+                fakeAudio.PublishSources(UiSmokeVerifier.CreateDiagnosticSources().ToArray());
+                await WaitUntilAsync(() => viewModel.Sources.Count == 3);
+                viewModel.Sources.First(item => item.SupportsEqualizer).IsEqualizerExpanded = true;
+                await AssertResponsiveLayoutsAsync(app, window, viewModel);
+                fakeAudio.PublishSources(source);
+                await WaitUntilAsync(() => viewModel.Sources.Count == 1);
             }
 
             using (var failureMonitor = new UiSmokeMonitor())
@@ -521,31 +532,111 @@ public sealed class WpfBindingRegressionTests
         while (!predicate()) await Task.Delay(25, timeout.Token);
     }
 
+    private static async Task AssertResponsiveLayoutsAsync(App app, MainWindow window, MainViewModel viewModel)
+    {
+        foreach (var (width, height) in new[] { (880d, 600d), (1180d, 760d), (1600d, 900d) })
+        {
+            window.Width = width;
+            window.Height = height;
+            await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.Render);
+            var sourceList = Assert.IsType<ListBox>(window.SourceItems);
+            var scrollViewer = Descendants(sourceList).OfType<ScrollViewer>().First();
+            Assert.Equal(ScrollBarVisibility.Disabled, scrollViewer.HorizontalScrollBarVisibility);
+            Assert.True(scrollViewer.ExtentWidth <= scrollViewer.ViewportWidth + 2.5,
+                $"Source cards overflow horizontally at {width}x{height}: extent={scrollViewer.ExtentWidth}, viewport={scrollViewer.ViewportWidth}.");
+
+            foreach (var source in viewModel.Sources)
+            {
+                sourceList.ScrollIntoView(source);
+                await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.Render);
+                var container = Assert.IsType<ListBoxItem>(sourceList.ItemContainerGenerator.ContainerFromItem(source));
+                var card = Assert.Single(Descendants(container).OfType<AudioSourceCard>());
+                Assert.True(card.ActualWidth <= sourceList.ActualWidth + 1);
+                var output = Assert.Single(Descendants(card).OfType<ComboBox>()
+                    .Where(comboBox => System.Windows.Automation.AutomationProperties.GetName(comboBox) == "输出设备"));
+                Assert.True(output.ActualWidth >= 180, $"Output selector is too narrow at {width}x{height}.");
+                AssertInside(card, output, width, height);
+                foreach (var button in Descendants(card).OfType<Button>().Where(button => button.IsVisible))
+                    AssertInside(card, button, width, height);
+
+                var labels = Descendants(card).OfType<TextBlock>().ToArray();
+                var volumeLabel = labels.First(text => text.Text == "音量");
+                var volumeValue = labels.First(text => BindingOperations.GetBinding(text, TextBlock.TextProperty)?.Path?.Path == nameof(AudioSourceViewModel.VolumePercent));
+                Assert.False(Bounds(volumeLabel, card).IntersectsWith(Bounds(volumeValue, card)),
+                    $"Volume label/value overlap at {width}x{height}.");
+            }
+        }
+    }
+
+    private static void AssertInside(FrameworkElement ancestor, FrameworkElement child, double width, double height)
+    {
+        var bounds = Bounds(child, ancestor);
+        Assert.True(bounds.Left >= -0.5 && bounds.Right <= ancestor.ActualWidth + 0.5 &&
+                    bounds.Top >= -0.5 && bounds.Bottom <= ancestor.ActualHeight + 0.5,
+            $"{child.GetType().Name} is clipped at {width}x{height}: {bounds} within {ancestor.ActualWidth}x{ancestor.ActualHeight}.");
+    }
+
+    private static Rect Bounds(FrameworkElement element, Visual ancestor)
+        => element.TransformToAncestor(ancestor).TransformBounds(new Rect(0, 0, element.ActualWidth, element.ActualHeight));
+
     private static IReadOnlyList<SourceBinding> AuditSourceXaml()
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "MainWindow.source.xaml");
-        var document = XDocument.Load(path, LoadOptions.SetLineInfo);
         var entries = new List<SourceBinding>();
-        foreach (var element in document.Descendants())
+        var sources = new (string Path, Type RootType)[]
         {
-            var templateDepth = element.Ancestors().Count(ancestor => ancestor.Name.LocalName == "DataTemplate");
-            var sourceType = templateDepth > 1 ? typeof(EqualizerBandViewModel)
-                : templateDepth == 1 ? typeof(AudioSourceViewModel)
-                : typeof(MainViewModel);
-            foreach (var attribute in element.Attributes().Where(attribute => attribute.Value.StartsWith("{Binding", StringComparison.Ordinal)))
+            (Path.Combine(AppContext.BaseDirectory, "MainWindow.source.xaml"), typeof(MainViewModel)),
+            (Path.Combine(AppContext.BaseDirectory, "SourceXaml", "MixerView.xaml"), typeof(MainViewModel)),
+            (Path.Combine(AppContext.BaseDirectory, "SourceXaml", "SettingsView.xaml"), typeof(MainViewModel)),
+            (Path.Combine(AppContext.BaseDirectory, "SourceXaml", "BrowserSetupView.xaml"), typeof(MainViewModel)),
+            (Path.Combine(AppContext.BaseDirectory, "SourceXaml", "AudioSourceCard.xaml"), typeof(AudioSourceViewModel)),
+            (Path.Combine(AppContext.BaseDirectory, "SourceXaml", "EqualizerPanel.xaml"), typeof(AudioSourceViewModel))
+        };
+
+        foreach (var (path, rootType) in sources)
+        {
+            var document = XDocument.Load(path, LoadOptions.SetLineInfo);
+            foreach (var element in document.Descendants())
             {
-                var expression = attribute.Value["{Binding".Length..].TrimEnd('}').Trim();
-                var sourceProperty = expression.Split(',', 2)[0].Trim();
-                var modeMatch = Regex.Match(expression, @"(?:^|,)\s*Mode\s*=\s*(OneWay|TwoWay|OneWayToSource|OneTime)(?:\s*,|\s*$)");
-                Assert.True(modeMatch.Success, $"Binding mode is not explicit at {element.Name.LocalName}.{attribute.Name.LocalName}: {attribute.Value}");
-                var property = sourceType.GetProperty(sourceProperty, BindingFlags.Instance | BindingFlags.Public);
-                Assert.NotNull(property);
-                var mode = Enum.Parse<BindingMode>(modeMatch.Groups[1].Value);
-                entries.Add(new SourceBinding(element.Name.LocalName, attribute.Name.LocalName, sourceType.Name,
-                    sourceProperty, mode, property.SetMethod?.IsPublic == true));
+                var insideBandTemplate = Path.GetFileName(path) == "EqualizerPanel.xaml" &&
+                                         element.Ancestors().Any(ancestor => ancestor.Name.LocalName == "DataTemplate");
+                var sourceType = insideBandTemplate ? typeof(EqualizerBandViewModel) : rootType;
+                foreach (var attribute in element.Attributes().Where(attribute => attribute.Value.StartsWith("{Binding", StringComparison.Ordinal)))
+                {
+                    var expression = attribute.Value["{Binding".Length..].TrimEnd('}').Trim();
+                    var sourcePath = expression.Split(',', 2)[0].Trim();
+                    var sourceProperty = sourcePath.Split('.', 2)[0];
+                    var modeMatch = Regex.Match(expression, @"(?:^|,)\s*Mode\s*=\s*(OneWay|TwoWay|OneWayToSource|OneTime)(?:\s*,|\s*$)");
+                    Assert.True(modeMatch.Success,
+                        $"Binding mode is not explicit at {Path.GetFileName(path)}:{element.Name.LocalName}.{attribute.Name.LocalName}: {attribute.Value}");
+                    var property = sourceType.GetProperty(sourceProperty, BindingFlags.Instance | BindingFlags.Public);
+                    Assert.NotNull(property);
+                    var mode = Enum.Parse<BindingMode>(modeMatch.Groups[1].Value);
+                    entries.Add(new SourceBinding(element.Name.LocalName, attribute.Name.LocalName, sourceType.Name,
+                        sourceProperty, mode, property.SetMethod?.IsPublic == true));
+                }
             }
         }
         return entries;
+    }
+
+    private static void AssertEveryBindingDeclaresMode()
+    {
+        var sourceFiles = Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "SourceXaml"), "*.xaml",
+                SearchOption.AllDirectories)
+            .Append(Path.Combine(AppContext.BaseDirectory, "MainWindow.source.xaml"));
+
+        foreach (var path in sourceFiles)
+        {
+            var document = XDocument.Load(path, LoadOptions.SetLineInfo);
+            foreach (var element in document.Root!.DescendantsAndSelf())
+            {
+                foreach (var attribute in element.Attributes()
+                             .Where(attribute => attribute.Value.StartsWith("{Binding", StringComparison.Ordinal)))
+                {
+                    Assert.Matches(@"(?:^|,)\s*Mode\s*=\s*(OneWay|TwoWay|OneWayToSource|OneTime)(?:\s*,|\s*})", attribute.Value);
+                }
+            }
+        }
     }
 
     private sealed record SourceBinding(
