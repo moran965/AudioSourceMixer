@@ -11,12 +11,30 @@ import { physicalOutputDevices, rebindOutputMapping } from '../output-authorizat
 const graphs = new Map();
 
 chrome.runtime.onMessage.addListener((message) => {
-  if (message.type === 'audio.start') return startGraph(message);
-  if (message.type === 'audio.update') return updateGraph(message);
-  if (message.type === 'audio.stop') return stopGraph(message.browser || 'chrome', message.tabId, false);
+  if (message.type === 'audio.start') return executeResponseTask('创建标签页音频图', () => startGraph(message));
+  if (message.type === 'audio.update') return executeResponseTask('更新标签页音频图', () => updateGraph(message));
+  if (message.type === 'audio.stop')
+    return executeResponseTask('停止标签页音频图', () => stopGraph(message.browser || 'chrome', message.tabId, false));
   if (message.type === 'audio.list') return listGraphs();
   return undefined;
 });
+
+function runOffscreenTask(name, action) {
+  executeOffscreenTask(name, action);
+}
+
+async function executeOffscreenTask(name, action) {
+  try { await action(); }
+  catch (error) { console.error(`[Audio Source Mixer] ${name}失败`, error); }
+}
+
+async function executeResponseTask(name, action) {
+  try { return await action(); }
+  catch (error) {
+    console.error(`[Audio Source Mixer] ${name}失败`, error);
+    return { ok: false, error: `${error?.name || 'Error'}: ${error?.message || String(error)}` };
+  }
+}
 
 function graphKey(browser, tabId) {
   return sourceId(browser || 'chrome', tabId);
@@ -69,7 +87,8 @@ async function startGraph(message) {
     graphs.set(key, graph);
     applyEqualizer(graph, message.equalizer);
     for (const track of stream.getTracks()) {
-      track.addEventListener('ended', () => { void stopGraph(browser, message.tabId, true); }, { once: true });
+      track.addEventListener('ended', () =>
+        runOffscreenTask('清理已结束媒体轨道', () => stopGraph(browser, message.tabId, true)), { once: true });
     }
     const output = await enqueueOutputDevice(graph, message);
     return { ok: true, ...output };
@@ -270,12 +289,14 @@ setInterval(() => {
     graph.analyser.getFloatTimeDomainData(graph.levelBuffer);
     let peak = 0;
     for (const sample of graph.levelBuffer) peak = Math.max(peak, Math.abs(sample));
-    void chrome.runtime.sendMessage({ type: 'offscreen.level', browser: graph.browser, tabId: graph.tabId, peak: clamp(peak, 0, 1) });
+    runOffscreenTask('发送标签页电平', () => chrome.runtime.sendMessage({
+      type: 'offscreen.level', browser: graph.browser, tabId: graph.tabId, peak: clamp(peak, 0, 1)
+    }));
   }
 }, 200);
 
 navigator.mediaDevices.addEventListener('devicechange', () => {
-  void (async () => {
+  runOffscreenTask('重新验证输出设备', async () => {
     for (const graph of [...graphs.values()]) {
       try {
         const output = await enqueueOutputDevice(graph, {
@@ -298,5 +319,5 @@ navigator.mediaDevices.addEventListener('devicechange', () => {
         });
       }
     }
-  })();
+  });
 });

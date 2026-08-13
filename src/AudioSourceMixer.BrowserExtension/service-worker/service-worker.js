@@ -26,22 +26,44 @@ const NATIVE_RETRY_DELAY_MS = 5000;
 let nativePort = null;
 let nativeReady = null;
 
-chrome.action.onClicked.addListener((tab) => { void toggleTab(tab); });
-chrome.tabs.onRemoved.addListener((tabId) => { void stopTab(browserName(), tabId, true); });
+chrome.action.onClicked.addListener((tab) => runEventTask('切换标签页增强', () => toggleTab(tab)));
+chrome.tabs.onRemoved.addListener((tabId) => runEventTask('清理已关闭标签页', () => stopTab(browserName(), tabId, true)));
 chrome.tabCapture.onStatusChanged.addListener((info) => {
-  if (info.status === 'stopped' || info.status === 'error') void stopTab(browserName(), info.tabId, true);
+  if (info.status === 'stopped' || info.status === 'error')
+    runEventTask('同步标签页捕获状态', () => stopTab(browserName(), info.tabId, true));
 });
-chrome.runtime.onStartup.addListener(() => { void recoverRuntimeState('runtime-startup'); });
-chrome.runtime.onInstalled.addListener(() => { void recoverRuntimeState('extension-installed'); });
+chrome.runtime.onStartup.addListener(() => runEventTask('浏览器启动恢复', () => recoverRuntimeState('runtime-startup')));
+chrome.runtime.onInstalled.addListener((details) => runEventTask('扩展安装或更新', () => handleInstalled(details)));
 
 chrome.runtime.onMessage.addListener((message) => {
-  if (message.type === 'offscreen.level') void forwardLevel(message);
-  else if (message.type === 'offscreen.tabEnded') void stopTab(message.browser || browserName(), message.tabId, true);
-  else if (message.type === 'offscreen.outputChanged') void forwardOutputStatus(message);
-  else if (message.type === 'authorization.mappingChanged') void revalidateActiveOutputs(message);
+  if (message.type === 'offscreen.level') runEventTask('转发标签页电平', () => forwardLevel(message));
+  else if (message.type === 'offscreen.tabEnded')
+    runEventTask('清理已结束标签页', () => stopTab(message.browser || browserName(), message.tabId, true));
+  else if (message.type === 'offscreen.outputChanged')
+    runEventTask('同步浏览器输出状态', () => forwardOutputStatus(message));
+  else if (message.type === 'authorization.mappingChanged')
+    runEventTask('重新验证输出映射', () => revalidateActiveOutputs(message));
 });
 
-void recoverRuntimeState('service-worker-evaluated');
+runEventTask('service worker 状态恢复', () => recoverRuntimeState('service-worker-evaluated'));
+
+function runEventTask(name, action) {
+  executeEventTask(name, action);
+}
+
+async function executeEventTask(name, action) {
+  try { await action(); }
+  catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[Audio Source Mixer] ${name}失败`, error);
+    try { await chrome.storage.session.set({ lastExtensionError: `${name}：${message}` }); }
+    catch (storageError) { console.error('[Audio Source Mixer] 无法记录扩展错误', storageError); }
+  }
+}
+
+async function handleInstalled() {
+  await recoverRuntimeState('extension-installed');
+}
 
 async function toggleTab(tab) {
   if (!Number.isInteger(tab.id)) return;
@@ -190,21 +212,26 @@ async function ensureNativePort() {
     port.postMessage({ protocolVersion: PROTOCOL_VERSION, type: 'bridge.hello', browser: browserName(),
       extensionVersion: chrome.runtime.getManifest().version });
     port.onMessage.addListener((message) => {
-      void handleNativeMessage(message).catch(async (error) => {
-        console.error('Native command failed:', error);
-        await chrome.storage.session.set({ nativeStatus: `Native 命令失败：${error.message}` });
-        await updateBadge();
+      runEventTask('处理桌面命令', async () => {
+        try { await handleNativeMessage(message); }
+        catch (error) {
+          await chrome.storage.session.set({ nativeStatus: `Native 命令失败：${error.message}` });
+          await updateBadge();
+          throw error;
+        }
       });
     });
     port.onDisconnect.addListener(() => {
-      nativeReady?.resolve(false);
-      nativeReady = null;
-      nativePort = null;
-      void chrome.storage.session.set({ nativeRetryAfter: Date.now() + NATIVE_RETRY_DELAY_MS, nativeStatus: '请先打开 Audio Source Mixer' });
-      if (chrome.runtime.lastError) console.warn('Native host disconnected:', chrome.runtime.lastError.message);
-      void updateBadge();
+      runEventTask('处理桌面连接断开', async () => {
+        nativeReady?.resolve(false);
+        nativeReady = null;
+        nativePort = null;
+        await chrome.storage.session.set({ nativeRetryAfter: Date.now() + NATIVE_RETRY_DELAY_MS, nativeStatus: '请先打开 Audio Source Mixer' });
+        if (chrome.runtime.lastError) console.warn('Native host disconnected:', chrome.runtime.lastError.message);
+        await updateBadge();
+      });
     });
-    void registerAllActiveTabs(port);
+    runEventTask('注册活动增强标签页', () => registerAllActiveTabs(port));
     return port;
   } catch (error) {
     await chrome.storage.session.set({ nativeRetryAfter: Date.now() + NATIVE_RETRY_DELAY_MS, nativeStatus: `Native Host 不可用：${error.message}` });
@@ -376,9 +403,7 @@ async function requestOutputAuthorization(browser, tabId, audio) {
 }
 
 function openAuthorizationPageInBackground() {
-  void openAuthorizationPageOnce().catch((error) => {
-    console.error('Could not open output authorization page:', error);
-  });
+  runEventTask('打开输出授权页', openAuthorizationPageOnce);
 }
 
 async function openAuthorizationPageOnce() {

@@ -1,17 +1,16 @@
 import { browserName } from '../shared/protocol.js';
+import { createAuthorizationController } from './authorization-controller.js';
 import { compareDeviceNames, createOutputMappingCandidate, playOutputTestTone } from './authorization-workflow.js';
 import {
   LEGACY_OUTPUT_MAPPINGS_KEY,
   OUTPUT_MAPPINGS_KEY,
   PENDING_OUTPUT_AUTHORIZATION_KEY,
   clearBrowserOutputMappings,
-  confirmOutputMapping,
   mappingDisplayState,
   migrateOutputMappingStore,
   outputMappings,
   pendingAuthorizationRequests,
   physicalOutputDevices,
-  removeAuthorizationRequest,
   removeOutputMapping
 } from './mappings.js';
 
@@ -22,21 +21,57 @@ let pendingRequests = [];
 let visibleOutputs = [];
 let candidate = null;
 let mismatchConfirmationArmed = false;
+let operationGeneration = 0;
+let pendingRefreshRequested = false;
+let pendingRefreshPromise = null;
+let mappingRefreshRequested = false;
+let mappingRefreshPromise = null;
+let deviceRefreshRequested = false;
 
-elements.chooseOutput.addEventListener('click', () => { void chooseOutputFromUserGesture(); });
-elements.unlockDevices.addEventListener('click', () => { void unlockCompatibilityDevices(); });
-elements.useFallback.addEventListener('click', () => { selectFallbackCandidate(); });
-elements.pendingTargets.addEventListener('change', () => { selectPendingRequest(elements.pendingTargets.value); });
-elements.testCandidate.addEventListener('click', () => { void testCandidate(); });
-elements.confirmCandidate.addEventListener('click', () => { void confirmCandidate(); });
-elements.reselectCandidate.addEventListener('click', resetCandidate);
-elements.cancelCandidate.addEventListener('click', cancelCandidate);
-elements.clearAll.addEventListener('click', () => { void clearAllMappings(); });
-navigator.mediaDevices.addEventListener('devicechange', () => { void refreshVisibleDevices(true); });
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'session' && changes[PENDING_OUTPUT_AUTHORIZATION_KEY]) void loadPendingRequests();
-  if (area === 'local' && (changes[OUTPUT_MAPPINGS_KEY] || changes[LEGACY_OUTPUT_MAPPINGS_KEY])) void renderMappings();
+const authorizationController = createAuthorizationController({
+  browser,
+  loadMappingStore,
+  localStorage: chrome.storage.local,
+  sessionStorage: chrome.storage.session,
+  sendMessage: (message) => chrome.runtime.sendMessage(message)
 });
+
+elements.chooseOutput.addEventListener('click', () => runUiTask('选择输出设备', chooseOutputFromUserGesture));
+elements.unlockDevices.addEventListener('click', () => runUiTask('读取兼容设备', unlockCompatibilityDevices));
+elements.useFallback.addEventListener('click', () => runUiTask('选择兼容设备', selectFallbackCandidate));
+elements.pendingTargets.addEventListener('change', () => runUiTask('切换授权请求',
+  () => selectPendingRequest(elements.pendingTargets.value)));
+elements.testCandidate.addEventListener('click', () => runUiTask('播放候选测试声音', testCandidate));
+elements.confirmCandidate.addEventListener('click', () => runUiTask('确认输出映射', confirmCandidate));
+elements.retryNotification.addEventListener('click', () => runUiTask('重新通知增强标签页', retryNotification));
+elements.reselectCandidate.addEventListener('click', () => runUiTask('重新选择候选设备', resetCandidate));
+elements.cancelCandidate.addEventListener('click', () => runUiTask('取消候选设备', cancelCandidate));
+elements.clearAll.addEventListener('click', () => runUiTask('清除全部映射', clearAllMappings));
+navigator.mediaDevices.addEventListener('devicechange', () => {
+  if (authorizationController.confirmInFlight) { deviceRefreshRequested = true; return; }
+  runUiTask('刷新输出设备', () => refreshVisibleDevices(true));
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'session' && changes[PENDING_OUTPUT_AUTHORIZATION_KEY])
+    runUiTask('同步待授权请求', requestPendingRefresh);
+  if (area === 'local' && (changes[OUTPUT_MAPPINGS_KEY] || changes[LEGACY_OUTPUT_MAPPINGS_KEY]))
+    runUiTask('同步设备映射', requestMappingRefresh);
+});
+
+function runUiTask(name, action) {
+  executeUiTask(name, action);
+}
+
+async function executeUiTask(name, action) {
+  try { await action(); }
+  catch (error) { reportUiError(name, error); }
+}
+
+function reportUiError(name, error) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`[Audio Source Mixer] ${name}失败`, error);
+  setStatus(`${name}失败：${message}。请重试；如果问题持续，请重新打开此页面。`);
+}
 
 async function loadMappingStore() {
   const stored = await chrome.storage.local.get([OUTPUT_MAPPINGS_KEY, LEGACY_OUTPUT_MAPPINGS_KEY]);
@@ -57,6 +92,32 @@ async function loadPendingRequests() {
   selectPendingRequest(selected?.windowsEndpointId || '');
 }
 
+function requestPendingRefresh() {
+  pendingRefreshRequested = true;
+  if (authorizationController.confirmInFlight) return Promise.resolve();
+  if (pendingRefreshPromise) return pendingRefreshPromise;
+  pendingRefreshPromise = (async () => {
+    do {
+      pendingRefreshRequested = false;
+      await loadPendingRequests();
+    } while (pendingRefreshRequested && !authorizationController.confirmInFlight);
+  })().finally(() => { pendingRefreshPromise = null; });
+  return pendingRefreshPromise;
+}
+
+function requestMappingRefresh() {
+  mappingRefreshRequested = true;
+  if (authorizationController.confirmInFlight) return Promise.resolve();
+  if (mappingRefreshPromise) return mappingRefreshPromise;
+  mappingRefreshPromise = (async () => {
+    do {
+      mappingRefreshRequested = false;
+      await renderMappings();
+    } while (mappingRefreshRequested && !authorizationController.confirmInFlight);
+  })().finally(() => { mappingRefreshPromise = null; });
+  return mappingRefreshPromise;
+}
+
 function renderPendingTargets(preferredId = '') {
   elements.pendingTargets.replaceChildren();
   for (const request of pendingRequests) {
@@ -71,6 +132,7 @@ function renderPendingTargets(preferredId = '') {
 }
 
 function selectPendingRequest(endpointId) {
+  if (authorizationController.confirmInFlight) return;
   pendingRequest = pendingRequests.find((request) => request.windowsEndpointId === endpointId) || null;
   elements.targetName.textContent = pendingRequest?.windowsEndpointName || '当前没有等待授权的设备';
   elements.instruction.textContent = pendingRequest
@@ -109,12 +171,14 @@ async function unlockCompatibilityDevices() {
 }
 
 function selectFallbackCandidate() {
+  if (authorizationController.confirmInFlight) return;
   const selected = visibleOutputs.find((device) => device.deviceId === elements.fallbackDevices.value);
   if (!selected) { setStatus('请先选择一个浏览器输出设备。'); return; }
   showCandidate(selected);
 }
 
 function showCandidate(selected) {
+  if (authorizationController.confirmInFlight) return;
   requirePendingRequest();
   candidate = createOutputMappingCandidate(pendingRequest, selected, browser);
   mismatchConfirmationArmed = false;
@@ -138,38 +202,84 @@ async function testCandidate() {
 }
 
 async function confirmCandidate() {
-  if (!candidate) return;
-  if (candidate.compatibility.level === 'warning' && !mismatchConfirmationArmed) {
+  const candidateAtStart = candidate;
+  const requestAtStart = pendingRequest;
+  const operationToken = ++operationGeneration;
+  if (!candidateAtStart || !requestAtStart) return;
+  if (authorizationController.confirmInFlight) {
+    setStatus('正在保存这项映射，请稍候。');
+    return;
+  }
+  if (candidateAtStart.compatibility.level === 'warning' && !mismatchConfirmationArmed) {
     mismatchConfirmationArmed = true;
     elements.confirmCandidate.textContent = '名称不一致，仍确认保存';
     setStatus('名称看起来不一致。请再次点击确认，表示你已通过试听核对物理设备。');
     return;
   }
-  const store = await loadMappingStore();
-  await chrome.storage.local.set({ [OUTPUT_MAPPINGS_KEY]: confirmOutputMapping(store, candidate) });
-  const completed = pendingRequest;
-  const storedQueue = await chrome.storage.session.get(PENDING_OUTPUT_AUTHORIZATION_KEY);
-  const queue = removeAuthorizationRequest(storedQueue[PENDING_OUTPUT_AUTHORIZATION_KEY], browser, completed.windowsEndpointId);
-  await chrome.storage.session.set({ [PENDING_OUTPUT_AUTHORIZATION_KEY]: queue });
-  await chrome.runtime.sendMessage({
-    type: 'authorization.mappingChanged', action: 'confirmed', browser,
-    windowsEndpointId: completed.windowsEndpointId,
-    waiterCount: Object.keys(completed.waiters || {}).length
-  });
-  setStatus(`已验证并保存：${candidate.windowsEndpointName} → ${candidate.browserLabel || '所选浏览器设备'}`);
-  candidate = null;
-  elements.candidatePanel.classList.add('hidden');
-  await loadPendingRequests();
-  await renderMappings();
+  setConfirmationBusy(true);
+  elements.retryNotification.classList.add('hidden');
+  try {
+    const result = await authorizationController.confirm(candidateAtStart, requestAtStart, operationToken);
+    if (result.status === 'ignored') {
+      setStatus('正在保存这项映射，请稍候。');
+      return;
+    }
+    const snapshot = result.snapshot;
+    resetCandidate(true);
+    if (result.notified) {
+      setStatus(`已验证并保存：${snapshot.endpointName} → ${snapshot.browserLabel || '所选浏览器设备'}`);
+    } else {
+      elements.retryNotification.classList.remove('hidden');
+      setStatus(`映射已保存，但通知增强标签页失败：${result.notificationError}。可以点击“重新通知”。`);
+    }
+  } finally {
+    setConfirmationBusy(false);
+    await requestPendingRefresh();
+    await requestMappingRefresh();
+    if (deviceRefreshRequested) {
+      deviceRefreshRequested = false;
+      await refreshVisibleDevices(true);
+    }
+  }
 }
 
-function resetCandidate() {
+async function retryNotification() {
+  elements.retryNotification.disabled = true;
+  try {
+    const result = await authorizationController.retryNotification();
+    if (result.notified) {
+      elements.retryNotification.classList.add('hidden');
+      setStatus('已重新通知增强标签页。已保存的映射现在可以重试。');
+    } else {
+      setStatus(`映射仍已安全保存，但通知失败：${result.notificationError}。请确认桌面程序正在运行后重试。`);
+    }
+  } finally {
+    elements.retryNotification.disabled = false;
+  }
+}
+
+function setConfirmationBusy(busy) {
+  for (const element of [elements.chooseOutput, elements.unlockDevices, elements.useFallback,
+    elements.pendingTargets, elements.testCandidate, elements.confirmCandidate,
+    elements.reselectCandidate, elements.cancelCandidate, elements.clearAll]) element.disabled = busy;
+  for (const button of elements.mappings.querySelectorAll('button')) button.disabled = busy;
+  if (!busy) {
+    elements.pendingTargets.disabled = pendingRequests.length === 0;
+    elements.chooseOutput.disabled = !pendingRequest;
+    elements.unlockDevices.disabled = !pendingRequest;
+    elements.useFallback.disabled = !pendingRequest || visibleOutputs.length === 0;
+  }
+}
+
+function resetCandidate(force = false) {
+  if (authorizationController.confirmInFlight && !force) return;
   candidate = null;
   mismatchConfirmationArmed = false;
   elements.candidatePanel.classList.add('hidden');
 }
 
 function cancelCandidate() {
+  if (authorizationController.confirmInFlight) return;
   resetCandidate();
   setStatus('已取消；候选设备没有写入，原映射保持不变。');
 }
@@ -227,9 +337,9 @@ function createMappingCard(mapping) {
   const actions = document.createElement('div');
   actions.className = 'actions';
   actions.append(
-    actionButton('测试', () => { void testExistingMapping(mapping); }),
-    actionButton('修改/重新授权', () => editMapping(mapping), 'secondary'),
-    actionButton('删除/忘记', () => { void deleteMapping(mapping); }, 'danger')
+    actionButton('测试', '测试已保存映射', () => testExistingMapping(mapping)),
+    actionButton('修改/重新授权', '修改输出映射', () => editMapping(mapping), 'secondary'),
+    actionButton('删除/忘记', '删除输出映射', () => deleteMapping(mapping), 'danger')
   );
   const details = document.createElement('details');
   const summary = document.createElement('summary');
@@ -241,11 +351,12 @@ function createMappingCard(mapping) {
   return card;
 }
 
-function actionButton(text, handler, className = '') {
+function actionButton(text, operationName, action, className = '') {
   const button = document.createElement('button');
   button.textContent = text;
   button.className = className;
-  button.addEventListener('click', handler);
+  button.disabled = authorizationController.confirmInFlight;
+  button.addEventListener('click', () => runUiTask(operationName, action));
   return button;
 }
 
@@ -257,6 +368,7 @@ async function testExistingMapping(mapping) {
 }
 
 function editMapping(mapping) {
+  if (authorizationController.confirmInFlight) return;
   const existing = pendingRequests.find((request) => request.windowsEndpointId === mapping.windowsEndpointId);
   if (!existing) {
     pendingRequests.push({ browser, windowsEndpointId: mapping.windowsEndpointId,
@@ -270,6 +382,7 @@ function editMapping(mapping) {
 }
 
 async function deleteMapping(mapping) {
+  if (authorizationController.confirmInFlight) return;
   if (!window.confirm(`忘记“${mapping.windowsEndpointName}”的浏览器设备映射？`)) return;
   const store = await loadMappingStore();
   await chrome.storage.local.set({ [OUTPUT_MAPPINGS_KEY]: removeOutputMapping(store, browser, mapping.windowsEndpointId) });
@@ -280,6 +393,7 @@ async function deleteMapping(mapping) {
 }
 
 async function clearAllMappings() {
+  if (authorizationController.confirmInFlight) return;
   if (!window.confirm('清除当前浏览器配置中的全部 Audio Source Mixer 输出设备映射？')) return;
   const store = await loadMappingStore();
   await chrome.storage.local.set({ [OUTPUT_MAPPINGS_KEY]: clearBrowserOutputMappings(store, browser) });
@@ -294,6 +408,10 @@ function requirePendingRequest() {
 
 function setStatus(message) { elements.status.textContent = message; }
 
-await loadMappingStore();
-await loadPendingRequests();
-await refreshVisibleDevices(false);
+async function initialize() {
+  await loadMappingStore();
+  await loadPendingRequests();
+  await refreshVisibleDevices(false);
+}
+
+initialize().catch((error) => reportUiError('初始化授权页面', error));

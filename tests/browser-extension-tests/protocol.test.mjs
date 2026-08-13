@@ -164,7 +164,7 @@ test('manifest remains MV3 with scoped capture, authorization, and storage capab
   assert.ok(!manifest.permissions.includes('<all_urls>'));
 });
 
-test('visible authorization page consumes a desktop endpoint request and stops fallback microphone tracks', async () => {
+test('visible authorization page consumes requests through a guarded transaction and stops fallback microphone tracks', async () => {
   const code = await readFile(new URL('../../src/AudioSourceMixer.BrowserExtension/output-authorization/authorize.js', import.meta.url), 'utf8');
   assert.match(code, /elements\.chooseOutput\.addEventListener\('click'/);
   assert.match(code, /navigator\.mediaDevices\.selectAudioOutput\(\)/);
@@ -173,9 +173,14 @@ test('visible authorization page consumes a desktop endpoint request and stops f
   assert.match(code, /pendingRequest\?\.windowsEndpointId/);
   assert.match(code, /pendingAuthorizationRequests/);
   assert.match(code, /chrome\.storage\.local/);
+  assert.match(code, /createAuthorizationController/);
+  assert.match(code, /candidateAtStart = candidate/);
+  assert.match(code, /requestAtStart = pendingRequest/);
+  assert.match(code, /authorizationController\.confirm\(candidateAtStart, requestAtStart, operationToken\)/);
+  assert.match(code, /initialize\(\)\.catch/);
+  assert.doesNotMatch(code, /\bvoid\s+[A-Za-z_$]/u);
   assert.doesNotMatch(code, /windowsNameInput/);
-  assert.ok(code.indexOf('confirmOutputMapping(store, candidate)') >
-    code.indexOf('navigator.mediaDevices.selectAudioOutput()'));
+  assert.ok(code.indexOf('candidateAtStart = candidate') < code.indexOf('await authorizationController.confirm'));
 });
 
 test('legacy mappings migrate to schema 3 as unverified and are not trusted before confirmation', () => {

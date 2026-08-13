@@ -12,6 +12,7 @@
     { "path": "BrowserExtension/manifest.json", "purpose": "Manifest V3 extension declaration" },
     { "path": "BrowserExtension/offscreen/offscreen.html", "purpose": "offscreen audio document" },
     { "path": "BrowserExtension/offscreen/offscreen.js", "purpose": "tab audio graph runtime" },
+    { "path": "BrowserExtension/output-authorization/authorization-controller.js", "purpose": "serialized output authorization transaction runtime" },
     { "path": "BrowserExtension/output-authorization/authorization-workflow.js", "purpose": "output authorization candidate and test tone" },
     { "path": "BrowserExtension/output-authorization/authorize.css", "purpose": "output authorization page styles" },
     { "path": "BrowserExtension/output-authorization/authorize.html", "purpose": "visible output authorization page" },

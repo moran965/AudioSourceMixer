@@ -197,6 +197,25 @@ export function removeAuthorizationRequest(queue, browser, windowsEndpointId) {
   return updated;
 }
 
+export function removeAuthorizationWaiters(queue, browser, windowsEndpointId, waiterKeys) {
+  const updated = { ...(queue || {}) };
+  const key = authorizationRequestKey(browser, windowsEndpointId);
+  const request = updated[key];
+  if (!request) return updated;
+
+  const keys = new Set((waiterKeys || []).filter((value) => typeof value === 'string' && value));
+  if (keys.size === 0) {
+    delete updated[key];
+    return updated;
+  }
+
+  const waiters = Object.fromEntries(Object.entries(request.waiters || {})
+    .filter(([waiterKey]) => !keys.has(waiterKey)));
+  if (Object.keys(waiters).length === 0) delete updated[key];
+  else updated[key] = { ...request, waiters };
+  return updated;
+}
+
 export function pendingAuthorizationRequests(queue, browser) {
   return Object.values(queue || {})
     .filter((request) => request.browser === browser && request.windowsEndpointId)
