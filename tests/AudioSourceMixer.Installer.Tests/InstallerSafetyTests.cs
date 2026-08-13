@@ -30,6 +30,19 @@ public sealed class InstallerSafetyTests : IDisposable
     }
 
     [Fact]
+    public void InstallerInformationalVersionExactlyMatchesCentralProductVersion()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var props = System.Xml.Linq.XDocument.Load(Path.Combine(root, "Directory.Build.props"));
+        var expected = props.Descendants("AudioSourceMixerVersion").Single().Value;
+        var actual = typeof(Program).Assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .Cast<System.Reflection.AssemblyInformationalVersionAttribute>().Single().InformationalVersion;
+        Assert.Equal(expected, actual);
+        Assert.DoesNotContain('+', actual);
+    }
+
+    [Fact]
     public void InstalledUninstallerSourceHasDedicatedNoArgumentModeAndNoInstallButton()
     {
         var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",

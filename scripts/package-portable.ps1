@@ -79,7 +79,7 @@ try {
     }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [IO.Compression.ZipFile]::OpenRead($zip)
-    try { $zipEntries = @($archive.Entries | Where-Object Name | ForEach-Object FullName) }
+    try { $zipEntries = @($archive.Entries | Where-Object Name | ForEach-Object { $_.FullName.Replace('\', '/') }) }
     finally { $archive.Dispose() }
     if (@(Compare-Object @($inventory.path | Sort-Object) @($zipEntries | Sort-Object)).Count -ne 0) { throw 'Portable ZIP inventory differs from the verified directory.' }
     Write-Output "Publish executable SHA-256: $publishHash"

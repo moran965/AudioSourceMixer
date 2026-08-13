@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.1 - 2026-08-13
+
+- 在 `a094044` 建立的 v0.2.0 Git 基线上完成六个可独立回退的清理、负载、UI、EQ、测试和发布提交。
+- 合并仍有效的研究结论后删除旧实施记录与废弃实验残留；`ProcessLoopbackProbe` 改为仅显式 `-IncludeProbes` 构建，产品负载不含探针。
+- 精简来源卡片、顶部状态和设置说明：正常状态保持安静，异常状态给出声音是否可用和下一步操作；长来源列表使用 recycling 虚拟化。
+- 新增原创混音滑杆产品图标并统一用于 EXE、窗口、托盘、安装器、卸载器和 Chrome/Edge 扩展。
+- 发行流程改为机器可读 allowlist 精确组装；portable 与安装目录不再包含开发 docs、tests、tools、package.json、diagnostics、PDB、源码或构建机绝对路径。
+- 浏览器增强来源新增真实 10 段 Web Audio EQ：固定 BiquadFilter 链、独立 headroom/preamp、平滑参数更新、关闭时 flat/bypass、多标签隔离、设备切换保留和完整节点清理。
+- 浏览器 Native Messaging 协议升级到 3；协议 2 扩展继续支持 200% 增益、平衡和输出路由，仅隐藏 EQ。profile 升级到 schema 3，旧浏览器来源迁移为 EQ 关闭。
+- 普通 Windows 会话继续使用原生音量、静音、平衡和 AudioPolicyConfig 路由，不重新引入捕获重放、虚拟设备或伪逐应用 EQ。
+- 新增 EQ 参数/预设/非法输入/generation/快速拖动/恢复测试，WPF smoke 展开并物化 10 段模板，安装验证严格比较 installed allowlist 与 portable/installed 哈希。
+- 验证 v0.2.0→v0.2.1 原位升级、fresh install、同版本 repair、自定义路径、运行中卸载和注册表清理。
+
 ## 0.2.0 - 2026-08-13
 
 - 浏览器输出授权改为三步可见向导：候选映射不会自动保存，支持低音量试听、明确确认、明显名称不匹配的二次确认，以及测试、修改、删除和当前浏览器清空。

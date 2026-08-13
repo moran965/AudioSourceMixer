@@ -1,4 +1,4 @@
-# Audio Source Mixer 0.2.0 核心代码图
+# Audio Source Mixer 0.2.1 核心代码图
 
 ## 桌面、设置和启动
 
@@ -6,7 +6,7 @@
 |---|---|---|
 | 混音器 / 设置页 | `Desktop/MainWindow.xaml` | 顶部页签；全局选项从混音器移入设置页；所有绑定显式声明方向 |
 | 设置状态与命令 | `Desktop/ViewModels/MainViewModel.cs` | 串行保存；浏览器管理/清空；清除配置和恢复默认确认；版本/部署类型 |
-| 设置 schema | `Core/Persistence/ProfileKeys.cs` | `ApplicationSettings` schema 2；反序列化保留 0.1.2 四个原字段 |
+| 设置与 profile schema | `Core/Persistence/ProfileKeys.cs`, `Core/Persistence/JsonStores.cs` | `ApplicationSettings` schema 3；profile schema 3 保存浏览器 EQ 并迁移 schema 2 |
 | 开机启动 | `Desktop/Services/StartupRegistrationService.cs` | 安装版实际读取/写入 HKCU Run；只删除指向当前产品路径的值 |
 | 后台启动 | `Desktop/App.xaml.cs` | `--background` 完成托盘、桥接和音频初始化但不 `Show()` 主窗口 |
 | 优雅安装退出 | `Desktop/App.xaml.cs` | `Local\AudioSourceMixer.Exit` 事件触发同一恢复/清理路径 |
@@ -33,9 +33,10 @@
 | 候选与测试音 | `authorization-workflow.js` | 名称规范化辅助提示；临时 AudioContext + setSinkId；结束必关闭 |
 | 映射存储与迁移 | `mappings.js` | `outputMappingsV3` / schema 3；旧映射迁移为 unverified；浏览器+endpoint 隔离 |
 | service worker | `service-worker/service-worker.js` | 顶层监听器；session 状态和锁；无活动图恢复不 connectNative；活动图共用一条 port |
-| offscreen 音频图 | `offscreen/offscreen.js` | 每标签 Web Audio 图；严格核对 sinkId；失败不伪装为默认设备成功 |
+| EQ 参数目录 | `shared/equalizer.js`, `Core/Models/AudioEffects.cs` | 10 段频率/Q/类型、预设、范围校验和保守 headroom 的双端常量 |
+| offscreen 音频图 | `offscreen/offscreen.js` | 每标签固定 10 段 Biquad 链；EQ/主增益/平衡独立；严格核对 sinkId；停止时清理全部节点 |
 | Native Host | `NativeHost/NativeHostRunner.cs` | 仅桥接 stdio 和命名管道；800 ms 超时报告并退出，绝不启动桌面程序 |
-| 桌面桥接协议 | `Core/Browser/BrowserProtocol.cs`, `BrowserBridgeServer.cs` | 协议 2；扩展浏览器/版本状态；打开 options、清空映射、标签控制与确认 |
+| 桌面桥接协议 | `Core/Browser/BrowserProtocol.cs`, `BrowserBridgeServer.cs` | 协议 3 增加可选 EQ；协议 1/2 保持兼容；打开 options、清空映射、标签控制与确认 |
 
 扩展求值、安装、Reload 和浏览器启动只恢复状态；只有用户操作或确有仍活动的 capture graph 才连接 Native Host。
 

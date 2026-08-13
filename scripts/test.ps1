@@ -8,6 +8,7 @@ try {
     Invoke-Checked { & $dotnet test '.\AudioSourceMixer.sln' --configuration $Configuration --no-build --no-restore } '.NET tests'
     $browserTests = @(Get-ChildItem -LiteralPath '.\tests\browser-extension-tests' -Filter '*.test.mjs' | Select-Object -ExpandProperty FullName)
     Invoke-Checked { & node --test @browserTests } 'Browser extension tests'
+    Invoke-Checked { & node '.\scripts\verify-browser-equalizer-runtime.mjs' } 'Chrome/Edge Web Audio EQ runtime tests'
     $sourceExecutable = Join-Path $root "src\AudioSourceMixer.Desktop\bin\$Configuration\net8.0-windows\win-x64\AudioSourceMixer.exe"
     Invoke-UiSmokeTest $sourceExecutable "Source $Configuration UI smoke test"
 } finally { Pop-Location }

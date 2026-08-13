@@ -68,7 +68,7 @@ try {
         port.postMessage({ protocolVersion: 2, type: 'bridge.hello' });
       }))()`);
     const result = { ...pageDetails, nativeMessage };
-    if (result.manifestVersion !== '0.2.0' || result.manifestV3 !== 3) throw new Error(`Unexpected extension manifest: ${JSON.stringify(result)}`);
+    if (result.manifestVersion !== '0.2.1' || result.manifestV3 !== 3) throw new Error(`Unexpected extension manifest: ${JSON.stringify(result)}`);
     if (mode !== 'idle' && (result.nativeMessage?.type !== 'bridge.status' || result.nativeMessage?.protocolVersion !== 2 || result.nativeMessage?.error)) {
       throw new Error(`Native Messaging handshake failed: ${JSON.stringify(result.nativeMessage)}`);
     }

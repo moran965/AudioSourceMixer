@@ -1,10 +1,11 @@
 <Project>
   <PropertyGroup>
-    <AudioSourceMixerVersion>0.2.0</AudioSourceMixerVersion>
+    <AudioSourceMixerVersion>0.2.1</AudioSourceMixerVersion>
     <Version>$(AudioSourceMixerVersion)</Version>
-    <AssemblyVersion>0.2.0.0</AssemblyVersion>
-    <FileVersion>0.2.0.0</FileVersion>
+    <AssemblyVersion>0.2.1.0</AssemblyVersion>
+    <FileVersion>0.2.1.0</FileVersion>
     <InformationalVersion>$(AudioSourceMixerVersion)</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

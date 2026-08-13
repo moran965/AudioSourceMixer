@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Audio Source Mixer browser EQ runtime check</title></head>
+<body><pre id="result">WAIT</pre>
+<script type="module">
+import {
+  EQUALIZER_BANDS,
+  createEqualizerPreset,
+  decibelsToGain,
+  effectiveHeadroomDb
+} from '/src/AudioSourceMixer.BrowserExtension/shared/equalizer.js';
+
+const result = document.querySelector('#result');
+const requireCheck = (condition, message) => { if (!condition) throw new Error(message); };
+
+function cascadeResponse(presetId) {
+  const settings = createEqualizerPreset(presetId);
+  const context = new OfflineAudioContext(2, 1, 48000);
+  const frequencies = new Float32Array(EQUALIZER_BANDS.map((band) => band.frequencyHz));
+  const cascade = new Float32Array(frequencies.length).fill(1);
+  for (let index = 0; index < EQUALIZER_BANDS.length; index++) {
+    const definition = EQUALIZER_BANDS[index];
+    const filter = context.createBiquadFilter();
+    filter.type = definition.filterType;
+    filter.frequency.value = definition.frequencyHz;
+    filter.Q.value = definition.q;
+    filter.gain.value = settings.enabled ? settings.bands[index].gainDb : 0;
+    const magnitude = new Float32Array(frequencies.length);
+    filter.getFrequencyResponse(frequencies, magnitude, new Float32Array(frequencies.length));
+    for (let point = 0; point < cascade.length; point++) cascade[point] *= magnitude[point];
+  }
+  return [...cascade].map((value) => 20 * Math.log10(value));
+}
+
+async function renderSignal(volume, balance, presetId) {
+  const sampleRate = 48000;
+  const frames = 4800;
+  const context = new OfflineAudioContext(2, frames, sampleRate);
+  const source = context.createBufferSource();
+  const buffer = context.createBuffer(1, frames, sampleRate);
+  const samples = buffer.getChannelData(0);
+  for (let index = 0; index < frames; index++) samples[index] = Math.sin(2 * Math.PI * 440 * index / sampleRate) * 0.1;
+  source.buffer = buffer;
+  const settings = createEqualizerPreset(presetId);
+  let tail = source;
+  for (let index = 0; index < EQUALIZER_BANDS.length; index++) {
+    const definition = EQUALIZER_BANDS[index];
+    const filter = context.createBiquadFilter();
+    filter.type = definition.filterType;
+    filter.frequency.value = definition.frequencyHz;
+    filter.Q.value = definition.q;
+    filter.gain.value = settings.enabled ? settings.bands[index].gainDb : 0;
+    tail.connect(filter);
+    tail = filter;
+  }
+  const headroom = context.createGain();
+  headroom.gain.value = decibelsToGain(effectiveHeadroomDb(settings));
+  const gain = context.createGain();
+  gain.gain.value = volume;
+  const panner = context.createStereoPanner();
+  panner.pan.value = balance;
+  tail.connect(headroom).connect(gain).connect(panner).connect(context.destination);
+  source.start();
+  const rendered = await context.startRendering();
+  const rms = (channel) => Math.sqrt(channel.reduce((sum, value) => sum + value * value, 0) / channel.length);
+  return [rms(rendered.getChannelData(0)), rms(rendered.getChannelData(1))];
+}
+
+try {
+  const off = cascadeResponse('off');
+  const flat = cascadeResponse('flat');
+  const bass = cascadeResponse('bass');
+  const vocal = cascadeResponse('vocal');
+  const treble = cascadeResponse('treble');
+  requireCheck(off.every((value) => Math.abs(value) < 0.01), 'off is not flat');
+  requireCheck(flat.every((value) => Math.abs(value) < 0.01), 'flat preset is not flat');
+  requireCheck(bass[0] > bass[7] + 4, 'bass preset lacks measured low-frequency lift');
+  requireCheck(vocal[6] > vocal[0] + 4, 'vocal preset lacks measured presence lift');
+  requireCheck(treble[9] > treble[2] + 4, 'treble preset lacks measured high-frequency lift');
+
+  const full = await renderSignal(1, 0, 'warm');
+  const half = await renderSignal(0.5, 0, 'warm');
+  const left = await renderSignal(1, -1, 'vocal');
+  requireCheck(Math.abs(half[0] / full[0] - 0.5) < 0.001, 'main volume is not independent after EQ');
+  requireCheck(left[1] < left[0] * 0.00001, 'left-only balance leaked into the right channel');
+  result.textContent = `PASS ${JSON.stringify({ off, flat, bass, vocal, treble, volumeRatio: half[0] / full[0], leftLeakRatio: left[1] / left[0] })}`;
+} catch (error) {
+  result.textContent = `FAIL ${error.stack || error.message}`;
+}
+</script></body></html>

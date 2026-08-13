@@ -25,9 +25,9 @@ flowchart LR
 
 ## 配置与浏览器
 
-`profiles.json` schemaVersion 2 增加来源类型。普通来源最大值为 1，浏览器来源最大值为 2。单项恢复删除对应 stable key；全部恢复在一个 guarded 流程中取消防抖/路由，恢复音频和浏览器图，清除配置及内存应用状态。“记住应用设置”关闭时采用“保留但忽略”语义。
+`profiles.json` schemaVersion 3 保存来源类型及浏览器 EQ。普通来源最大值为 1 且 `SupportsEqualizer=false`，浏览器来源最大值为 2；schema 2 浏览器配置迁移为 EQ 关闭。单项恢复关闭该来源 EQ 并删除对应 stable key；全部恢复在一个 guarded 流程中取消防抖/路由，恢复音频和浏览器图，清除配置及内存应用状态。“记住应用设置”关闭时采用“保留但忽略”语义。
 
-浏览器输出授权把系统选择结果先作为内存候选；只有用户播放低音量测试声并明确确认后才持久化 browser + Windows endpoint ID 到 browser deviceId/label/groupId 的映射。offscreen 只对实际捕获标签页的 `AudioContext` 调用 `setSinkId()` 并回读 `sinkId`。空闲 service worker 不连接 Native Host，Native Host 也不会启动桌面程序。
+浏览器输出授权把系统选择结果先作为内存候选；只有用户播放低音量测试声并明确确认后才持久化 browser + Windows endpoint ID 到 browser deviceId/label/groupId 的映射。每个实际捕获标签页持有独立的 `MediaStreamAudioSourceNode → 10×BiquadFilterNode → headroom GainNode → 主音量 GainNode → StereoPannerNode → AnalyserNode → destination` 固定图；EQ 更新不重建 capture、context 或 sink，关闭时全部频段归零且 headroom 为 1。offscreen 只对该 `AudioContext` 调用 `setSinkId()` 并回读 `sinkId`。空闲 service worker 不连接 Native Host，Native Host 也不会启动桌面程序。
 
 ## 安装边界
 
