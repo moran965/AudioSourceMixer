@@ -324,6 +324,7 @@ internal static class Program
         dynamic shell = Activator.CreateInstance(shellType)!;
         dynamic shortcut = shell.CreateShortcut(shortcutPath);
         shortcut.TargetPath = Path.Combine(directory, "AudioSourceMixer.exe"); shortcut.WorkingDirectory = directory;
+        shortcut.IconLocation = Path.Combine(directory, "AudioSourceMixer.exe") + ",0";
         shortcut.Description = "独立控制 Windows 音频会话"; shortcut.Save();
     }
 
@@ -361,6 +362,7 @@ internal static class Program
         public InstallerForm(string initialPath, bool startup, bool background)
         {
             Text = "安装 Audio Source Mixer"; Width = 650; Height = 390; StartPosition = Forms.FormStartPosition.CenterScreen;
+            Icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? throw new InvalidOperationException("无法读取安装器图标。");
             FormBorderStyle = Forms.FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false;
             Controls.Add(new Forms.Label { Text = "Audio Source Mixer", Font = new System.Drawing.Font("Segoe UI", 18, System.Drawing.FontStyle.Bold), AutoSize = true, Left = 24, Top = 20 });
             Controls.Add(new Forms.Label { Text = "安装位置", AutoSize = true, Left = 27, Top = 75 });
@@ -410,6 +412,7 @@ internal static class Program
         public UninstallerForm()
         {
             Text = "卸载 Audio Source Mixer"; Width = 520; Height = 240; StartPosition = Forms.FormStartPosition.CenterScreen;
+            Icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? throw new InvalidOperationException("无法读取卸载器图标。");
             FormBorderStyle = Forms.FormBorderStyle.FixedDialog; MaximizeBox = false; MinimizeBox = false;
             Controls.Add(new Forms.Label { Text = "卸载 Audio Source Mixer", Font = new System.Drawing.Font("Segoe UI", 16, System.Drawing.FontStyle.Bold), AutoSize = true, Left = 24, Top = 24 });
             Controls.Add(new Forms.Label { Text = "程序会先恢复音频并退出，然后删除安装文件。", AutoSize = true, Left = 27, Top = 70 });

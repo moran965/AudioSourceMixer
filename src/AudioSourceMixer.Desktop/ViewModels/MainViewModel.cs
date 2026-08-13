@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
+using System.Windows;
 using System.Windows.Input;
 using AudioSourceMixer.Core.Abstractions;
 using AudioSourceMixer.Core.Browser;
@@ -62,7 +63,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public ObservableCollection<AudioSourceViewModel> Sources { get; } = [];
     public ObservableCollection<OutputDeviceInfo> OutputDevices { get; } = [];
     public string DeviceName { get => _deviceName; private set => Set(ref _deviceName, value); }
-    public string BrowserStatus { get => _browserStatus; private set => Set(ref _browserStatus, value); }
+    public string BrowserStatus { get => _browserStatus; private set { if (Set(ref _browserStatus, value)) Raise(nameof(BrowserStatusVisibility)); } }
+    public Visibility BrowserStatusVisibility => _bridge.IsConnected || _browserTabs.Count > 0 ||
+        (!_browserStatus.Equals("等待扩展连接", StringComparison.Ordinal) && !_browserStatus.StartsWith("已连接", StringComparison.Ordinal))
+        ? Visibility.Visible : Visibility.Collapsed;
     public ICommand RefreshCommand { get; }
     public ICommand RestoreAllCommand { get; }
     public ICommand ClearProfilesCommand { get; }
@@ -100,6 +104,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public string VersionText => $"版本 {typeof(MainViewModel).Assembly.GetName().Version?.ToString(3)}";
     public string DeploymentText => StartupAvailable ? "安装版" : "便携版";
     public bool CloseToTray { get => _settings.CloseToTray; set { _settings = _settings with { CloseToTray = value }; Raise(); SaveSettings(); } }
+    public bool ShowOperationTips { get => _settings.ShowOperationTips; set { _settings = _settings with { ShowOperationTips = value }; Raise(); SaveSettings(); } }
     public bool AutoApplyProfiles { get => _settings.AutoApplyProfiles; set { _settings = _settings with { AutoApplyProfiles = value }; Raise(); SaveSettings(); Reconcile(); } }
     // Turning this off keeps existing profiles on disk but ignores them for auto-apply and future saves.
     public bool RememberProfiles { get => _settings.RememberProfiles; set { _settings = _settings with { RememberProfiles = value }; Raise(); Raise(nameof(AutoApplyProfilesEnabled)); SaveSettings(); Reconcile(); } }
@@ -135,6 +140,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Raise(nameof(RememberProfiles));
         Raise(nameof(ShowInactiveSessions));
         Raise(nameof(StartMinimizedToTray));
+        Raise(nameof(ShowOperationTips));
         Raise(nameof(StartupEnabled));
         Raise(nameof(StartupAvailable));
     }
@@ -169,7 +175,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         => Dispatch(() => { _windowsSources = sources; Reconcile(); });
     private void BrowserTabsChanged(object? sender, IReadOnlyList<BrowserTabSource> tabs)
         => Dispatch(() => { _browserTabs = tabs; BrowserStatus = _bridge.IsConnected ? $"已连接 · {tabs.Count} 个标签页" : "等待扩展连接";
-            Raise(nameof(ChromeConnectionStatus)); Raise(nameof(EdgeConnectionStatus)); Reconcile(); });
+            Raise(nameof(ChromeConnectionStatus)); Raise(nameof(EdgeConnectionStatus)); Raise(nameof(BrowserStatusVisibility)); Reconcile(); });
 
     private void Reconcile()
     {
@@ -515,6 +521,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _settings = new ApplicationSettings();
         Raise(nameof(CloseToTray)); Raise(nameof(AutoApplyProfiles)); Raise(nameof(RememberProfiles));
         Raise(nameof(ShowInactiveSessions)); Raise(nameof(StartMinimizedToTray)); Raise(nameof(StartupEnabled));
+        Raise(nameof(ShowOperationTips));
         Raise(nameof(AutoApplyProfilesEnabled));
         SaveSettings();
         await RestoreAllAsync();
@@ -525,6 +532,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         var snapshot = _settings;
         lock (_settingsSaveSync)
             _settingsSaveTask = SaveSettingsAfterAsync(_settingsSaveTask, snapshot);
+    }
+
+    public bool TryConsumeTrayHint()
+    {
+        if (!_settings.ShowOperationTips || _settings.TrayHintShown) return false;
+        _settings = _settings with { TrayHintShown = true };
+        SaveSettings();
+        return true;
     }
 
     private async Task SaveSettingsAfterAsync(Task previous, ApplicationSettings snapshot)

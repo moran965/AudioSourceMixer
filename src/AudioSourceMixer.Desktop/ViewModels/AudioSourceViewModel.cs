@@ -77,9 +77,7 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     public bool SupportsExtendedGain => _snapshot.Capabilities.SupportsExtendedGain;
     public bool SupportsOutputRouting => _snapshot.Capabilities.SupportsOutputRouting;
     public double VolumeMaximum => SupportsExtendedGain ? 200 : 100;
-    public string VolumeScaleText => SupportsExtendedGain ? "0 ─── 100 基准 ─── 200" : "0 ───────── 100";
     public double PeakPercent => _snapshot.Peak * 100;
-    public string StateText => _snapshot.State == AudioPlaybackState.Active ? "正在播放" : _snapshot.State == AudioPlaybackState.Expired ? "已失效" : "空闲";
     public Visibility StopVisibility => _snapshot.Kind == AudioSourceKind.WindowsSession ? Visibility.Collapsed : Visibility.Visible;
     public Visibility EnhancedStatusVisibility => _snapshot.Kind == AudioSourceKind.WindowsSession ? Visibility.Collapsed : Visibility.Visible;
     public Visibility ReauthorizeOutputVisibility => _snapshot.Kind != AudioSourceKind.WindowsSession &&
@@ -87,11 +85,6 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     public string MuteLabel => _muted ? "取消静音" : "静音";
     public string BalanceText => _balancePercent switch { <= -99 => "仅左", < -5 => "偏左", >= 99 => "仅右", > 5 => "偏右", _ => "居中" };
     public string GainWarning => SupportsExtendedGain && _volumePercent > 100 ? "超过 100% 可能造成失真" : string.Empty;
-    public string ProcessingModeText => _snapshot.Kind == AudioSourceKind.WindowsSession ? string.Empty :
-        _snapshot.ProcessingMode == AudioProcessingMode.Advanced ? "浏览器标签页增强处理" : "增强功能不可用";
-    public string RoutingGranularityText => _snapshot.Kind == AudioSourceKind.WindowsSession
-        ? "输出设备按应用/进程生效"
-        : "输出设备按浏览器标签页生效";
     public string OutputStatus => SupportsOutputRouting
         ? _snapshot.RoutingState switch
         {
@@ -107,6 +100,26 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         : _snapshot.Kind == AudioSourceKind.WindowsSession
             ? $"当前端点：{_snapshot.OutputDeviceName ?? "未知"}；按应用路由不可用"
             : "输出设备映射不可用";
+    public string UserStatusMessage
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(Limitation)) return Limitation!;
+            if (_snapshot.State is AudioPlaybackState.Expired or AudioPlaybackState.Unavailable)
+                return "该来源已失效，声音不可控制；请重新开始播放。";
+            return _snapshot.RoutingState switch
+            {
+                AudioRoutingState.PendingAuthorization => $"需要授权“{_preferredOutputDeviceName ?? "所选设备"}”；当前声音仍使用原输出，请打开授权页试听并确认。",
+                AudioRoutingState.PendingStreamRestart => "输出偏好已保存，但当前声音可能仍在原设备；请暂停后继续播放，或重开应用。",
+                AudioRoutingState.Partial => "只有部分声音流切换成功；当前仍有声音，请暂停后继续播放或重开应用。",
+                AudioRoutingState.Disconnected => $"“{_preferredOutputDeviceName ?? "所选设备"}”已断开；当前声音可能继续使用原设备，重新连接后会再次检查。",
+                AudioRoutingState.Failed => $"输出设备切换失败；当前声音保持原路径。请重试或选择系统默认。{(string.IsNullOrWhiteSpace(_snapshot.RoutingError) ? "" : $" {_snapshot.RoutingError}")}",
+                _ => string.Empty
+            };
+        }
+    }
+    public Visibility UserStatusVisibility => string.IsNullOrWhiteSpace(UserStatusMessage) ? Visibility.Collapsed : Visibility.Visible;
+    public Visibility GainWarningVisibility => string.IsNullOrWhiteSpace(GainWarning) ? Visibility.Collapsed : Visibility.Visible;
 
     public ObservableCollection<OutputDeviceInfo> OutputDevices { get; } = [];
     public OutputDeviceInfo? SelectedOutputDevice => _selectedOutputDevice;
@@ -125,6 +138,7 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
             if (_updating || _isRestoring() || !Set(ref _volumePercent, Math.Clamp(value, 0, VolumeMaximum))) return;
             _lastUserChange = DateTimeOffset.UtcNow;
             Raise(nameof(GainWarning));
+            Raise(nameof(GainWarningVisibility));
             _volumeDebouncer.Schedule(async token => { await ApplyAudioAsync(token); await SaveProfileAsync(token); });
         }
     }
@@ -407,9 +421,9 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     {
         Raise(nameof(DisplayName)); Raise(nameof(SourceDescription)); Raise(nameof(Limitation)); Raise(nameof(SupportsBalance));
         Raise(nameof(SupportsExtendedGain)); Raise(nameof(SupportsOutputRouting)); Raise(nameof(VolumeMaximum));
-        Raise(nameof(VolumeScaleText)); Raise(nameof(PeakPercent)); Raise(nameof(StateText)); Raise(nameof(BalanceText));
-        Raise(nameof(MuteLabel)); Raise(nameof(GainWarning)); Raise(nameof(ProcessingModeText)); Raise(nameof(OutputStatus));
-        Raise(nameof(RoutingGranularityText)); Raise(nameof(EnhancedStatusVisibility));
+        Raise(nameof(PeakPercent)); Raise(nameof(BalanceText));
+        Raise(nameof(MuteLabel)); Raise(nameof(GainWarning)); Raise(nameof(GainWarningVisibility)); Raise(nameof(OutputStatus));
+        Raise(nameof(UserStatusMessage)); Raise(nameof(UserStatusVisibility)); Raise(nameof(EnhancedStatusVisibility));
         Raise(nameof(ReauthorizeOutputVisibility));
         Raise(nameof(VolumePercent)); Raise(nameof(BalancePercent)); Raise(nameof(SelectedOutputDevice));
         Raise(nameof(SelectedOutputDeviceId));

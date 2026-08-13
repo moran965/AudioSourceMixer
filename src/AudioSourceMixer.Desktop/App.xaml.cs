@@ -17,6 +17,7 @@ public partial class App : System.Windows.Application
     private Mutex? _singleInstance;
     private bool _ownsMutex;
     private Forms.NotifyIcon? _tray;
+    private Icon? _productIcon;
     private WindowsAudioService? _audio;
     private BrowserBridgeServer? _bridge;
     private MainViewModel? _viewModel;
@@ -274,7 +275,8 @@ public partial class App : System.Windows.Application
 
     private void CreateTray(bool visible)
     {
-        _tray = new Forms.NotifyIcon { Icon = SystemIcons.Application, Text = "Audio Source Mixer", Visible = visible };
+        _productIcon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? throw new InvalidOperationException("无法读取产品图标。");
+        _tray = new Forms.NotifyIcon { Icon = _productIcon, Text = "Audio Source Mixer", Visible = visible };
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add("打开主窗口", null, (_, _) => ShowMainWindow());
         menu.Items.Add("全部恢复默认", null, async (_, _) =>
@@ -306,7 +308,8 @@ public partial class App : System.Windows.Application
     public void HideToTray()
     {
         _window?.Hide();
-        _tray?.ShowBalloonTip(1500, "Audio Source Mixer", "程序仍在托盘运行；退出时会恢复音频设置。", Forms.ToolTipIcon.Info);
+        if (_viewModel?.TryConsumeTrayHint() == true)
+            _tray?.ShowBalloonTip(1500, "Audio Source Mixer", "程序仍在托盘运行；退出请使用托盘菜单。", Forms.ToolTipIcon.Info);
     }
 
     private void ShowMainWindow()
@@ -372,6 +375,8 @@ public partial class App : System.Windows.Application
         await CleanupAsync("Tray dispose", () =>
         {
             _tray?.Dispose();
+            _productIcon?.Dispose();
+            _productIcon = null;
             return Task.CompletedTask;
         });
         await CleanupAsync("Single-instance mutex release", () =>

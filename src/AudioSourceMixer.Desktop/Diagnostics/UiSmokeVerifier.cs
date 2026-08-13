@@ -67,6 +67,12 @@ internal static class UiSmokeVerifier
         if (window.SourceItems.Items.Count < 1)
             throw new InvalidOperationException("The UI smoke test did not receive an audio source item.");
 
+        if (window.SourceItems is System.Windows.Controls.ListBox virtualizedList)
+        {
+            virtualizedList.ScrollIntoView(diagnosticSource);
+            await window.Dispatcher.InvokeAsync(() => virtualizedList.UpdateLayout(), DispatcherPriority.Render, cancellationToken);
+        }
+
         var container = window.SourceItems.ItemContainerGenerator.ContainerFromItem(diagnosticSource)
                         ?? throw new InvalidOperationException("ItemsControl did not generate a container for the diagnostic audio source.");
         if (VisualTreeHelper.GetChildrenCount(container) == 0)

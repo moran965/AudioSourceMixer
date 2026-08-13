@@ -21,7 +21,9 @@ public sealed record ApplicationSettings(
     bool RememberProfiles = true,
     bool ShowInactiveSessions = true,
     bool StartMinimizedToTray = true,
-    int SchemaVersion = 2);
+    bool ShowOperationTips = true,
+    bool TrayHintShown = false,
+    int SchemaVersion = 3);
 
 public sealed class JsonApplicationSettingsStore(string directory)
 {
@@ -35,8 +37,9 @@ public sealed class JsonApplicationSettingsStore(string directory)
         {
             if (!File.Exists(_path)) return new ApplicationSettings();
             await using var stream = File.OpenRead(_path);
-            return await System.Text.Json.JsonSerializer.DeserializeAsync<ApplicationSettings>(stream, cancellationToken: cancellationToken)
-                       .ConfigureAwait(false) ?? new ApplicationSettings();
+            var loaded = await System.Text.Json.JsonSerializer.DeserializeAsync<ApplicationSettings>(stream, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            return loaded is null ? new ApplicationSettings() : loaded with { SchemaVersion = 3 };
         }
         catch (System.Text.Json.JsonException) { return new ApplicationSettings(); }
         finally { _gate.Release(); }

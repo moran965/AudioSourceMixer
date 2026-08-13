@@ -12,9 +12,11 @@
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <ApplicationIcon>..\..\assets\generated\AudioSourceMixer.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
+    <Resource Include="..\..\assets\generated\AudioSourceMixer.ico" Link="Assets\AudioSourceMixer.ico" />
     <ProjectReference Include="..\AudioSourceMixer.Core\AudioSourceMixer.Core.csproj" />
     <ProjectReference Include="..\AudioSourceMixer.WindowsAudio\AudioSourceMixer.WindowsAudio.csproj" />
   </ItemGroup>

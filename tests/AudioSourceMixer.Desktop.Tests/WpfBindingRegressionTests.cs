@@ -130,7 +130,7 @@ public sealed class WpfBindingRegressionTests
 
                 Assert.True(window.IsVisible);
                 Assert.True(result.ItemCount >= 1);
-                Assert.Equal("ContentPresenter", result.ContainerType);
+                Assert.Equal("ListBoxItem", result.ContainerType);
                 Assert.Equal(UiSmokeVerifier.UpdatedPeak * 100d, result.PeakValue, 3);
                 Assert.True(result.Bindings.Count >= 11);
 
@@ -147,10 +147,14 @@ public sealed class WpfBindingRegressionTests
                 Assert.Equal(
                     [nameof(MainViewModel.AutoApplyProfiles), nameof(AudioSourceViewModel.BalancePercent), nameof(MainViewModel.CloseToTray),
                      nameof(MainViewModel.RememberProfiles), nameof(MainViewModel.ShowInactiveSessions),
-                     nameof(MainViewModel.StartMinimizedToTray), nameof(MainViewModel.StartupEnabled),
+                     nameof(MainViewModel.ShowOperationTips), nameof(MainViewModel.StartMinimizedToTray), nameof(MainViewModel.StartupEnabled),
                      nameof(AudioSourceViewModel.VolumePercent)],
                     twoWay.Select(entry => entry.SourceProperty).OrderBy(value => value).ToArray());
                 Assert.All(twoWay, entry => Assert.True(entry.HasPublicSetter));
+                var sourceList = Assert.IsType<ListBox>(window.SourceItems);
+                Assert.True(VirtualizingPanel.GetIsVirtualizing(sourceList));
+                Assert.Equal(VirtualizationMode.Recycling, VirtualizingPanel.GetVirtualizationMode(sourceList));
+                Assert.Equal(ScrollBarVisibility.Disabled, ScrollViewer.GetHorizontalScrollBarVisibility(sourceList));
 
                 var sliders = Descendants(window).OfType<Slider>().ToArray();
                 var volume = Assert.Single(sliders.Where(slider => slider.Minimum == 0 && slider.Maximum == 100));
