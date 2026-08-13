@@ -29,30 +29,83 @@ internal static class UiSmokeVerifier
 {
     public const float UpdatedPeak = 0.73f;
 
-    public static AudioSourceSnapshot CreateDiagnosticSource() => new(
-        new AudioSourceId("diagnostic:ui-smoke"),
-        AudioSourceKind.WindowsSession,
-        "UI Smoke Test Source",
-        "Deterministic in-memory source",
+    public static AudioSourceSnapshot CreateDiagnosticSource() => CreateDiagnosticSources()[0];
+
+    public static IReadOnlyList<AudioSourceSnapshot> CreateDiagnosticSources()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var browser = new AudioSourceSnapshot(
+        AudioSourceId.ForBrowserTab("edge", 22001),
+        AudioSourceKind.EdgeTab,
+        "Edge · 一段非常长的中文标签页标题，用于确认窄窗口、百分之二百缩放与设备授权提示都不会彼此遮挡",
+        "https://music.example.test",
         0,
         null,
-        "diagnostic-device",
-        "diagnostic-session",
-        "diagnostic-instance",
+        "browser",
+        "https://music.example.test",
+        "diagnostic-browser-edge",
         AudioPlaybackState.Active,
-        0.65f,
+        1.5f,
         false,
-        0,
+        -0.18f,
         0.12f,
         [1, 1],
-        new AudioSourceCapabilities(true, true, true, 2, false, true, true,
-            SupportsExtendedGain: false, SupportsOutputRouting: true, SupportsDeviceHotSwitch: true,
+        new AudioSourceCapabilities(true, true, true, 2, true, true, true,
+            SupportsExtendedGain: true, SupportsOutputRouting: true, SupportsDeviceHotSwitch: true,
             SupportsEqualizer: true),
-        DateTimeOffset.UtcNow,
-        RequestedOutputDeviceName: OutputDeviceInfo.SystemDefault.Name,
-        EffectiveOutputDeviceId: "diagnostic-device",
-        EffectiveOutputDeviceName: "Diagnostic Device",
+        now,
+        OutputDeviceId: "diagnostic-long-device",
+        OutputDeviceName: "客厅蓝牙耳机与 USB 解码器组合输出设备（用于布局诊断的超长名称）",
+        ProcessingMode: AudioProcessingMode.Advanced,
+        RequestedOutputDeviceId: "diagnostic-long-device",
+        RequestedOutputDeviceName: "客厅蓝牙耳机与 USB 解码器组合输出设备（用于布局诊断的超长名称）",
+        EffectiveOutputDeviceId: "diagnostic-original-device",
+        EffectiveOutputDeviceName: "原输出设备",
+        RoutingState: AudioRoutingState.PendingAuthorization,
+        Effects: EqualizerCatalog.CreatePreset("bass"));
+
+        var windows = new AudioSourceSnapshot(
+            AudioSourceId.ForWindowsSession("diagnostic-device", "diagnostic-windows"),
+            AudioSourceKind.WindowsSession,
+            "播放器 · 普通 Windows 会话（原生音量范围 0–100%）",
+            "C:\\Program Files\\Audio Player\\player.exe",
+            22002,
+            "C:\\Program Files\\Audio Player\\player.exe",
+            "diagnostic-device",
+            "diagnostic-windows-session",
+            "diagnostic-windows-instance",
+            AudioPlaybackState.Active,
+            0.65f,
+            false,
+            0,
+            0.33f,
+            [1, 1],
+            new AudioSourceCapabilities(true, true, true, 2, false, true, true,
+                SupportsExtendedGain: false, SupportsOutputRouting: true, SupportsDeviceHotSwitch: true,
+                SupportsEqualizer: true),
+            now,
+            RequestedOutputDeviceName: OutputDeviceInfo.SystemDefault.Name,
+            EffectiveOutputDeviceId: "diagnostic-device",
+            EffectiveOutputDeviceName: "Diagnostic Device",
             RoutingState: AudioRoutingState.SystemDefault);
+
+        var english = browser with
+        {
+            Id = AudioSourceId.ForBrowserTab("chrome", 22003),
+            Kind = AudioSourceKind.ChromeTab,
+            DisplayName = "Chrome · An intentionally very long browser tab title for responsive layout and ellipsis verification without clipping controls",
+            SourceDescription = "https://an-intentionally-long-subdomain-for-layout-testing.example.test",
+            Volume = 2f,
+            Balance = 0.27f,
+            Peak = 0.48f,
+            RoutingState = AudioRoutingState.Failed,
+            RoutingError = "浏览器中的设备已变化，请重新选择并试听确认。",
+            RequestedOutputDeviceName = "Professional USB Audio Interface with an exceptionally long friendly device name",
+            OutputDeviceName = "Professional USB Audio Interface with an exceptionally long friendly device name",
+            Effects = EqualizerCatalog.CreatePreset("vocal")
+        };
+        return [windows, browser, english];
+    }
 
     public static async Task<UiSmokeResult> VerifyAsync(
         MainWindow window,
@@ -67,6 +120,16 @@ internal static class UiSmokeVerifier
 
         if (window.SourceItems.Items.Count < 1)
             throw new InvalidOperationException("The UI smoke test did not receive an audio source item.");
+
+        foreach (var item in window.SourceItems.Items.Cast<object>())
+        {
+            if (window.SourceItems is System.Windows.Controls.ListBox list) list.ScrollIntoView(item);
+            await window.Dispatcher.InvokeAsync(() => window.SourceItems.UpdateLayout(), DispatcherPriority.Render, cancellationToken);
+            var itemContainer = window.SourceItems.ItemContainerGenerator.ContainerFromItem(item)
+                                ?? throw new InvalidOperationException("ItemsControl did not generate every diagnostic source container.");
+            if (VisualTreeHelper.GetChildrenCount(itemContainer) == 0)
+                throw new InvalidOperationException("A diagnostic source DataTemplate was not instantiated.");
+        }
 
         if (window.SourceItems is System.Windows.Controls.ListBox virtualizedList)
         {
@@ -114,11 +177,18 @@ internal static class UiSmokeVerifier
 
         var mixerAudits = AuditBindings(window, window.DataContext)
             .Concat(AuditBindings(container, diagnosticSource)).ToArray();
-        window.SettingsPage.IsSelected = true;
+        window.SelectSettingsPage();
         await window.Dispatcher.InvokeAsync(() => window.UpdateLayout(), DispatcherPriority.ApplicationIdle, cancellationToken);
-        if (window.SettingsPage.Content is not DependencyObject settingsContent ||
-            VisualTreeHelper.GetChildrenCount(settingsContent) == 0)
-            throw new InvalidOperationException("The settings page was not materialized by the UI smoke test.");
+        if (VisualTreeHelper.GetChildrenCount(window.SettingsPage) == 0 ||
+            !Descendants(window.SettingsPage).OfType<System.Windows.Controls.Control>()
+                .Any(control => control.Focusable && control.IsTabStop))
+            throw new InvalidOperationException("The settings page was not materialized or keyboard accessible.");
+
+        window.SelectBrowserSetupPage();
+        await window.Dispatcher.InvokeAsync(() => window.UpdateLayout(), DispatcherPriority.ApplicationIdle, cancellationToken);
+        if (VisualTreeHelper.GetChildrenCount(window.BrowserSetupPage) == 0 ||
+            !Descendants(window.BrowserSetupPage).OfType<System.Windows.Controls.Button>().Any(button => button.Focusable && button.IsTabStop))
+            throw new InvalidOperationException("The browser setup page was not materialized or keyboard accessible.");
 
         var audits = mixerAudits
             .Concat(AuditBindings(window, window.DataContext))
@@ -134,7 +204,7 @@ internal static class UiSmokeVerifier
         if (invalidWrites.Length > 0)
             throw new InvalidOperationException($"Writable bindings target source properties without public setters: {Format(invalidWrites)}");
 
-        window.MixerPage.IsSelected = true;
+        window.SelectMixerPage();
         await window.Dispatcher.InvokeAsync(() => window.UpdateLayout(), DispatcherPriority.ApplicationIdle, cancellationToken);
 
         return new UiSmokeResult(window.SourceItems.Items.Count, container.GetType().Name, peakBar.Value, audits);

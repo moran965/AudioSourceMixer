@@ -30,16 +30,23 @@ public partial class App : System.Windows.Application
     private int _exiting;
     private int _exitCode;
     private bool _background;
+    private bool _browserSetup;
+    private string? _uiScreenshotDirectory;
     private EventWaitHandle? _exitSignal;
     private RegisteredWaitHandle? _exitSignalRegistration;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        SystemParameters.StaticPropertyChanged += SystemParametersChanged;
+        ApplyAccessibilityColors();
         _uiSmokeTest = e.Args.Contains("--ui-smoke-test", StringComparer.OrdinalIgnoreCase) ||
                        e.Args.Contains("--smoke-test", StringComparer.OrdinalIgnoreCase);
-        _background = e.Args.Contains("--background", StringComparer.OrdinalIgnoreCase) && !_uiSmokeTest;
-        var dataDirectory = _uiSmokeTest
+        _uiScreenshotDirectory = ArgumentValue(e.Args, "--ui-screenshot-dir");
+        var diagnosticUi = _uiSmokeTest || _uiScreenshotDirectory is not null;
+        _background = e.Args.Contains("--background", StringComparer.OrdinalIgnoreCase) && !diagnosticUi;
+        _browserSetup = e.Args.Contains("--browser-setup", StringComparer.OrdinalIgnoreCase) && !diagnosticUi;
+        var dataDirectory = diagnosticUi
             ? Path.Combine(Path.GetTempPath(), "AudioSourceMixer", "ui-smoke", Environment.ProcessId.ToString())
             : AppPaths.LocalDataDirectory;
 
@@ -49,16 +56,16 @@ public partial class App : System.Windows.Application
             InitializeLogger(Path.Combine(dataDirectory, "logs"));
             AttachExceptionHandlers();
             _logger!.Info($"Application startup began. Version={GetType().Assembly.GetName().Version}; OS={Environment.OSVersion.VersionString}; UiSmoke={_uiSmokeTest}.");
-            if (_uiSmokeTest) _uiSmokeMonitor = new UiSmokeMonitor();
+            if (diagnosticUi) _uiSmokeMonitor = new UiSmokeMonitor();
 
             _startupStage = StartupStage.SingleInstance;
-            var mutexName = _uiSmokeTest
+            var mutexName = diagnosticUi
                 ? $"Local\\AudioSourceMixer.Desktop.UiSmoke.{Environment.ProcessId}"
                 : "Local\\AudioSourceMixer.Desktop";
             _singleInstance = new Mutex(true, mutexName, out _ownsMutex);
             if (!_ownsMutex)
             {
-                if (!_uiSmokeTest)
+                if (!diagnosticUi)
                     System.Windows.MessageBox.Show("Audio Source Mixer 已在运行。", "Audio Source Mixer", MessageBoxButton.OK, MessageBoxImage.Information);
                 Shutdown(0);
                 return;
@@ -76,17 +83,22 @@ public partial class App : System.Windows.Application
             _startupStage = StartupStage.ViewModel;
             _viewModel = new MainViewModel(_audio, _audio, _audio, _bridge, profileStore, settingsStore, _logger);
             await _viewModel.LoadSettingsAsync();
+            if (_browserSetup)
+            {
+                _viewModel.RequestBrowserSetup();
+                _logger.Info("Browser setup page requested by command line.");
+            }
 
             _startupStage = StartupStage.WindowCreation;
             _window = new MainWindow(_viewModel);
-            if (_uiSmokeTest) ConfigureUiSmokeWindow(_window);
+            if (diagnosticUi) ConfigureUiSmokeWindow(_window);
 
             _startupStage = StartupStage.TrayCreation;
-            CreateTray(visible: !_uiSmokeTest);
+            CreateTray(visible: !diagnosticUi);
 
             _startupStage = StartupStage.AudioInitialization;
-            var diagnosticSource = _uiSmokeTest ? UiSmokeVerifier.CreateDiagnosticSource() : null;
-            await _viewModel.InitializeAsync(diagnosticSource);
+            var diagnosticSources = diagnosticUi ? UiSmokeVerifier.CreateDiagnosticSources() : null;
+            await _viewModel.InitializeAsync(diagnosticSources);
 
             _startupStage = StartupStage.WindowDisplay;
             if (_background)
@@ -100,14 +112,17 @@ public partial class App : System.Windows.Application
             await loaded;
             await Dispatcher.InvokeAsync(() => _window.UpdateLayout(), DispatcherPriority.ApplicationIdle);
 
-            if (_uiSmokeTest)
+            if (diagnosticUi)
             {
-                var source = _viewModel.Sources.Single(item => item.Id == diagnosticSource!.Id);
+                var source = _viewModel.Sources.Single(item => item.Id == diagnosticSources![0].Id);
                 var result = await UiSmokeVerifier.VerifyAsync(_window, source);
+                IReadOnlyList<string> screenshots = [];
+                if (_uiScreenshotDirectory is not null)
+                    screenshots = await UiScreenshotCapture.CaptureAsync(_window, _viewModel, _uiScreenshotDirectory);
                 await FlushAsynchronousFailuresAsync();
                 _uiSmokeMonitor!.ThrowIfFailed();
                 _startupStage = StartupStage.Complete;
-                _logger.Info($"UI smoke test succeeded. WindowShown={_window.IsVisible}; Items={result.ItemCount}; Container={result.ContainerType}; Peak={result.PeakValue:F1}; AuditedBindings={result.Bindings.Count}.");
+                _logger.Info($"UI diagnostic succeeded. WindowShown={_window.IsVisible}; Items={result.ItemCount}; Container={result.ContainerType}; Peak={result.PeakValue:F1}; AuditedBindings={result.Bindings.Count}; Screenshots={screenshots.Count}.");
                 await ExitAndRestoreAsync(0);
                 return;
             }
@@ -121,6 +136,12 @@ public partial class App : System.Windows.Application
             _uiSmokeMonitor?.Record($"Startup/{_startupStage}", exception);
             await HandleStartupFailureAsync(exception);
         }
+    }
+
+    private static string? ArgumentValue(string[] args, string name)
+    {
+        var index = Array.FindIndex(args, item => item.Equals(name, StringComparison.OrdinalIgnoreCase));
+        return index >= 0 && index + 1 < args.Length ? args[index + 1] : null;
     }
 
     private void InitializeLogger(string preferredDirectory)
@@ -403,7 +424,64 @@ public partial class App : System.Windows.Application
         try { _uiSmokeMonitor?.Dispose(); }
         catch (Exception exception) { TryLogError("UI smoke monitor dispose failed.", exception); Interlocked.Exchange(ref _exitCode, 1); }
         DetachExceptionHandlers();
+        SystemParameters.StaticPropertyChanged -= SystemParametersChanged;
         Shutdown(Volatile.Read(ref _exitCode));
+    }
+
+    private void SystemParametersChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SystemParameters.HighContrast)) ApplyAccessibilityColors();
+    }
+
+    private void ApplyAccessibilityColors()
+    {
+        if (SystemParameters.HighContrast)
+        {
+            Resources["WindowBackgroundBrush"] = System.Windows.SystemColors.WindowBrush;
+            Resources["SurfaceBrush"] = System.Windows.SystemColors.WindowBrush;
+            Resources["SurfaceSecondaryBrush"] = System.Windows.SystemColors.ControlBrush;
+            Resources["TextPrimaryBrush"] = System.Windows.SystemColors.WindowTextBrush;
+            Resources["TextSecondaryBrush"] = System.Windows.SystemColors.WindowTextBrush;
+            Resources["BorderBrush"] = System.Windows.SystemColors.ActiveBorderBrush;
+            Resources["PrimaryBrush"] = System.Windows.SystemColors.HighlightBrush;
+            Resources["PrimaryDarkBrush"] = System.Windows.SystemColors.HighlightBrush;
+            Resources["PrimarySoftBrush"] = System.Windows.SystemColors.ControlBrush;
+            Resources["SuccessBrush"] = System.Windows.SystemColors.WindowTextBrush;
+            Resources["WarningBrush"] = System.Windows.SystemColors.WindowTextBrush;
+            Resources["WarningSoftBrush"] = System.Windows.SystemColors.ControlBrush;
+            Resources["WarningBorderBrush"] = System.Windows.SystemColors.ActiveBorderBrush;
+            Resources["WarningTextBrush"] = System.Windows.SystemColors.WindowTextBrush;
+            Resources["ErrorBrush"] = System.Windows.SystemColors.WindowTextBrush;
+            Resources["WhiteBrush"] = System.Windows.SystemColors.HighlightTextBrush;
+            Resources["DisabledBrush"] = System.Windows.SystemColors.GrayTextBrush;
+            Resources["ShadowBrush"] = System.Windows.Media.Brushes.Transparent;
+            return;
+        }
+
+        RestoreBrush("WindowBackgroundBrush", "WindowBackgroundColor");
+        RestoreBrush("SurfaceBrush", "SurfaceColor");
+        RestoreBrush("SurfaceSecondaryBrush", "SurfaceSecondaryColor");
+        RestoreBrush("TextPrimaryBrush", "TextPrimaryColor");
+        RestoreBrush("TextSecondaryBrush", "TextSecondaryColor");
+        RestoreBrush("BorderBrush", "BorderColor");
+        RestoreBrush("PrimaryBrush", "PrimaryColor");
+        RestoreBrush("PrimaryDarkBrush", "PrimaryDarkColor");
+        RestoreBrush("PrimarySoftBrush", "PrimarySoftColor");
+        RestoreBrush("SuccessBrush", "SuccessColor");
+        RestoreBrush("WarningBrush", "WarningColor");
+        RestoreBrush("WarningSoftBrush", "WarningSoftColor");
+        RestoreBrush("WarningBorderBrush", "WarningBorderColor");
+        RestoreBrush("WarningTextBrush", "WarningTextColor");
+        RestoreBrush("ErrorBrush", "ErrorColor");
+        RestoreBrush("WhiteBrush", "WhiteColor");
+        RestoreBrush("DisabledBrush", "DisabledColor");
+        RestoreBrush("ShadowBrush", "ShadowColor");
+    }
+
+    private void RestoreBrush(string brushKey, string colorKey)
+    {
+        if (FindResource(colorKey) is System.Windows.Media.Color color)
+            Resources[brushKey] = new System.Windows.Media.SolidColorBrush(color);
     }
 
     private async Task CleanupAsync(string operation, Func<Task> cleanup)

@@ -85,6 +85,8 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     public bool SupportsExtendedGain => _snapshot.Capabilities.SupportsExtendedGain;
     public bool SupportsOutputRouting => _snapshot.Capabilities.SupportsOutputRouting;
     public bool SupportsEqualizer => _snapshot.Capabilities.SupportsEqualizer;
+    public string SourceTypeLabel => _snapshot.Kind is AudioSourceKind.ChromeTab or AudioSourceKind.EdgeTab
+        ? "浏览器增强" : "Windows 应用";
     public double VolumeMaximum => SupportsExtendedGain ? 200 : 100;
     public double PeakPercent => _snapshot.Peak * 100;
     public Visibility StopVisibility => _snapshot.Kind == AudioSourceKind.WindowsSession ? Visibility.Collapsed : Visibility.Visible;

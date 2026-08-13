@@ -4,7 +4,7 @@ using System.Windows.Input;
 
 namespace AudioSourceMixer.Desktop.Controls;
 
-public sealed class CenterDetentSlider : Slider
+public sealed class CenterDetentSlider : WheelSafeSlider
 {
     private bool _detented;
     private bool _keyboardInput;

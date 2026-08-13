@@ -24,6 +24,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly JsonApplicationSettingsStore _settingsStore;
     private readonly RollingFileLogger _logger;
     private readonly IStartupRegistrationService _startup;
+    private readonly IBrowserOnboardingService _browserOnboarding;
     private readonly Dictionary<AudioSourceId, AudioSourceViewModel> _byId = [];
     private IReadOnlyList<AudioSourceSnapshot> _windowsSources = [];
     private IReadOnlyList<BrowserTabSource> _browserTabs = [];
@@ -39,6 +40,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private bool _settingsLoaded;
     private string _deviceName = "正在初始化…";
     private string _browserStatus = "等待扩展连接";
+    private string _selectedPage = "mixer";
+    private bool _browserSetupRequested;
     private ApplicationSettings _settings = new();
 
     public MainViewModel(IAudioSourceDiscovery discovery, IAudioSourceController audio, IAudioOutputDeviceService outputDeviceService,
@@ -48,6 +51,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _discovery = discovery; _audio = audio; _outputDeviceService = outputDeviceService;
         _bridge = bridge; _profiles = profiles; _settingsStore = settingsStore; _logger = logger;
         _startup = startup ?? new StartupRegistrationService();
+        _browserOnboarding = new BrowserOnboardingService();
         RefreshCommand = new AsyncRelayCommand(() => _discovery.RefreshAsync(), Error);
         RestoreAllCommand = new AsyncRelayCommand(RestoreAllAsync, Error);
         ClearProfilesCommand = new AsyncRelayCommand(ConfirmClearProfilesAsync, Error);
@@ -58,6 +62,17 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         ClearChromeMappingsCommand = new AsyncRelayCommand(() => ClearBrowserMappingsAsync("chrome"), Error);
         ClearEdgeMappingsCommand = new AsyncRelayCommand(() => ClearBrowserMappingsAsync("edge"), Error);
         ResetAllCommand = new AsyncRelayCommand(ResetAllAsync, Error);
+        NavigateMixerCommand = new RelayCommand(() => SelectPage("mixer"));
+        NavigateBrowserSetupCommand = new RelayCommand(() => SelectPage("browser"));
+        NavigateSettingsCommand = new RelayCommand(() => SelectPage("settings"));
+        BeginBrowserSetupCommand = new RelayCommand(BeginBrowserSetup);
+        DeferBrowserSetupCommand = new RelayCommand(() => CompleteBrowserOnboarding("later"));
+        DisableBrowserGuidePromptCommand = new RelayCommand(() => CompleteBrowserOnboarding("never"));
+        OpenEdgeExtensionsCommand = new RelayCommand(() => RunOnboardingAction(() => _browserOnboarding.OpenExtensionsPage("edge")));
+        OpenChromeExtensionsCommand = new RelayCommand(() => RunOnboardingAction(() => _browserOnboarding.OpenExtensionsPage("chrome")));
+        OpenExtensionDirectoryCommand = new RelayCommand(() => RunOnboardingAction(_browserOnboarding.OpenExtensionDirectory));
+        CopyExtensionDirectoryCommand = new RelayCommand(() => RunOnboardingAction(_browserOnboarding.CopyExtensionDirectory));
+        RecheckBrowserSetupCommand = new RelayCommand(RefreshBrowserGuideStatus);
     }
 
     public ObservableCollection<AudioSourceViewModel> Sources { get; } = [];
@@ -77,6 +92,28 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public ICommand ClearChromeMappingsCommand { get; }
     public ICommand ClearEdgeMappingsCommand { get; }
     public ICommand ResetAllCommand { get; }
+    public ICommand NavigateMixerCommand { get; }
+    public ICommand NavigateBrowserSetupCommand { get; }
+    public ICommand NavigateSettingsCommand { get; }
+    public ICommand BeginBrowserSetupCommand { get; }
+    public ICommand DeferBrowserSetupCommand { get; }
+    public ICommand DisableBrowserGuidePromptCommand { get; }
+    public ICommand OpenEdgeExtensionsCommand { get; }
+    public ICommand OpenChromeExtensionsCommand { get; }
+    public ICommand OpenExtensionDirectoryCommand { get; }
+    public ICommand CopyExtensionDirectoryCommand { get; }
+    public ICommand RecheckBrowserSetupCommand { get; }
+    public bool IsMixerPageSelected => _selectedPage == "mixer";
+    public bool IsBrowserSetupPageSelected => _selectedPage == "browser";
+    public bool IsSettingsPageSelected => _selectedPage == "settings";
+    public Visibility MixerPageVisibility => IsMixerPageSelected ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility BrowserSetupPageVisibility => IsBrowserSetupPageSelected ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility SettingsPageVisibility => IsSettingsPageSelected ? Visibility.Visible : Visibility.Collapsed;
+    public string ExtensionDirectoryText => _browserOnboarding.ExtensionDirectory;
+    public string EdgeGuideStatus => BrowserGuideStatus("edge");
+    public string ChromeGuideStatus => BrowserGuideStatus("chrome");
+    public string NativeHostRegistrationStatus => _browserOnboarding.NativeHostRegistrationStatus;
+    public bool IsFirstRunBrowserWelcome => string.IsNullOrWhiteSpace(_settings.OnboardingCompletedVersion) && !_settings.BrowserGuideDismissed;
     public bool StartupAvailable => _startup.IsAvailable;
     public bool StartupEnabled
     {
@@ -114,7 +151,17 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         set { _settings = _settings with { ShowInactiveSessions = value }; Raise(); SaveSettings(); Reconcile(); }
     }
 
-    public async Task InitializeAsync(AudioSourceSnapshot? diagnosticSource = null)
+    public void RequestBrowserSetup()
+    {
+        _browserSetupRequested = true;
+        SelectPage("browser");
+    }
+
+    internal void SelectMixerForDiagnostics() => SelectPage("mixer");
+    internal void SelectBrowserSetupForDiagnostics() => SelectPage("browser");
+    internal void SelectSettingsForDiagnostics() => SelectPage("settings");
+
+    public async Task InitializeAsync(IReadOnlyList<AudioSourceSnapshot>? diagnosticSources = null)
     {
         await LoadSettingsAsync();
         foreach (var (key, profile) in await _profiles.LoadAsync()) _savedProfiles[key] = profile;
@@ -126,7 +173,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         DeviceName = device.Name;
         ReplaceOutputDevices(await _outputDeviceService.GetOutputDevicesAsync());
         _windowsSources = await _discovery.GetSourcesAsync();
-        if (diagnosticSource is not null) _windowsSources = _windowsSources.Append(diagnosticSource).ToArray();
+        if (diagnosticSources is { Count: > 0 })
+        {
+            // Diagnostic UI must be deterministic and must not expose the user's real session names in screenshots.
+            _windowsSources = diagnosticSources.ToArray();
+            DeviceName = "诊断默认输出设备";
+            SelectPage("mixer");
+        }
         Reconcile();
     }
 
@@ -143,6 +196,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Raise(nameof(ShowOperationTips));
         Raise(nameof(StartupEnabled));
         Raise(nameof(StartupAvailable));
+        Raise(nameof(IsFirstRunBrowserWelcome));
+        if (_browserSetupRequested || IsFirstRunBrowserWelcome) SelectPage("browser");
     }
 
     public async Task RestoreAllAsync()
@@ -176,7 +231,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         => Dispatch(() => { _windowsSources = sources; Reconcile(); });
     private void BrowserTabsChanged(object? sender, IReadOnlyList<BrowserTabSource> tabs)
         => Dispatch(() => { _browserTabs = tabs; BrowserStatus = _bridge.IsConnected ? $"已连接 · {tabs.Count} 个标签页" : "等待扩展连接";
-            Raise(nameof(ChromeConnectionStatus)); Raise(nameof(EdgeConnectionStatus)); Raise(nameof(BrowserStatusVisibility)); Reconcile(); });
+            Raise(nameof(ChromeConnectionStatus)); Raise(nameof(EdgeConnectionStatus));
+            Raise(nameof(ChromeGuideStatus)); Raise(nameof(EdgeGuideStatus));
+            Raise(nameof(BrowserStatusVisibility)); Reconcile(); });
 
     private void Reconcile()
     {
@@ -503,6 +560,68 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         return status is null ? $"{name}：未连接" : $"{name}：已连接 · 扩展 {status.ExtensionVersion ?? "版本未知"}";
     }
 
+    private string BrowserGuideStatus(string browser)
+    {
+        var installation = _browserOnboarding.Detect(browser);
+        if (!installation.IsInstalled) return $"{installation.DisplayName}：未检测到浏览器";
+        var status = _bridge.GetConnectionStatuses().FirstOrDefault(item => item.Browser == browser);
+        if (status is null) return $"{installation.DisplayName}：浏览器已安装，扩展尚未连接";
+        var desktopVersion = typeof(MainViewModel).Assembly.GetName().Version?.ToString(3);
+        return !string.IsNullOrWhiteSpace(status.ExtensionVersion) && status.ExtensionVersion != desktopVersion
+            ? $"{installation.DisplayName}：已连接，但扩展 {status.ExtensionVersion} 与桌面端 {desktopVersion} 不一致"
+            : $"{installation.DisplayName}：已连接 · 扩展 {status.ExtensionVersion ?? "版本未知"}";
+    }
+
+    private void SelectPage(string page)
+    {
+        if (page is not ("mixer" or "browser" or "settings")) throw new ArgumentOutOfRangeException(nameof(page));
+        if (_selectedPage == page) return;
+        _selectedPage = page;
+        Raise(nameof(IsMixerPageSelected)); Raise(nameof(IsBrowserSetupPageSelected)); Raise(nameof(IsSettingsPageSelected));
+        Raise(nameof(MixerPageVisibility)); Raise(nameof(BrowserSetupPageVisibility)); Raise(nameof(SettingsPageVisibility));
+    }
+
+    private void BeginBrowserSetup()
+    {
+        _settings = _settings with
+        {
+            BrowserOnboardingChoice = "setup-now",
+            OnboardingCompletedVersion = typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? "0.2.2",
+            BrowserGuideDismissed = true,
+            SchemaVersion = 4
+        };
+        Raise(nameof(IsFirstRunBrowserWelcome));
+        SaveSettings();
+        SelectPage("browser");
+    }
+
+    private void CompleteBrowserOnboarding(string choice)
+    {
+        _settings = _settings with
+        {
+            BrowserOnboardingChoice = choice,
+            OnboardingCompletedVersion = typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? "0.2.2",
+            BrowserGuideDismissed = true,
+            SchemaVersion = 4
+        };
+        Raise(nameof(IsFirstRunBrowserWelcome));
+        SaveSettings();
+        SelectPage("mixer");
+    }
+
+    private void RunOnboardingAction(Action action)
+    {
+        try { action(); }
+        catch (Exception exception) { BrowserStatus = exception.Message; Error(exception); }
+        finally { RefreshBrowserGuideStatus(); }
+    }
+
+    private void RefreshBrowserGuideStatus()
+    {
+        Raise(nameof(EdgeGuideStatus)); Raise(nameof(ChromeGuideStatus));
+        Raise(nameof(NativeHostRegistrationStatus)); Raise(nameof(ExtensionDirectoryText));
+    }
+
     private async Task ManageBrowserOutputsAsync(string browser)
     {
         try { await _bridge.OpenOutputManagerAsync(browser); }
@@ -528,7 +647,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Raise(nameof(ShowInactiveSessions)); Raise(nameof(StartMinimizedToTray)); Raise(nameof(StartupEnabled));
         Raise(nameof(ShowOperationTips));
         Raise(nameof(AutoApplyProfilesEnabled));
+        Raise(nameof(IsFirstRunBrowserWelcome));
         SaveSettings();
+        SelectPage("browser");
         await RestoreAllAsync();
     }
 

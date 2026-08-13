@@ -1,9 +1,7 @@
 using System.ComponentModel;
 using System.Windows.Controls;
-using System.Windows;
-using System.Windows.Input;
-using AudioSourceMixer.Core.Models;
 using AudioSourceMixer.Desktop.ViewModels;
+using AudioSourceMixer.Desktop.Views;
 
 namespace AudioSourceMixer.Desktop;
 
@@ -11,9 +9,10 @@ public partial class MainWindow : System.Windows.Window
 {
     private readonly MainViewModel _viewModel;
     public bool AllowClose { get; set; }
-    internal ItemsControl SourceItems => SourcesItemsControl;
-    internal TabItem SettingsPage => SettingsTab;
-    internal TabItem MixerPage => MixerTab;
+    internal ItemsControl SourceItems => MixerPageView.SourceItems;
+    internal SettingsView SettingsPage => SettingsPageView;
+    internal BrowserSetupView BrowserSetupPage => BrowserSetupPageView;
+    internal MixerView MixerPage => MixerPageView;
 
     public MainWindow(MainViewModel viewModel)
     {
@@ -22,24 +21,9 @@ public partial class MainWindow : System.Windows.Window
         DataContext = viewModel;
     }
 
-    private void OutputDeviceItemClicked(object sender, MouseButtonEventArgs e)
-    {
-        if (sender is not System.Windows.Controls.ComboBox comboBox || comboBox.DataContext is not AudioSourceViewModel source ||
-            e.OriginalSource is not DependencyObject origin ||
-            ItemsControl.ContainerFromElement(comboBox, origin) is not ComboBoxItem item ||
-            item.Content is not OutputDeviceInfo device) return;
-        _ = source.UserSelectOutputDeviceAsync(device);
-    }
-
-    private void OutputDeviceKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
-    {
-        if (e.Key != Key.Enter || sender is not System.Windows.Controls.ComboBox comboBox ||
-            comboBox.DataContext is not AudioSourceViewModel source ||
-            comboBox.SelectedItem is not OutputDeviceInfo device) return;
-        _ = source.UserSelectOutputDeviceAsync(device);
-        comboBox.IsDropDownOpen = false;
-        e.Handled = true;
-    }
+    internal void SelectMixerPage() => _viewModel.SelectMixerForDiagnostics();
+    internal void SelectSettingsPage() => _viewModel.SelectSettingsForDiagnostics();
+    internal void SelectBrowserSetupPage() => _viewModel.SelectBrowserSetupForDiagnostics();
 
     protected override void OnClosing(CancelEventArgs e)
     {

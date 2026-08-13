@@ -23,7 +23,10 @@ public sealed record ApplicationSettings(
     bool StartMinimizedToTray = true,
     bool ShowOperationTips = true,
     bool TrayHintShown = false,
-    int SchemaVersion = 3);
+    string BrowserOnboardingChoice = "undecided",
+    string? OnboardingCompletedVersion = null,
+    bool BrowserGuideDismissed = false,
+    int SchemaVersion = 4);
 
 public sealed class JsonApplicationSettingsStore(string directory)
 {
@@ -39,7 +42,18 @@ public sealed class JsonApplicationSettingsStore(string directory)
             await using var stream = File.OpenRead(_path);
             var loaded = await System.Text.Json.JsonSerializer.DeserializeAsync<ApplicationSettings>(stream, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
-            return loaded is null ? new ApplicationSettings() : loaded with { SchemaVersion = 3 };
+            if (loaded is null) return new ApplicationSettings();
+            if (loaded.SchemaVersion < 4)
+            {
+                return loaded with
+                {
+                    BrowserOnboardingChoice = "existing-user",
+                    OnboardingCompletedVersion = "0.2.1",
+                    BrowserGuideDismissed = true,
+                    SchemaVersion = 4
+                };
+            }
+            return loaded with { SchemaVersion = 4 };
         }
         catch (System.Text.Json.JsonException) { return new ApplicationSettings(); }
         finally { _gate.Release(); }
