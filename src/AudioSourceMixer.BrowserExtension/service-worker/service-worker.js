@@ -18,6 +18,7 @@ import {
   saveOutputMapping
 } from '../output-authorization/mappings.js';
 import { shouldConnectNativeOnRecovery } from './lifecycle-policy.js';
+import { createEqualizerPreset } from '../shared/equalizer.js';
 
 const OFFSCREEN_URL = 'offscreen/offscreen.html';
 const AUTHORIZATION_URL = 'output-authorization/authorize.html';
@@ -77,6 +78,7 @@ async function startTabCore(browser, tab) {
       state: 'active', browser, tabId, generation,
       title: tab.title || '未命名标签页', origin: sanitizeOrigin(tab.url),
       volume: 1, balance: 0, muted: false,
+      equalizer: createEqualizerPreset('off'),
       outputDeviceId: '', outputDeviceName: '', outputStatus: '系统默认',
       correlationId: '', commandGeneration: 0
     };
@@ -135,6 +137,7 @@ async function forwardLevel(message) {
     protocolVersion: PROTOCOL_VERSION, type: 'tab.update', browser, tabId: message.tabId,
     captureState: 'active', sourceId: sourceId(browser, message.tabId),
     volume: state.volume, balance: state.balance, muted: state.muted, peak: message.peak,
+    equalizer: state.equalizer || createEqualizerPreset('off'),
     outputDeviceId: state.outputDeviceId || '', outputDeviceName: state.outputDeviceName || '',
     outputStatus: state.outputStatus || '系统默认'
   });
@@ -241,6 +244,7 @@ function createRegisterMessage(state) {
     protocolVersion: PROTOCOL_VERSION, type: 'tab.register', browser: state.browser, tabId: state.tabId,
     title: state.title, origin: state.origin, captureState: 'active', sourceId: sourceId(state.browser, state.tabId),
     volume: state.volume ?? 1, balance: state.balance ?? 0, muted: Boolean(state.muted), peak: 0,
+    equalizer: state.equalizer || createEqualizerPreset('off'),
     outputDeviceId: state.outputDeviceId || '', outputDeviceName: state.outputDeviceName || '',
     outputStatus: state.outputStatus || '系统默认', effectiveSinkId: state.effectiveSinkId || '',
     effectiveSinkLabel: state.effectiveSinkLabel || '', routingState: state.routingState || 'Default',
@@ -261,7 +265,7 @@ async function handleNativeMessage(message) {
   if (message.type === 'bridge.status') {
     nativeReady?.resolve(!message.error);
     if (!message.error) nativeReady = null;
-    await chrome.storage.session.set({ nativeStatus: message.error || 'Native Host 协议 2 已连接' });
+    await chrome.storage.session.set({ nativeStatus: message.error || `Native Host 协议 ${PROTOCOL_VERSION} 已连接` });
     await updateBadge();
     return;
   }
@@ -398,6 +402,7 @@ async function revalidateActiveOutputs(message = {}) {
         const response = await chrome.runtime.sendMessage({
           type: 'audio.update', browser: latest.browser, tabId: latest.tabId,
           volume: latest.volume, balance: latest.balance, muted: latest.muted,
+          equalizer: latest.equalizer || createEqualizerPreset('off'),
           outputDeviceId: latest.outputDeviceId || '', outputDeviceName: latest.outputDeviceName || '',
           correlationId: latest.correlationId || crypto.randomUUID(), generation: latest.commandGeneration || 0,
           browserOutputDeviceId: mapping?.deviceId || '', browserOutputDeviceLabel: mapping?.browserLabel || '',
@@ -418,6 +423,7 @@ async function publishOutputState(tabId, state, mappingMatchKind) {
   await postNative({
     protocolVersion: PROTOCOL_VERSION, type: 'tab.update', browser: state.browser, tabId,
     sourceId: sourceId(state.browser, tabId),
+    equalizer: state.equalizer || createEqualizerPreset('off'),
     outputDeviceId: state.outputDeviceId || '', outputDeviceName: state.outputDeviceName || '',
     outputStatus: state.outputStatus || '', correlationId: state.correlationId || '',
     generation: state.commandGeneration || state.generation || 0,

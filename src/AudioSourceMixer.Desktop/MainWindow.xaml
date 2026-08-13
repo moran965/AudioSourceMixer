@@ -52,7 +52,7 @@
                             <Border BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="14,12">
                                 <Grid>
                                     <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
                                     <Grid Grid.Row="0">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions>
@@ -111,6 +111,56 @@
                                             <Button Content="停止增强" Command="{Binding StopCommand, Mode=OneWay}" Visibility="{Binding StopVisibility, Mode=OneWay}"/>
                                         </WrapPanel>
                                     </Grid>
+
+                                    <Expander x:Name="EqualizerExpander" Grid.Row="3" Margin="0,9,0,0"
+                                              Header="{Binding EqualizerSummary, Mode=OneWay}"
+                                              IsExpanded="{Binding IsEqualizerExpanded, Mode=TwoWay}"
+                                              Visibility="{Binding EqualizerVisibility, Mode=OneWay}"
+                                              AutomationProperties.Name="音效均衡器">
+                                        <Border Background="#F8FAFC" CornerRadius="7" Padding="12" Margin="0,7,0,0">
+                                            <StackPanel>
+                                                <DockPanel>
+                                                    <CheckBox Content="启用均衡器" IsChecked="{Binding IsEqualizerEnabled, Mode=TwoWay}"
+                                                              VerticalAlignment="Center" AutomationProperties.Name="启用均衡器"/>
+                                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                                        <TextBlock Text="预设" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                        <ComboBox Width="130" ItemsSource="{Binding EqualizerPresets, Mode=OneWay}"
+                                                                  DisplayMemberPath="Name" SelectedValuePath="Id"
+                                                                  SelectedValue="{Binding SelectedEqualizerPresetId, Mode=TwoWay}"
+                                                                  AutomationProperties.Name="均衡器预设"/>
+                                                    </StackPanel>
+                                                </DockPanel>
+                                                <ItemsControl ItemsSource="{Binding EqualizerBands, Mode=OneWay}" Margin="0,10,0,0">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate><UniformGrid Columns="10"/></ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate><DataTemplate>
+                                                        <StackPanel HorizontalAlignment="Center">
+                                                            <TextBlock Text="{Binding GainDb, Mode=OneWay, StringFormat={}{0:+0.0;-0.0;0.0} dB}"
+                                                                       HorizontalAlignment="Center" FontSize="9"/>
+                                                            <Slider Orientation="Vertical" Height="105" Minimum="-12" Maximum="12"
+                                                                    Value="{Binding GainDb, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                    TickFrequency="1" AutomationProperties.Name="{Binding Label, Mode=OneWay}"/>
+                                                            <TextBlock Text="{Binding Label, Mode=OneWay}" HorizontalAlignment="Center" FontSize="9"
+                                                                       Foreground="{StaticResource MutedTextBrush}"/>
+                                                        </StackPanel>
+                                                    </DataTemplate></ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                                <Grid Margin="0,10,0,0">
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="200"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                    <TextBlock Text="前级" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                    <Slider Grid.Column="1" Minimum="-12" Maximum="0" TickFrequency="1"
+                                                            Value="{Binding EqualizerPreampDb, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                            AutomationProperties.Name="均衡器前级"/>
+                                                    <TextBlock Grid.Column="2" Text="{Binding EqualizerHeadroomText, Mode=OneWay}"
+                                                               VerticalAlignment="Center" Margin="12,0" FontSize="10"
+                                                               Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap"/>
+                                                    <Button Grid.Column="3" Content="重置均衡器" Command="{Binding ResetEqualizerCommand, Mode=OneWay}"
+                                                            ToolTip="关闭并恢复全部频段为 0 dB"/>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+                                    </Expander>
                                 </Grid>
                             </Border>
                         </DataTemplate></ListBox.ItemTemplate>

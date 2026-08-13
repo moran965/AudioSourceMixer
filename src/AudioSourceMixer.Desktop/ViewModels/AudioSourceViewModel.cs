@@ -23,6 +23,7 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     private readonly RollingFileLogger _logger;
     private readonly AsyncDebouncer _volumeDebouncer = new(TimeSpan.FromMilliseconds(60));
     private readonly AsyncDebouncer _balanceDebouncer = new(TimeSpan.FromMilliseconds(60));
+    private readonly AsyncDebouncer _equalizerDebouncer = new(TimeSpan.FromMilliseconds(60));
     private CancellationTokenSource? _routeCancellation;
     private Task _routeTask = Task.CompletedTask;
     private AudioSourceSnapshot _snapshot;
@@ -34,6 +35,8 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     private string _preferredOutputDeviceId = "";
     private string? _preferredOutputDeviceName;
     private DateTimeOffset _lastUserChange;
+    private AudioEffectSettings _effects;
+    private bool _equalizerExpanded;
 
     public AudioSourceViewModel(AudioSourceSnapshot snapshot, IAudioSourceController audio, BrowserBridgeServer bridge,
         IAudioProfileStore profiles, Func<ApplicationSettings> settings, RollingFileLogger logger,
@@ -57,14 +60,19 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         _volumePercent = snapshot.Volume * 100;
         _balancePercent = snapshot.Balance * 100;
         _muted = snapshot.Muted;
+        _effects = EqualizerCatalog.Normalize(snapshot.Effects);
         _preferredOutputDeviceId = string.IsNullOrWhiteSpace(snapshot.RequestedOutputDeviceId) && snapshot.Kind != AudioSourceKind.WindowsSession
             ? snapshot.OutputDeviceId : snapshot.RequestedOutputDeviceId;
         _preferredOutputDeviceName = snapshot.RequestedOutputDeviceName ?? snapshot.OutputDeviceName;
         UpdateOutputDevices(outputDevices ?? [OutputDeviceInfo.SystemDefault]);
+        foreach (var definition in EqualizerCatalog.Bands)
+            EqualizerBands.Add(new EqualizerBandViewModel(definition, EqualizerBandChanged));
+        SynchronizeEqualizerBands();
         ToggleMuteCommand = new AsyncRelayCommand(ToggleMuteAsync, Error);
         RestoreCommand = new AsyncRelayCommand(RestoreAsync, Error);
         StopCommand = new AsyncRelayCommand(() => _bridge.StopAsync(Id), Error);
         ReauthorizeOutputCommand = new AsyncRelayCommand(ReauthorizeOutputAsync, Error);
+        ResetEqualizerCommand = new RelayCommand(ResetEqualizer);
     }
 
     public AudioSourceId Id => _snapshot.Id;
@@ -76,6 +84,7 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     public bool SupportsBalance => _snapshot.Capabilities.SupportsStereoBalance;
     public bool SupportsExtendedGain => _snapshot.Capabilities.SupportsExtendedGain;
     public bool SupportsOutputRouting => _snapshot.Capabilities.SupportsOutputRouting;
+    public bool SupportsEqualizer => _snapshot.Capabilities.SupportsEqualizer;
     public double VolumeMaximum => SupportsExtendedGain ? 200 : 100;
     public double PeakPercent => _snapshot.Peak * 100;
     public Visibility StopVisibility => _snapshot.Kind == AudioSourceKind.WindowsSession ? Visibility.Collapsed : Visibility.Visible;
@@ -120,6 +129,50 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     }
     public Visibility UserStatusVisibility => string.IsNullOrWhiteSpace(UserStatusMessage) ? Visibility.Collapsed : Visibility.Visible;
     public Visibility GainWarningVisibility => string.IsNullOrWhiteSpace(GainWarning) ? Visibility.Collapsed : Visibility.Visible;
+    public Visibility EqualizerVisibility => SupportsEqualizer ? Visibility.Visible : Visibility.Collapsed;
+    public ObservableCollection<EqualizerBandViewModel> EqualizerBands { get; } = [];
+    public IReadOnlyList<EqualizerPresetOption> EqualizerPresets { get; } = EqualizerCatalog.Presets
+        .Select(preset => new EqualizerPresetOption(preset.Id, preset.Name)).ToArray();
+    public string EqualizerSummary => !_effects.Enabled ? "音效 · 关闭" : $"音效 · {PresetName(_effects.PresetId)}";
+    public string EqualizerHeadroomText => !_effects.Enabled ? "音效已旁路，不改变声音" :
+        $"防削波余量：{EqualizerCatalog.EffectiveHeadroomDb(_effects):F1} dB（自动保护，不改变主音量数值）";
+    public bool IsEqualizerExpanded { get => _equalizerExpanded; set => Set(ref _equalizerExpanded, value); }
+    public bool IsEqualizerEnabled
+    {
+        get => _effects.Enabled;
+        set
+        {
+            if (_updating || _isRestoring() || !SupportsEqualizer || value == _effects.Enabled) return;
+            _effects = value ? EqualizerCatalog.CreatePreset(EqualizerCatalog.FlatPresetId, _effects.PreampDb) : EqualizerCatalog.Off;
+            SynchronizeEqualizerBands();
+            EqualizerChanged();
+        }
+    }
+    public string SelectedEqualizerPresetId
+    {
+        get => _effects.PresetId;
+        set
+        {
+            if (_updating || _isRestoring() || !SupportsEqualizer || string.IsNullOrWhiteSpace(value) || value == _effects.PresetId) return;
+            _effects = value == EqualizerCatalog.CustomPresetId
+                ? _effects with { Enabled = true, PresetId = EqualizerCatalog.CustomPresetId }
+                : EqualizerCatalog.CreatePreset(value, _effects.PreampDb);
+            SynchronizeEqualizerBands();
+            EqualizerChanged();
+        }
+    }
+    public double EqualizerPreampDb
+    {
+        get => _effects.PreampDb;
+        set
+        {
+            if (_updating || _isRestoring() || !SupportsEqualizer) return;
+            var clamped = (float)Math.Clamp(value, EqualizerCatalog.MinimumPreampDb, EqualizerCatalog.MaximumPreampDb);
+            if (Math.Abs(clamped - _effects.PreampDb) < 0.001) return;
+            _effects = _effects with { Enabled = true, PresetId = EqualizerCatalog.CustomPresetId, PreampDb = clamped };
+            EqualizerChanged();
+        }
+    }
 
     public ObservableCollection<OutputDeviceInfo> OutputDevices { get; } = [];
     public OutputDeviceInfo? SelectedOutputDevice => _selectedOutputDevice;
@@ -128,7 +181,9 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     public ICommand RestoreCommand { get; }
     public ICommand StopCommand { get; }
     public ICommand ReauthorizeOutputCommand { get; }
+    public ICommand ResetEqualizerCommand { get; }
     internal AudioSourceSnapshot Snapshot => _snapshot;
+    internal AudioEffectSettings Effects => _effects;
 
     public double VolumePercent
     {
@@ -168,7 +223,9 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
                 Set(ref _muted, snapshot.Muted);
                 _preferredOutputDeviceId = snapshot.RequestedOutputDeviceId;
                 _preferredOutputDeviceName = snapshot.RequestedOutputDeviceName;
+                if (SupportsEqualizer) _effects = EqualizerCatalog.Normalize(snapshot.Effects);
                 EnsurePreferredOutputDevice();
+                SynchronizeEqualizerBands();
             }
             RaiseAllDisplayProperties();
         }
@@ -194,12 +251,14 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
                 _volumePercent = Math.Clamp(profile.Volume * 100, 0, VolumeMaximum);
                 _balancePercent = profile.Balance * 100;
                 _muted = profile.Muted;
+                _effects = SupportsEqualizer ? EqualizerCatalog.Normalize(profile.Effects) : EqualizerCatalog.Off;
                 if (SupportsOutputRouting && applyOutputPreference)
                 {
                     _preferredOutputDeviceId = profile.OutputDeviceId ?? "";
                     _preferredOutputDeviceName = profile.OutputDeviceName;
                     UpdateOutputDevices(OutputDevices.ToArray());
                 }
+                SynchronizeEqualizerBands();
             }
             finally { _updating = false; }
             RaiseAllDisplayProperties();
@@ -247,7 +306,7 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
             {
                 await _bridge.SetAudioAsync(Id, (float)(_volumePercent / 100), (float)(_balancePercent / 100),
                     _muted, _preferredOutputDeviceId, _preferredOutputDeviceName, OutputDevices.ToArray(), current.Token,
-                    AudioRouteRequestSource.User);
+                    AudioRouteRequestSource.User, effects: _effects);
             }
             await SaveProfileAsync(current.Token);
         }
@@ -259,7 +318,7 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     internal AudioSourceProfile CreateProfileForOutput(OutputDeviceInfo device)
         => new(StableProfileKey, (float)(_volumePercent / 100), (float)(_balancePercent / 100), _muted,
             OutputDeviceId: device.Id, OutputDeviceName: device.IsSystemDefault ? null : device.Name,
-            SourceKind: _snapshot.Kind);
+            SourceKind: _snapshot.Kind, Effects: SupportsEqualizer ? _effects : null);
 
     internal void SetPreferredOutputDevice(string endpointId, string? endpointName)
     {
@@ -284,7 +343,8 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         try { await routeTask; }
         catch (OperationCanceledException) { }
         catch (Exception exception) { Error(exception); }
-        await Task.WhenAll(_volumeDebouncer.CancelPendingAsync(), _balanceDebouncer.CancelPendingAsync());
+        await Task.WhenAll(_volumeDebouncer.CancelPendingAsync(), _balanceDebouncer.CancelPendingAsync(),
+            _equalizerDebouncer.CancelPendingAsync());
     }
 
     public void ResetDisplayToDefaults()
@@ -297,7 +357,9 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
             _muted = false;
             _preferredOutputDeviceId = "";
             _preferredOutputDeviceName = null;
+            _effects = EqualizerCatalog.Off;
             UpdateOutputDevices(OutputDevices.ToArray());
+            SynchronizeEqualizerBands();
         }
         finally { _updating = false; }
         RaiseAllDisplayProperties();
@@ -322,7 +384,7 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
             return;
         }
         if (_snapshot.Kind == AudioSourceKind.WindowsSession) await _audio.RestoreAsync(Id);
-        else await _bridge.SetAudioAsync(Id, 1, 0, false, "", null, OutputDevices.ToArray());
+        else await _bridge.SetAudioAsync(Id, 1, 0, false, "", null, OutputDevices.ToArray(), effects: EqualizerCatalog.Off);
         await _profiles.RemoveAsync(StableProfileKey);
         ResetDisplayToDefaults();
     }
@@ -333,7 +395,7 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
             return Task.CompletedTask;
         return _bridge.SetAudioAsync(Id, (float)(_volumePercent / 100), (float)(_balancePercent / 100), _muted,
             _preferredOutputDeviceId, _preferredOutputDeviceName, OutputDevices.ToArray(), CancellationToken.None,
-            AudioRouteRequestSource.User, forceAuthorization: true);
+            AudioRouteRequestSource.User, forceAuthorization: true, effects: _effects);
     }
 
     private async Task ApplyAudioAsync(CancellationToken token)
@@ -349,7 +411,7 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         else
         {
             await _bridge.SetAudioAsync(Id, AudioSourceMixer.Core.AudioMath.EnsureUserGain(volume), balance, _muted,
-                _preferredOutputDeviceId, _preferredOutputDeviceName, OutputDevices.ToArray(), token);
+                _preferredOutputDeviceId, _preferredOutputDeviceName, OutputDevices.ToArray(), token, effects: _effects);
         }
     }
 
@@ -358,7 +420,8 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         if (_isRestoring() || !_settings().RememberProfiles) return;
         var profile = new AudioSourceProfile(StableProfileKey, (float)(_volumePercent / 100),
             (float)(_balancePercent / 100), _muted, OutputDeviceId: _preferredOutputDeviceId,
-            OutputDeviceName: _preferredOutputDeviceName, SourceKind: _snapshot.Kind);
+            OutputDeviceName: _preferredOutputDeviceName, SourceKind: _snapshot.Kind,
+            Effects: SupportsEqualizer ? _effects : null);
         if (_saveProfile is not null) await _saveProfile(profile, token);
         else await _profiles.SaveAsync(profile, token);
     }
@@ -421,13 +484,57 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     {
         Raise(nameof(DisplayName)); Raise(nameof(SourceDescription)); Raise(nameof(Limitation)); Raise(nameof(SupportsBalance));
         Raise(nameof(SupportsExtendedGain)); Raise(nameof(SupportsOutputRouting)); Raise(nameof(VolumeMaximum));
+        Raise(nameof(SupportsEqualizer)); Raise(nameof(EqualizerVisibility));
         Raise(nameof(PeakPercent)); Raise(nameof(BalanceText));
         Raise(nameof(MuteLabel)); Raise(nameof(GainWarning)); Raise(nameof(GainWarningVisibility)); Raise(nameof(OutputStatus));
         Raise(nameof(UserStatusMessage)); Raise(nameof(UserStatusVisibility)); Raise(nameof(EnhancedStatusVisibility));
         Raise(nameof(ReauthorizeOutputVisibility));
         Raise(nameof(VolumePercent)); Raise(nameof(BalancePercent)); Raise(nameof(SelectedOutputDevice));
         Raise(nameof(SelectedOutputDeviceId));
+        RaiseEqualizerProperties();
     }
+
+    private void EqualizerBandChanged(EqualizerBandViewModel band)
+    {
+        if (_updating || _isRestoring() || !SupportsEqualizer) return;
+        var bands = _effects.Bands.Select((item, index) => index == EqualizerBands.IndexOf(band)
+            ? item with { GainDb = (float)band.GainDb }
+            : item).ToArray();
+        _effects = _effects with { Enabled = true, PresetId = EqualizerCatalog.CustomPresetId, Bands = bands };
+        EqualizerChanged();
+    }
+
+    private void EqualizerChanged()
+    {
+        _effects = _effects with { UpdatedAt = DateTimeOffset.UtcNow };
+        _lastUserChange = DateTimeOffset.UtcNow;
+        RaiseEqualizerProperties();
+        _equalizerDebouncer.Schedule(async token => { await ApplyAudioAsync(token); await SaveProfileAsync(token); });
+    }
+
+    private void ResetEqualizer()
+    {
+        if (!SupportsEqualizer || _updating || _isRestoring()) return;
+        _effects = EqualizerCatalog.Off;
+        SynchronizeEqualizerBands();
+        EqualizerChanged();
+    }
+
+    private void SynchronizeEqualizerBands()
+    {
+        if (EqualizerBands.Count != EqualizerCatalog.Bands.Count) return;
+        for (var index = 0; index < EqualizerBands.Count; index++)
+            EqualizerBands[index].Synchronize(_effects.Bands[index].GainDb);
+    }
+
+    private void RaiseEqualizerProperties()
+    {
+        Raise(nameof(IsEqualizerEnabled)); Raise(nameof(SelectedEqualizerPresetId));
+        Raise(nameof(EqualizerPreampDb)); Raise(nameof(EqualizerSummary)); Raise(nameof(EqualizerHeadroomText));
+    }
+
+    private static string PresetName(string presetId)
+        => EqualizerCatalog.Presets.FirstOrDefault(preset => preset.Id == presetId)?.Name ?? "自定义";
 
     private void Error(Exception exception) => _logger.Error($"Audio source command failed for {Id}.", exception);
 
@@ -450,5 +557,6 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         _routeCancellation?.Dispose();
         _volumeDebouncer.Dispose();
         _balanceDebouncer.Dispose();
+        _equalizerDebouncer.Dispose();
     }
 }

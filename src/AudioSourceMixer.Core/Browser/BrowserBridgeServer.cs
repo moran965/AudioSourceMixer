@@ -71,15 +71,16 @@ public sealed class BrowserBridgeServer : IAsyncDisposable
         string outputDeviceId = "", string? outputDeviceName = null,
         IReadOnlyList<OutputDeviceInfo>? outputDevices = null, CancellationToken cancellationToken = default,
         AudioRouteRequestSource requestSource = AudioRouteRequestSource.ProfileRestore,
-        bool forceAuthorization = false)
+        bool forceAuthorization = false,
+        AudioEffectSettings? effects = null)
     {
         var tab = _tabs.TryGetValue(sourceId, out var value) ? value : throw new KeyNotFoundException($"Browser source {sourceId} is unavailable.");
         var connection = GetOwnerConnection(sourceId);
         if (tab.ProtocolVersion == BrowserProtocol.LegacyVersion && volume > 1)
-            throw new NotSupportedException("The connected browser extension uses protocol 1 and supports volume only up to 100%. Reload the 0.2.0 extension.");
-        var correlationId = tab.ProtocolVersion >= 2 ? Guid.NewGuid().ToString("N") : null;
+            throw new NotSupportedException("The connected browser extension uses protocol 1 and supports volume only up to 100%. Reload the current extension.");
+        var correlationId = tab.ProtocolVersion >= BrowserProtocol.RoutingVersion ? Guid.NewGuid().ToString("N") : null;
         var observedGeneration = _observedGenerations.GetValueOrDefault(sourceId);
-        var generation = tab.ProtocolVersion >= 2
+        var generation = tab.ProtocolVersion >= BrowserProtocol.RoutingVersion
             ? _commandGenerations.AddOrUpdate(sourceId,
                 _ => NextGeneration(observedGeneration),
                 (_, previous) => NextGeneration(Math.Max(previous, observedGeneration)))
@@ -102,13 +103,14 @@ public sealed class BrowserBridgeServer : IAsyncDisposable
                 Type = "tab.setAudio", Browser = tab.Browser, TabId = tab.TabId, SourceId = sourceId.Value,
                 Volume = tab.ProtocolVersion == BrowserProtocol.LegacyVersion ? AudioMath.EnsureSessionVolume(volume) : AudioMath.EnsureUserGain(volume),
                 Balance = Math.Clamp(balance, -1, 1), Muted = muted,
-                OutputDeviceId = tab.ProtocolVersion >= 2 ? outputDeviceId : null,
-                OutputDeviceName = tab.ProtocolVersion >= 2 ? outputDeviceName : null,
+                OutputDeviceId = tab.ProtocolVersion >= BrowserProtocol.RoutingVersion ? outputDeviceId : null,
+                OutputDeviceName = tab.ProtocolVersion >= BrowserProtocol.RoutingVersion ? outputDeviceName : null,
                 CorrelationId = correlationId,
-                Generation = tab.ProtocolVersion >= 2 ? generation : null,
-                RequestSource = tab.ProtocolVersion >= 2 ? requestSource.ToString() : null,
-                ForceAuthorization = tab.ProtocolVersion >= 2 ? forceAuthorization : null,
-                OutputDevices = tab.ProtocolVersion >= 2 ? outputDevices?.Select(device => new BrowserOutputEndpoint
+                Generation = tab.ProtocolVersion >= BrowserProtocol.RoutingVersion ? generation : null,
+                RequestSource = tab.ProtocolVersion >= BrowserProtocol.RoutingVersion ? requestSource.ToString() : null,
+                ForceAuthorization = tab.ProtocolVersion >= BrowserProtocol.RoutingVersion ? forceAuthorization : null,
+                Equalizer = tab.ProtocolVersion >= BrowserProtocol.Version ? EqualizerCatalog.Normalize(effects) : null,
+                OutputDevices = tab.ProtocolVersion >= BrowserProtocol.RoutingVersion ? outputDevices?.Select(device => new BrowserOutputEndpoint
                 {
                     EndpointId = device.Id,
                     FriendlyName = device.Name,
@@ -219,7 +221,7 @@ public sealed class BrowserBridgeServer : IAsyncDisposable
             {
                 ProtocolVersion = message.ProtocolVersion,
                 Type = "bridge.status",
-                Error = message.ProtocolVersion == BrowserProtocol.Version ? null : "Connected in legacy protocol 1 mode; enhanced tab gain and output routing require extension 0.2.0."
+                Error = null
             })), cancellationToken).ConfigureAwait(false);
             TabsChanged?.Invoke(this, GetTabs());
         }
@@ -240,7 +242,7 @@ public sealed class BrowserBridgeServer : IAsyncDisposable
                         message.OutputDeviceId ?? "", message.OutputDeviceName, message.OutputStatus,
                         message.EffectiveSinkId ?? "", message.EffectiveSinkLabel,
                         ParseRoutingState(message.RoutingState), message.Error, message.CorrelationId,
-                        message.BrowserDeviceId, message.EffectiveSinkId),
+                        message.BrowserDeviceId, message.EffectiveSinkId, message.Equalizer),
                     (_, old) => old with
                     {
                         Title = message.Title ?? old.Title,
@@ -260,7 +262,8 @@ public sealed class BrowserBridgeServer : IAsyncDisposable
                         RoutingError = message.Error ?? (message.RoutingState == "Applied" ? null : old.RoutingError),
                         CorrelationId = message.CorrelationId ?? old.CorrelationId,
                         BrowserDeviceId = message.BrowserDeviceId ?? old.BrowserDeviceId,
-                        EffectiveBrowserSinkId = message.EffectiveSinkId ?? old.EffectiveBrowserSinkId
+                        EffectiveBrowserSinkId = message.EffectiveSinkId ?? old.EffectiveBrowserSinkId,
+                        Effects = message.Equalizer ?? old.Effects
                     });
             }
             if (!string.IsNullOrWhiteSpace(message.CorrelationId))

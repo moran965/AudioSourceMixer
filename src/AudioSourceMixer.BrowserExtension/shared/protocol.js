@@ -1,4 +1,6 @@
-export const PROTOCOL_VERSION = 2;
+import { normalizeEqualizer } from './equalizer.js';
+
+export const PROTOCOL_VERSION = 3;
 export const NATIVE_HOST_NAME = 'com.audiosourcemixer.bridge';
 
 export function browserName(userAgent = navigator.userAgent) {
@@ -38,7 +40,8 @@ export function validateAudioCommand(message) {
     generation: Number.isSafeInteger(message.generation) && message.generation >= 0 ? message.generation : 0,
     requestSource: ['User', 'DeviceReconnect', 'ProfileRestore'].includes(message.requestSource)
       ? message.requestSource : 'ProfileRestore',
-    forceAuthorization: Boolean(message.forceAuthorization)
+    forceAuthorization: Boolean(message.forceAuthorization),
+    equalizer: normalizeEqualizer(message.equalizer)
   };
 }
 

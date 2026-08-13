@@ -6,9 +6,10 @@ namespace AudioSourceMixer.Core.Persistence;
 
 public sealed class JsonAudioProfileStore(string directory) : IAudioProfileStore
 {
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
     private readonly string _path = Path.Combine(directory, "profiles.json");
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly SemaphoreSlim _mutationGate = new(1, 1);
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -31,9 +32,10 @@ public sealed class JsonAudioProfileStore(string directory) : IAudioProfileStore
             if (document.RootElement.TryGetProperty("schemaVersion", out var schemaElement))
             {
                 var schemaVersion = schemaElement.GetInt32();
-                if (schemaVersion != CurrentSchemaVersion)
+                if (schemaVersion is not (2 or CurrentSchemaVersion))
                     throw new InvalidDataException($"Unsupported audio profile schema version {schemaVersion}.");
                 profiles = document.RootElement.Deserialize<AudioProfileDocument>(Options)?.Profiles ?? [];
+                migrated = schemaVersion != CurrentSchemaVersion;
             }
             else
             {
@@ -42,8 +44,9 @@ public sealed class JsonAudioProfileStore(string directory) : IAudioProfileStore
                 migrated = true;
             }
 
+            var beforeNormalization = JsonSerializer.Serialize(profiles, Options);
             var normalized = profiles.ToDictionary(item => item.Key, item => Normalize(item.Value));
-            migrated |= profiles.Any(item => normalized[item.Key] != item.Value);
+            migrated |= !string.Equals(beforeNormalization, JsonSerializer.Serialize(normalized, Options), StringComparison.Ordinal);
             profiles = normalized;
             if (migrated) await WriteUnsafeAsync(profiles, cancellationToken).ConfigureAwait(false);
             return profiles;
@@ -60,29 +63,41 @@ public sealed class JsonAudioProfileStore(string directory) : IAudioProfileStore
 
     public async Task SaveAsync(AudioSourceProfile profile, CancellationToken cancellationToken = default)
     {
-        var profiles = new Dictionary<string, AudioSourceProfile>(await LoadAsync(cancellationToken).ConfigureAwait(false));
-        profiles[profile.StableKey] = Normalize(profile) with { UpdatedAt = DateTimeOffset.UtcNow };
-        await WriteAsync(profiles, cancellationToken).ConfigureAwait(false);
+        await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var profiles = new Dictionary<string, AudioSourceProfile>(await LoadAsync(cancellationToken).ConfigureAwait(false));
+            profiles[profile.StableKey] = Normalize(profile) with { UpdatedAt = DateTimeOffset.UtcNow };
+            await WriteAsync(profiles, cancellationToken).ConfigureAwait(false);
+        }
+        finally { _mutationGate.Release(); }
     }
 
     public async Task ClearAsync(CancellationToken cancellationToken = default)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (File.Exists(_path)) File.Delete(_path);
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try { if (File.Exists(_path)) File.Delete(_path); }
+            finally { _gate.Release(); }
         }
         finally
         {
-            _gate.Release();
+            _mutationGate.Release();
         }
     }
 
     public async Task RemoveAsync(string stableKey, CancellationToken cancellationToken = default)
     {
-        var profiles = new Dictionary<string, AudioSourceProfile>(await LoadAsync(cancellationToken).ConfigureAwait(false));
-        if (!profiles.Remove(stableKey)) return;
-        await WriteAsync(profiles, cancellationToken).ConfigureAwait(false);
+        await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var profiles = new Dictionary<string, AudioSourceProfile>(await LoadAsync(cancellationToken).ConfigureAwait(false));
+            if (!profiles.Remove(stableKey)) return;
+            await WriteAsync(profiles, cancellationToken).ConfigureAwait(false);
+        }
+        finally { _mutationGate.Release(); }
     }
 
     private async Task WriteAsync(Dictionary<string, AudioSourceProfile> profiles, CancellationToken cancellationToken)
@@ -115,7 +130,10 @@ public sealed class JsonAudioProfileStore(string directory) : IAudioProfileStore
         var maximum = profile.SourceKind is AudioSourceKind.ChromeTab or AudioSourceKind.EdgeTab ? 2f : 1f;
         var volume = float.IsFinite(profile.Volume) ? Math.Clamp(profile.Volume, 0, maximum) : 1f;
         _ = AudioMath.BalanceToGains(profile.Balance);
-        return profile with { Volume = volume };
+        var effects = profile.SourceKind is AudioSourceKind.ChromeTab or AudioSourceKind.EdgeTab
+            ? EqualizerCatalog.Normalize(profile.Effects)
+            : null;
+        return profile with { Volume = volume, Effects = effects };
     }
 
     private sealed record AudioProfileDocument(int SchemaVersion, Dictionary<string, AudioSourceProfile> Profiles);

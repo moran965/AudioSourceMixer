@@ -156,7 +156,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             if (_audio is IAudioRoutingController routing) await routing.CancelPendingRoutesAsync();
             await _audio.RestoreAllAsync();
             foreach (var tab in _browserTabs)
-                await _bridge.SetAudioAsync(tab.Id, 1, 0, false, "", null, OutputDevices.ToArray());
+                await _bridge.SetAudioAsync(tab.Id, 1, 0, false, "", null, OutputDevices.ToArray(),
+                    effects: EqualizerCatalog.Off);
             await _profiles.ClearAsync();
             _savedProfiles.Clear();
             _profilesApplied.Clear();
@@ -255,25 +256,28 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         var kind = tab.Browser == "edge" ? AudioSourceKind.EdgeTab : AudioSourceKind.ChromeTab;
         var browser = tab.Browser == "edge" ? "Edge" : "Chrome";
-        var protocolCurrent = tab.ProtocolVersion >= BrowserProtocol.Version;
-        var limitation = protocolCurrent
+        var routingSupported = tab.ProtocolVersion >= BrowserProtocol.RoutingVersion;
+        var equalizerSupported = tab.ProtocolVersion >= BrowserProtocol.Version;
+        var limitation = routingSupported
             ? tab.OutputStatus is not null && (tab.OutputStatus.Contains("失败", StringComparison.Ordinal) || tab.OutputStatus.Contains("不可用", StringComparison.Ordinal))
                 ? tab.OutputStatus
-                : null
-            : "扩展正在使用旧协议 1；请在 Chrome/Edge 扩展页 Reload 0.2.0 版本以启用 200% 增益和输出设备选择。";
+                : equalizerSupported ? null : "扩展仍可控制音量和输出，但音效不可用；请在扩展页重新加载当前版本。"
+            : "扩展正在使用旧协议 1；请在扩展页重新加载当前版本以启用 200% 增益和输出设备选择。";
         return new AudioSourceSnapshot(tab.Id, kind, $"{browser} · {tab.Title}", tab.Origin, 0, null, "browser",
             tab.Origin, tab.Id.Value, tab.CaptureState == "active" ? AudioPlaybackState.Active : AudioPlaybackState.Inactive,
             tab.Volume, tab.Muted, tab.Balance, tab.Peak, [1, 1],
             new AudioSourceCapabilities(true, true, true, 2, true, true, true, limitation,
-                SupportsExtendedGain: protocolCurrent, SupportsOutputRouting: protocolCurrent, SupportsDeviceHotSwitch: protocolCurrent),
+                SupportsExtendedGain: routingSupported, SupportsOutputRouting: routingSupported, SupportsDeviceHotSwitch: routingSupported,
+                SupportsEqualizer: equalizerSupported),
             DateTimeOffset.UtcNow, tab.OutputDeviceId, tab.OutputDeviceName,
-            protocolCurrent ? AudioProcessingMode.Advanced : AudioProcessingMode.Unavailable,
+            routingSupported ? AudioProcessingMode.Advanced : AudioProcessingMode.Unavailable,
             RequestedOutputDeviceId: tab.OutputDeviceId,
             RequestedOutputDeviceName: tab.OutputDeviceName,
             EffectiveOutputDeviceId: tab.EffectiveOutputDeviceId,
             EffectiveOutputDeviceName: tab.EffectiveOutputDeviceName,
             RoutingState: tab.RoutingState,
-            RoutingError: tab.RoutingError);
+            RoutingError: tab.RoutingError,
+            Effects: tab.Effects);
     }
 
     private void ReplaceOutputDevices(IReadOnlyList<OutputDeviceInfo> devices)
@@ -353,7 +357,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 await _audio.RestoreAsync(application.First().Id, cancellationToken);
             }
         else
-            await _bridge.SetAudioAsync(requested.Id, 1, 0, false, "", null, OutputDevices.ToArray(), cancellationToken);
+            await _bridge.SetAudioAsync(requested.Id, 1, 0, false, "", null, OutputDevices.ToArray(), cancellationToken,
+                effects: EqualizerCatalog.Off);
         await _profiles.RemoveAsync(requested.StableProfileKey, cancellationToken);
         _savedProfiles.TryRemove(requested.StableProfileKey, out _);
         foreach (var sibling in siblings)

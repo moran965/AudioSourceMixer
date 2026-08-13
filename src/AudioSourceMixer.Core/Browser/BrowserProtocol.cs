@@ -44,12 +44,14 @@ public sealed record BrowserMessage
     public double? SetSinkDurationMs { get; init; }
     public bool? SetSinkIdSupported { get; init; }
     public string? Error { get; init; }
+    public AudioEffectSettings? Equalizer { get; init; }
 }
 
 public static class BrowserProtocol
 {
-    public const int Version = 2;
+    public const int Version = 3;
     public const int LegacyVersion = 1;
+    public const int RoutingVersion = 2;
     public const int MaximumMessageBytes = 64 * 1024;
     public const long MaximumJavaScriptSafeInteger = 9_007_199_254_740_991;
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
@@ -83,8 +85,8 @@ public static class BrowserProtocol
 
     public static void Validate(BrowserMessage message)
     {
-        if (message.ProtocolVersion is not (LegacyVersion or Version))
-            throw new InvalidDataException($"Unsupported protocol version {message.ProtocolVersion}; supported versions are 1 and 2.");
+        if (message.ProtocolVersion is not (LegacyVersion or RoutingVersion or Version))
+            throw new InvalidDataException($"Unsupported protocol version {message.ProtocolVersion}; supported versions are 1, 2 and 3.");
         if (!AllowedTypes.Contains(message.Type)) throw new InvalidDataException($"Unsupported message type '{message.Type}'.");
 
         if (message.Type.StartsWith("tab.", StringComparison.Ordinal) && message.Type is not "tab.commandResult")
@@ -137,6 +139,13 @@ public static class BrowserProtocol
                 if (string.IsNullOrWhiteSpace(device.FriendlyName) || device.FriendlyName.Length > 512 || device.EndpointId.Length > 1024)
                     throw new InvalidDataException("Output device metadata is invalid.");
             }
+        }
+        if (message.Equalizer is not null)
+        {
+            if (message.ProtocolVersion < Version) throw new InvalidDataException("Equalizer requires browser protocol 3.");
+            try { EqualizerCatalog.Validate(message.Equalizer); }
+            catch (ArgumentException exception)
+            { throw new InvalidDataException("Equalizer settings are invalid.", exception); }
         }
     }
 

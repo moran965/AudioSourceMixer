@@ -1,4 +1,11 @@
 import { clamp, sourceId } from '../shared/protocol.js';
+import {
+  EQUALIZER_BANDS,
+  createEqualizerPreset,
+  decibelsToGain,
+  effectiveHeadroomDb,
+  normalizeEqualizer
+} from '../shared/equalizer.js';
 import { physicalOutputDevices, rebindOutputMapping } from '../output-authorization/mappings.js';
 
 const graphs = new Map();
@@ -28,14 +35,26 @@ async function startGraph(message) {
     const context = new AudioContext();
     await context.resume();
     const source = context.createMediaStreamSource(stream);
+    const equalizerFilters = EQUALIZER_BANDS.map((definition) => {
+      const filter = context.createBiquadFilter();
+      filter.type = definition.filterType;
+      filter.frequency.value = definition.frequencyHz;
+      filter.Q.value = definition.q;
+      filter.gain.value = 0;
+      return filter;
+    });
+    const headroom = context.createGain();
     const gain = context.createGain();
     const panner = context.createStereoPanner();
     const analyser = context.createAnalyser();
     analyser.fftSize = 256;
-    source.connect(gain).connect(panner).connect(analyser).connect(context.destination);
+    source.connect(equalizerFilters[0]);
+    for (let index = 0; index < equalizerFilters.length - 1; index++)
+      equalizerFilters[index].connect(equalizerFilters[index + 1]);
+    equalizerFilters.at(-1).connect(headroom).connect(gain).connect(panner).connect(analyser).connect(context.destination);
     const graph = {
       browser, tabId: message.tabId, title: message.title || '未命名标签页', origin: message.origin || '',
-      stream, context, source, gain, panner, analyser,
+      stream, context, source, equalizerFilters, headroom, gain, panner, analyser,
       levelBuffer: new Float32Array(analyser.fftSize),
       volume: 1, balance: 0, muted: false, generation: Number(message.generation) || 0,
       requestedOutputDeviceId: '', requestedOutputDeviceName: '',
@@ -44,9 +63,11 @@ async function startGraph(message) {
       outputStatus: '系统默认', correlationId: '', setSinkDurationMs: 0,
       routeQueue: Promise.resolve(),
       setSinkIdSupported: typeof context.setSinkId === 'function', error: null,
-      mappingRebound: null, mappingStale: false
+      mappingRebound: null, mappingStale: false,
+      equalizer: createEqualizerPreset('off')
     };
     graphs.set(key, graph);
+    applyEqualizer(graph, message.equalizer);
     for (const track of stream.getTracks()) {
       track.addEventListener('ended', () => { void stopGraph(browser, message.tabId, true); }, { once: true });
     }
@@ -69,8 +90,20 @@ async function updateGraph(message) {
   graph.muted = Boolean(message.muted);
   graph.gain.gain.setTargetAtTime(graph.muted ? 0 : graph.volume, graph.context.currentTime, 0.01);
   graph.panner.pan.setTargetAtTime(graph.balance, graph.context.currentTime, 0.01);
+  applyEqualizer(graph, message.equalizer ?? graph.equalizer);
   const output = await enqueueOutputDevice(graph, message);
   return { ok: output.routingState !== 'Failed', ...output };
+}
+
+function applyEqualizer(graph, settings) {
+  const equalizer = normalizeEqualizer(settings);
+  const now = graph.context.currentTime;
+  for (let index = 0; index < graph.equalizerFilters.length; index++) {
+    const gainDb = equalizer.enabled ? equalizer.bands[index].gainDb : 0;
+    graph.equalizerFilters[index].gain.setTargetAtTime(gainDb, now, 0.01);
+  }
+  graph.headroom.gain.setTargetAtTime(decibelsToGain(effectiveHeadroomDb(equalizer)), now, 0.01);
+  graph.equalizer = equalizer;
 }
 
 async function enqueueOutputDevice(graph, message) {
@@ -194,7 +227,8 @@ function outputResult(graph) {
     outputStatus: graph.outputStatus,
     error: graph.error,
     mappingRebound: graph.mappingRebound,
-    mappingStale: graph.mappingStale
+    mappingStale: graph.mappingStale,
+    equalizer: graph.equalizer
   };
 }
 
@@ -203,7 +237,8 @@ function listGraphs() {
     ok: true,
     graphs: [...graphs.values()].map((graph) => ({
       ...outputResult(graph), title: graph.title, origin: graph.origin,
-      volume: graph.volume, balance: graph.balance, muted: graph.muted, state: 'active'
+      volume: graph.volume, balance: graph.balance, muted: graph.muted,
+      equalizer: graph.equalizer, state: 'active'
     }))
   };
 }
@@ -219,12 +254,11 @@ async function stopGraph(browser, tabId, streamAlreadyEnded) {
   if (!graph) return { ok: true };
   graphs.delete(key);
   try {
-    graph.source.disconnect();
-    graph.gain.disconnect();
-    graph.panner.disconnect();
-    graph.analyser.disconnect();
-    if (!streamAlreadyEnded) graph.stream.getTracks().forEach((track) => track.stop());
-    await graph.context.close();
+    for (const node of [graph.source, ...graph.equalizerFilters, graph.headroom, graph.gain, graph.panner, graph.analyser])
+      try { node.disconnect(); } catch {}
+    if (!streamAlreadyEnded)
+      for (const track of graph.stream.getTracks()) try { track.stop(); } catch {}
+    try { await graph.context.close(); } catch {}
   } finally {
     if (streamAlreadyEnded) await chrome.runtime.sendMessage({ type: 'offscreen.tabEnded', browser, tabId });
   }

@@ -46,7 +46,8 @@ internal static class UiSmokeVerifier
         0.12f,
         [1, 1],
         new AudioSourceCapabilities(true, true, true, 2, false, true, true,
-            SupportsExtendedGain: false, SupportsOutputRouting: true, SupportsDeviceHotSwitch: true),
+            SupportsExtendedGain: false, SupportsOutputRouting: true, SupportsDeviceHotSwitch: true,
+            SupportsEqualizer: true),
         DateTimeOffset.UtcNow,
         RequestedOutputDeviceName: OutputDeviceInfo.SystemDefault.Name,
         EffectiveOutputDeviceId: "diagnostic-device",
@@ -84,6 +85,13 @@ internal static class UiSmokeVerifier
                           ?? throw new InvalidOperationException("Peak ProgressBar.Value has no Binding.");
         if (GetEffectiveMode(peakBinding, peakBar, ProgressBar.ValueProperty) != BindingMode.OneWay)
             throw new InvalidOperationException("PeakPercent must have an effective OneWay binding.");
+
+        diagnosticSource.IsEqualizerExpanded = true;
+        await window.Dispatcher.InvokeAsync(() => window.UpdateLayout(), DispatcherPriority.Render, cancellationToken);
+        var equalizerSliders = Descendants(container).OfType<Slider>()
+            .Where(slider => slider.DataContext is EqualizerBandViewModel).ToArray();
+        if (equalizerSliders.Length != EqualizerCatalog.Bands.Count)
+            throw new InvalidOperationException($"Equalizer DataTemplate created {equalizerSliders.Length} band controls; expected {EqualizerCatalog.Bands.Count}.");
 
         var peakNotificationObserved = false;
         diagnosticSource.PropertyChanged += OnPropertyChanged;
@@ -150,10 +158,10 @@ internal static class UiSmokeVerifier
                 if (binding is null || binding.Path?.Path is not string path || path.Contains('.')) continue;
                 var expression = BindingOperations.GetBindingExpression(target, property);
                 var source = expression?.DataItem;
-                if (source is not MainViewModel && source is not AudioSourceViewModel && target is FrameworkElement element)
+                if (source is not MainViewModel && source is not AudioSourceViewModel && source is not EqualizerBandViewModel && target is FrameworkElement element)
                     source = element.DataContext;
-                if (source is not MainViewModel && source is not AudioSourceViewModel) source = fallbackSource;
-                if (source is not MainViewModel && source is not AudioSourceViewModel) continue;
+                if (source is not MainViewModel && source is not AudioSourceViewModel && source is not EqualizerBandViewModel) source = fallbackSource;
+                if (source is not MainViewModel && source is not AudioSourceViewModel && source is not EqualizerBandViewModel) continue;
                 var sourceProperty = source.GetType().GetProperty(path, BindingFlags.Instance | BindingFlags.Public);
                 if (sourceProperty is null) continue;
                 entries.Add(new BindingAuditEntry(

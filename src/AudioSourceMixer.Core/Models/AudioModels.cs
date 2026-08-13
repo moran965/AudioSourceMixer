@@ -83,7 +83,8 @@ public sealed record AudioSourceCapabilities(
     string? Limitation = null,
     bool SupportsExtendedGain = false,
     bool SupportsOutputRouting = false,
-    bool SupportsDeviceHotSwitch = false);
+    bool SupportsDeviceHotSwitch = false,
+    bool SupportsEqualizer = false);
 
 public sealed record AudioSourceSnapshot(
     AudioSourceId Id,
@@ -112,7 +113,8 @@ public sealed record AudioSourceSnapshot(
     string? EffectiveOutputDeviceName = null,
     AudioRoutingState RoutingState = AudioRoutingState.SystemDefault,
     string? RoutingError = null,
-    DateTimeOffset? ProcessStartTimeUtc = null);
+    DateTimeOffset? ProcessStartTimeUtc = null,
+    AudioEffectSettings? Effects = null);
 
 public sealed record OutputDeviceInfo(
     string Id,
@@ -141,7 +143,8 @@ public sealed record AudioSourceProfile(
     DateTimeOffset UpdatedAt = default,
     string? OutputDeviceId = null,
     string? OutputDeviceName = null,
-    AudioSourceKind SourceKind = AudioSourceKind.WindowsSession);
+    AudioSourceKind SourceKind = AudioSourceKind.WindowsSession,
+    AudioEffectSettings? Effects = null);
 
 public sealed record BrowserTabSource(
     AudioSourceId Id,
@@ -164,7 +167,8 @@ public sealed record BrowserTabSource(
     string? RoutingError = null,
     string? CorrelationId = null,
     string? BrowserDeviceId = null,
-    string? EffectiveBrowserSinkId = null);
+    string? EffectiveBrowserSinkId = null,
+    AudioEffectSettings? Effects = null);
 
 public sealed record AudioSessionIdentity(
     string DeviceId,
