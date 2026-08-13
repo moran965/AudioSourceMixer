@@ -1,5 +1,6 @@
 param([string] $BaselineInstallerPath = '')
 . (Join-Path $PSScriptRoot 'common.ps1')
+. (Join-Path $PSScriptRoot 'runtime-payload.ps1')
 $ErrorActionPreference = 'Stop'
 
 $root = Get-RepositoryRoot
@@ -75,6 +76,7 @@ function Assert-Install([string] $Directory, [bool] $StartupExpected = $false) {
         $expected = "`"$exe`" --background"
         if ($run -ne $expected) { throw "Startup command '$run' != '$expected'." }
     } elseif (-not [string]::IsNullOrEmpty($run)) { throw "Startup must default off, found: $run" }
+    $null = Assert-RuntimePayload $directory 'Installed'
     Invoke-UiSmokeTest $exe "Installed UI smoke ($directory)"
 }
 
@@ -188,33 +190,46 @@ try {
     $results.customChinesePath = 'passed'; $results.startupEnableDisableCleanup = 'passed'; $results.backgroundTrayStartup = 'passed'
 
     if (Test-Path -LiteralPath $baselineCopy) {
-        Start-Checked $baselineCopy @('--silent-install') 'Install 0.1.2 upgrade baseline'
+        Start-Checked $baselineCopy @('--silent-install') 'Install 0.2.0 upgrade baseline'
         $baselineExe = Join-Path $defaultInstall 'AudioSourceMixer.exe'
-        if ([string](Get-Item -LiteralPath $baselineExe).VersionInfo.FileVersion -ne '0.1.2.0') { throw 'Baseline installer is not 0.1.2.' }
-        $upgradeSentinel = Join-Path $defaultInstall 'v0.1.2-upgrade-sentinel.txt'; Set-Content -LiteralPath $upgradeSentinel -Value 'old payload'
+        if ([string](Get-Item -LiteralPath $baselineExe).VersionInfo.FileVersion -ne '0.2.0.0') { throw 'Baseline installer is not 0.2.0.' }
+        $upgradeSentinel = Join-Path $defaultInstall 'v0.2.0-upgrade-sentinel.txt'; Set-Content -LiteralPath $upgradeSentinel -Value 'old payload'
         $baselineHash = Get-Sha256 $baselineExe
-        Start-Checked $setup @('--silent-install') 'In-place 0.1.2 to 0.2.0 upgrade'
+        Start-Checked $setup @('--silent-install') 'In-place 0.2.0 to 0.2.1 upgrade'
         Assert-Install $defaultInstall
         if (Test-Path -LiteralPath $upgradeSentinel) { throw 'Upgrade retained an old payload sentinel.' }
         if ((Get-Sha256 (Join-Path $defaultInstall 'AudioSourceMixer.exe')) -eq $baselineHash) { throw 'Upgrade executable hash did not change.' }
-        $results.inPlaceUpgradeFrom012 = 'passed'
+        $results.inPlaceUpgradeFrom020 = 'passed'
         Uninstall-Checked $defaultInstall
-    } else { $results.inPlaceUpgradeFrom012 = 'not executed: baseline artifact unavailable' }
+    } else { $results.inPlaceUpgradeFrom020 = 'not executed: baseline artifact unavailable' }
 
     Start-Checked $setup @('--silent-install','--install-dir',(Quote-Argument $defaultInstall)) 'Final hash verification install'
     Assert-Install $defaultInstall
     Verify-NormalLaunch $defaultInstall
     $publishHash = Get-Sha256 $publishExe; $portableHash = Get-Sha256 $portableExe; $installedHash = Get-Sha256 (Join-Path $defaultInstall 'AudioSourceMixer.exe')
     if ($publishHash -ne $portableHash -or $portableHash -ne $installedHash) { throw "Executable hash mismatch: $publishHash / $portableHash / $installedHash" }
-    $sourceExtension = Get-Inventory (Join-Path $root 'src\AudioSourceMixer.BrowserExtension')
+    $sourceExtension = Get-Inventory (Join-Path $portableDirectory 'BrowserExtension')
     $installedExtension = Get-Inventory (Join-Path $defaultInstall 'BrowserExtension')
-    if (@(Compare-Object $sourceExtension $installedExtension).Count -ne 0) { throw 'Installed browser extension inventory differs from source.' }
+    if (@(Compare-Object $sourceExtension $installedExtension).Count -ne 0) { throw 'Installed browser extension inventory differs from portable runtime.' }
+    $allowlist = Get-RuntimeAllowlist
+    foreach ($entry in $allowlist.runtimeFiles) {
+        $relative = ([string]$entry.path).Replace('/', '\')
+        $portableFile = Join-Path $portableDirectory $relative
+        $installedFile = Join-Path $defaultInstall $relative
+        if ((Get-Sha256 $portableFile) -ne (Get-Sha256 $installedFile)) {
+            throw "Installed runtime file differs from portable: $relative"
+        }
+    }
+    $installedInventory = @(Get-PayloadInventory $defaultInstall)
     Uninstall-Checked $defaultInstall
-    $results.publishPortableInstalledHash = 'passed'; $results.installedExtensionInventory = 'passed'; $results.silentUninstall = 'passed'; $results.runningAppGracefulUninstall = 'passed'; $results.normalVisibleLaunch = 'passed'
+    $results.publishPortableInstalledHash = 'passed'; $results.runtimeAllowlist = 'passed'; $results.installedExtensionInventory = 'passed'; $results.silentUninstall = 'passed'; $results.runningAppGracefulUninstall = 'passed'; $results.normalVisibleLaunch = 'passed'
 
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-    $manifest | Add-Member -NotePropertyName installedExecutable -NotePropertyValue (Join-Path $defaultInstall 'AudioSourceMixer.exe') -Force
-    $manifest | Add-Member -NotePropertyName installedSha256 -NotePropertyValue $installedHash -Force
+    $manifest | Add-Member -NotePropertyName installed -NotePropertyValue ([ordered]@{
+        path = 'installed/AudioSourceMixer'
+        executableSha256 = $installedHash
+        files = $installedInventory
+    }) -Force
     $manifest | Add-Member -NotePropertyName installerVerification -NotePropertyValue $results -Force
     $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
     Write-Output "Publish SHA-256: $publishHash"

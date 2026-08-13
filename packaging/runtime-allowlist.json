@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "runtimeFiles": [
+    { "path": "AudioSourceMixer.exe", "purpose": "WPF desktop application and self-contained .NET runtime" },
+    { "path": "AudioSourceMixer.NativeHost.exe", "purpose": "Chrome/Edge Native Messaging bridge" },
+    { "path": "LICENSE", "purpose": "product license" },
+    { "path": "THIRD_PARTY_NOTICES.md", "purpose": "third-party legal notices" },
+    { "path": "BrowserExtension/manifest.json", "purpose": "Manifest V3 extension declaration" },
+    { "path": "BrowserExtension/offscreen/offscreen.html", "purpose": "offscreen audio document" },
+    { "path": "BrowserExtension/offscreen/offscreen.js", "purpose": "tab audio graph runtime" },
+    { "path": "BrowserExtension/output-authorization/authorization-workflow.js", "purpose": "output authorization candidate and test tone" },
+    { "path": "BrowserExtension/output-authorization/authorize.css", "purpose": "output authorization page styles" },
+    { "path": "BrowserExtension/output-authorization/authorize.html", "purpose": "visible output authorization page" },
+    { "path": "BrowserExtension/output-authorization/authorize.js", "purpose": "output authorization page runtime" },
+    { "path": "BrowserExtension/output-authorization/mappings.js", "purpose": "browser output mapping storage and migration" },
+    { "path": "BrowserExtension/service-worker/lifecycle-policy.js", "purpose": "idle recovery policy" },
+    { "path": "BrowserExtension/service-worker/service-worker.js", "purpose": "extension event and Native Messaging runtime" },
+    { "path": "BrowserExtension/shared/protocol.js", "purpose": "extension protocol validation" }
+  ],
+  "portableOnlyFiles": [
+    { "path": "USER_GUIDE.md", "purpose": "short end-user setup guide" },
+    { "path": "scripts/register-native-host.ps1", "purpose": "portable Native Messaging registration" },
+    { "path": "scripts/unregister-native-host.ps1", "purpose": "portable Native Messaging removal" }
+  ],
+  "installerGeneratedFiles": [
+    { "path": "AudioSourceMixer.Uninstall.exe", "purpose": "dedicated installed uninstaller" },
+    { "path": "install-identity.json", "purpose": "safe uninstall product identity" },
+    { "path": "native-host-manifest.json", "purpose": "installed Native Messaging registration target" }
+  ]
+}
