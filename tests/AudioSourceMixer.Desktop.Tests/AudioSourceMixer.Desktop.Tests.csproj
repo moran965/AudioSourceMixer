@@ -31,5 +31,7 @@
     <None Include="..\..\src\AudioSourceMixer.Desktop\**\*.cs"
           Exclude="..\..\src\AudioSourceMixer.Desktop\bin\**;..\..\src\AudioSourceMixer.Desktop\obj\**"
           Link="SourceCode\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\generated\AudioSourceMixer-page.png" Link="IconAssets\AudioSourceMixer-page.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\assets\generated\AudioSourceMixer.ico" Link="IconAssets\AudioSourceMixer.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

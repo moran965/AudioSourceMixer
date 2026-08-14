@@ -132,6 +132,8 @@ public sealed class WpfBindingRegressionTests
                 Assert.True(result.ItemCount >= 1);
                 Assert.Equal("ListBoxItem", result.ContainerType);
                 Assert.Equal(UiSmokeVerifier.UpdatedPeak * 100d, result.PeakValue, 3);
+                Assert.True(result.PeakTrackWidth > 0);
+                Assert.InRange(result.PeakIndicatorWidth / result.PeakTrackWidth, 0.67, 0.79);
                 Assert.True(result.Bindings.Count >= 11);
 
                 await WpfUiStyleAssertions.AssertAsync(app, window, viewModel);
@@ -150,6 +152,7 @@ public sealed class WpfBindingRegressionTests
                 Assert.Equal(
                     [nameof(MainViewModel.AutoApplyProfiles), nameof(AudioSourceViewModel.BalancePercent), nameof(MainViewModel.CloseToTray),
                      nameof(AudioSourceViewModel.EqualizerPreampDb), nameof(EqualizerBandViewModel.GainDb),
+                     nameof(MainViewModel.HideBrowserAggregateSessions),
                      nameof(AudioSourceViewModel.IsEqualizerEnabled), nameof(AudioSourceViewModel.IsEqualizerExpanded),
                      nameof(MainViewModel.RememberProfiles), nameof(AudioSourceViewModel.SelectedEqualizerPresetId),
                      nameof(MainViewModel.ShowInactiveSessions), nameof(MainViewModel.ShowOperationTips),
@@ -200,6 +203,53 @@ public sealed class WpfBindingRegressionTests
 
                 fakeAudio.PublishSources(UiSmokeVerifier.CreateDiagnosticSources().ToArray());
                 await WaitUntilAsync(() => viewModel.Sources.Count == 3);
+                var identitiesBeforeLevels = viewModel.Sources.ToDictionary(item => item.Id);
+                var levelTarget = viewModel.Sources[1];
+                fakeAudio.PublishLevels(new AudioSourceLevel(levelTarget.Id, 0.81f, DateTimeOffset.UtcNow));
+                await WaitUntilAsync(() => Math.Abs(levelTarget.PeakPercent - 81) < 0.01);
+                Assert.Equal(identitiesBeforeLevels.Keys, viewModel.Sources.Select(item => item.Id));
+                Assert.All(viewModel.Sources, item => Assert.Same(identitiesBeforeLevels[item.Id], item));
+                var adjusted = viewModel.Sources[^1];
+                var originalIndex = viewModel.Sources.IndexOf(adjusted);
+                adjusted.VolumePercent = Math.Max(0, adjusted.VolumePercent - 1);
+                Assert.Equal(originalIndex, viewModel.Sources.IndexOf(adjusted));
+                await Task.Delay(100);
+                Assert.Equal(originalIndex, viewModel.Sources.IndexOf(adjusted));
+                viewModel.FlushPendingPresentationForDiagnostics();
+                Assert.Same(adjusted, viewModel.Sources[0]);
+
+                var nextAdjusted = viewModel.Sources[^1];
+                nextAdjusted.BalancePercent = nextAdjusted.BalancePercent > 0 ? -10 : 10;
+                viewModel.FlushPendingPresentationForDiagnostics();
+                Assert.Same(nextAdjusted, viewModel.Sources[0]);
+                Assert.Same(adjusted, viewModel.Sources[1]);
+                adjusted.UpdatePeak(0.99f, DateTimeOffset.UtcNow);
+                viewModel.FlushPendingPresentationForDiagnostics();
+                Assert.Same(nextAdjusted, viewModel.Sources[0]);
+                Assert.Same(adjusted, viewModel.Sources[1]);
+
+                viewModel.UseManualSortCommand.Execute(null);
+                var dragged = viewModel.Sources[^1];
+                viewModel.MoveSourceBefore(dragged, viewModel.Sources[0]);
+                var manualOrder = viewModel.Sources.Select(item => item.Id).ToArray();
+                Assert.True(viewModel.IsManualSortMode);
+                dragged.VolumePercent = Math.Max(0, dragged.VolumePercent - 1);
+                viewModel.FlushPendingPresentationForDiagnostics();
+                Assert.Equal(manualOrder, viewModel.Sources.Select(item => item.Id).ToArray());
+
+                var hiddenId = viewModel.Sources[^1].Id;
+                var restoreCallsBeforeHide = fakeAudio.RestoreCalls;
+                viewModel.Sources[^1].HideCommand.Execute(null);
+                Assert.DoesNotContain(viewModel.Sources, item => item.Id == hiddenId);
+                var hiddenEntry = Assert.Single(viewModel.HiddenSources.Where(item => item.Id == hiddenId));
+                Assert.True(hiddenEntry.CanRestore);
+                Assert.Equal(restoreCallsBeforeHide, fakeAudio.RestoreCalls);
+                hiddenEntry.RestoreCommand.Execute(null);
+                Assert.Contains(viewModel.Sources, item => item.Id == hiddenId);
+                Assert.Equal(restoreCallsBeforeHide, fakeAudio.RestoreCalls);
+                viewModel.ResetSourceOrderCommand.Execute(null);
+                Assert.True(viewModel.IsRecentSortMode);
+
                 viewModel.Sources.First(item => item.SupportsEqualizer).IsEqualizerExpanded = true;
                 await AssertResponsiveLayoutsAsync(app, window, viewModel);
                 fakeAudio.PublishSources(source);
@@ -378,6 +428,7 @@ public sealed class WpfBindingRegressionTests
         }
         finally
         {
+            await viewModel.PrepareForExitAsync();
             if (window is not null)
             {
                 window.AllowClose = true;
@@ -610,14 +661,21 @@ public sealed class WpfBindingRegressionTests
             var document = XDocument.Load(path, LoadOptions.SetLineInfo);
             foreach (var element in document.Descendants())
             {
-                var insideBandTemplate = Path.GetFileName(path) == "EqualizerPanel.xaml" &&
-                                         element.Ancestors().Any(ancestor => ancestor.Name.LocalName == "DataTemplate");
-                var sourceType = insideBandTemplate ? typeof(EqualizerBandViewModel) : rootType;
+                var insideTemplate = element.Ancestors().Any(ancestor => ancestor.Name.LocalName == "DataTemplate");
+                var insideBandTemplate = Path.GetFileName(path) == "EqualizerPanel.xaml" && insideTemplate;
                 foreach (var attribute in element.Attributes().Where(attribute => attribute.Value.StartsWith("{Binding", StringComparison.Ordinal)))
                 {
                     var expression = attribute.Value["{Binding".Length..].TrimEnd('}').Trim();
+                    if (expression.Contains("RelativeSource=", StringComparison.Ordinal) ||
+                        expression.Contains("ElementName=", StringComparison.Ordinal)) continue;
                     var sourcePath = expression.Split(',', 2)[0].Trim();
                     var sourceProperty = sourcePath.Split('.', 2)[0];
+                    var sourceType = insideBandTemplate
+                        ? typeof(EqualizerBandViewModel)
+                        : Path.GetFileName(path) == "MixerView.xaml" && insideTemplate &&
+                          typeof(HiddenSourceViewModel).GetProperty(sourceProperty, BindingFlags.Instance | BindingFlags.Public) is not null
+                            ? typeof(HiddenSourceViewModel)
+                            : rootType;
                     var modeMatch = Regex.Match(expression, @"(?:^|,)\s*Mode\s*=\s*(OneWay|TwoWay|OneWayToSource|OneTime)(?:\s*,|\s*$)");
                     Assert.True(modeMatch.Success,
                         $"Binding mode is not explicit at {Path.GetFileName(path)}:{element.Name.LocalName}.{attribute.Name.LocalName}: {attribute.Value}");
@@ -660,7 +718,7 @@ public sealed class WpfBindingRegressionTests
         BindingMode DeclaredMode,
         bool HasPublicSetter);
 
-    private sealed class FakeAudioService(params AudioSourceSnapshot[] initialSources) : IAudioSourceDiscovery, IAudioSourceController,
+    private sealed class FakeAudioService(params AudioSourceSnapshot[] initialSources) : IAudioSourceDiscovery, IAudioSourceLevelDiscovery, IAudioSourceController,
         IAudioOutputDeviceService, IAudioRoutingController
     {
         private AudioSourceSnapshot[] _sources = initialSources;
@@ -675,6 +733,7 @@ public sealed class WpfBindingRegressionTests
             => _routeRequests.ToArray();
         public Func<AudioSourceId, string, AudioRouteRequestSource, CancellationToken, Task>? RouteHook { get; set; }
         public event EventHandler<IReadOnlyList<AudioSourceSnapshot>>? SourcesChanged;
+        public event EventHandler<IReadOnlyList<AudioSourceLevel>>? SourceLevelsChanged;
         public event EventHandler<OutputDeviceInfo>? DefaultDeviceChanged { add { } remove { } }
         public event EventHandler<IReadOnlyList<OutputDeviceInfo>>? OutputDevicesChanged;
         public event EventHandler<AudioRouteResult>? RoutingStateChanged { add { } remove { } }
@@ -687,6 +746,7 @@ public sealed class WpfBindingRegressionTests
                 new OutputDeviceInfo("test-device", "Test Device", ChannelCount: 2, SampleRate: 48000),
                 new OutputDeviceInfo("realtek-speakers", "Realtek Speakers", ChannelCount: 2, SampleRate: 48000)]);
         public Task RefreshAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public void PublishLevels(params AudioSourceLevel[] levels) => SourceLevelsChanged?.Invoke(this, levels);
         public Task SetVolumeAsync(AudioSourceId sourceId, float volume, CancellationToken cancellationToken = default)
         {
             _volumes.Enqueue((sourceId, volume));

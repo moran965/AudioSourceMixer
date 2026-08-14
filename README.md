@@ -6,6 +6,9 @@
 
 - 普通 Windows 会话：0–100% 主音量、静音、声道平衡、峰值和按应用输出设备路由。
 - 浏览器增强标签页：0–200% Web Audio 增益、平衡、静音、10 段均衡器和经用户授权的输出 sink；多标签页相互独立。
+- Windows 会话以约 13Hz、浏览器增强标签页以 10Hz 独立刷新实时电平；快速响应上升、约 350ms 平滑衰减，停止播放后归零，不触发完整来源重建。
+- 来源默认按“最近调整”排序，音量/平衡/EQ 等操作结束后延迟约 300ms 置顶；也可切换手动模式，从六点把手拖动，或在省略号菜单中上移、下移、置顶。
+- 单个来源可从省略号菜单隐藏，并从页头“已隐藏”入口恢复；浏览器增强活动时默认仅隐藏对应 `msedge.exe`/`chrome.exe` 聚合会话，可在设置中关闭。
 - 输出授权向导：系统设备选择、低音量短测试音、明确确认、名称不匹配二次确认、修改/删除/清空映射。
 - Fluent 风格“混音器 / 浏览器增强 / 设置”导航；来源卡、10 段 EQ、长文本和 880×600 最小窗口使用响应式布局，来源列表保留 Recycling 并按像素连续滚动。
 - 中文界面优先使用微软雅黑 UI 并提供明确回退链；设置型开关以无对勾实心色块表示选中，鼠标和键盘焦点范围只包围方块与实际标签，不占用行尾空白。
@@ -55,11 +58,11 @@
 .\scripts\build-all.ps1
 ```
 
-完整流程执行 Release restore/build、全部 .NET/Node 测试、系统 Chrome/Edge 隔离 profile 的扩展授权与 Web Audio 运行验证、源码/portable/installed WPF UI smoke、严格发行 allowlist、默认/自定义路径安装、同版本 repair、故障回滚、0.2.1 原位升级、可选引导、开机启动、后台托盘、无参数卸载 UI、运行中优雅卸载、注册表清理，以及 publish/portable/installed SHA-256 和扩展清单比较。详见 [测试报告](docs/testing.md)、[隐私说明](docs/privacy.md)、[商店资料草案](CHROMEWEBSTORE.md) 和 [核心代码图](docs/core-code-map.md)。
+完整流程执行 Release restore/build、全部 .NET/Node 测试、系统 Chrome/Edge 隔离 profile 的扩展授权与 Web Audio 运行验证、源码/portable/installed WPF UI smoke、受控真实 WASAPI 会话到可见 WPF Indicator 的逐样本电平验证、严格发行 allowlist、默认/自定义路径安装、同版本 repair、故障回滚、0.2.1 原位升级、可选引导、开机启动、后台托盘、无参数卸载 UI、运行中优雅卸载、注册表清理，以及 publish/portable/installed SHA-256 和扩展清单比较。详见 [测试报告](docs/testing.md)、[隐私说明](docs/privacy.md)、[商店资料草案](CHROMEWEBSTORE.md) 和 [核心代码图](docs/core-code-map.md)。
 
 ## 数据与限制
 
-设置、应用配置、回滚事务和日志位于 `%LocalAppData%\AudioSourceMixer`。设置与来源配置写入串行化并以临时文件原子替换；旧 profile 会迁移到 schema 3，浏览器来源的缺失 EQ 字段按关闭/平直处理。
+设置、应用配置、回滚事务和日志位于 `%LocalAppData%\AudioSourceMixer`。设置与来源配置写入串行化并以临时文件原子替换；音频 profile 为 schema 3，界面设置迁移到 schema 5。schema 5 保存排序模式、安全的 Windows 会话手动顺序和精确隐藏记录（各最多 256 项，隐藏记录 30 天过期），不持久化标签页标题或 URL。
 
 - 应用是否立即迁移既有共享模式音频流由应用/音频引擎决定；`PendingStreamRestart` 通常需暂停/恢复或重启目标应用。
 - 浏览器设备授权必须由可见页面中的用户手势触发；桌面程序不能直接读取其他浏览器配置文件的 `chrome.storage.local`。

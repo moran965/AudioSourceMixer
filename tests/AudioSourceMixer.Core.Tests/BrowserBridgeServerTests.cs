@@ -8,6 +8,38 @@ namespace AudioSourceMixer.Core.Tests;
 public sealed class BrowserBridgeServerTests
 {
     [Fact]
+    public async Task PeakOnlyUpdatesUseIndependentLevelChannelWithoutTopologyRefresh()
+    {
+        var pipeName = TestPipeName();
+        await using var server = new BrowserBridgeServer(pipeName);
+        var topologyEvents = 0;
+        var levels = new List<AudioSourceLevel>();
+        server.TabsChanged += (_, _) => Interlocked.Increment(ref topologyEvents);
+        server.SourceLevelsChanged += (_, update) => { lock (levels) levels.AddRange(update); };
+        server.Start();
+        await using var client = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        await client.ConnectAsync(5000);
+        await using var writer = new StreamWriter(client, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true };
+        await writer.WriteLineAsync("""{"protocolVersion":3,"type":"tab.register","browser":"chrome","tabId":1,"title":"One","peak":0}""");
+        await writer.WriteLineAsync("""{"protocolVersion":3,"type":"tab.register","browser":"chrome","tabId":2,"title":"Two","peak":0}""");
+        await WaitUntilAsync(() => server.GetTabs().Count == 2);
+        var baselineTopologyEvents = Volatile.Read(ref topologyEvents);
+
+        await writer.WriteLineAsync("""{"protocolVersion":3,"type":"tab.update","browser":"chrome","tabId":1,"peak":0.8}""");
+        await writer.WriteLineAsync("""{"protocolVersion":3,"type":"tab.update","browser":"chrome","tabId":2,"peak":0.2}""");
+        await WaitUntilAsync(() => { lock (levels) return levels.Count >= 2; });
+
+        Assert.Equal(baselineTopologyEvents, Volatile.Read(ref topologyEvents));
+        Assert.Equal(0.8f, server.GetTabs().Single(tab => tab.TabId == 1).Peak);
+        Assert.Equal(0.2f, server.GetTabs().Single(tab => tab.TabId == 2).Peak);
+        lock (levels)
+        {
+            Assert.Contains(levels, level => level.Id == AudioSourceId.ForBrowserTab("chrome", 1) && level.Peak == 0.8f);
+            Assert.Contains(levels, level => level.Id == AudioSourceId.ForBrowserTab("chrome", 2) && level.Peak == 0.2f);
+        }
+    }
+
+    [Fact]
     public async Task DesktopCanAddressConnectedBrowserManagerAndReportsItsVersion()
     {
         var pipeName = TestPipeName();

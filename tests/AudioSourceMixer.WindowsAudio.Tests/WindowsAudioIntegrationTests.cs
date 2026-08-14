@@ -8,6 +8,18 @@ namespace AudioSourceMixer.WindowsAudio.Tests;
 public sealed class WindowsAudioIntegrationTests
 {
     [Fact]
+    public void RealtimeMeterSmoothingAttacksImmediatelyAndDecaysToZero()
+    {
+        Assert.Equal(0.8f, WindowsAudioService.SmoothPeak(0.2f, 0.8f, TimeSpan.FromMilliseconds(75)));
+        var peak = 1f;
+        for (var index = 0; index < 8; index++)
+            peak = WindowsAudioService.SmoothPeak(peak, 0, TimeSpan.FromMilliseconds(75));
+        Assert.Equal(0, peak);
+        Assert.InRange(WindowsAudioService.SmoothPeak(0.7f, float.NaN, TimeSpan.FromMilliseconds(75)), 0, 0.7f);
+        Assert.Equal(1, WindowsAudioService.SmoothPeak(0, 4, TimeSpan.FromMilliseconds(75)));
+    }
+
+    [Fact]
     public async Task DefaultDeviceAndLiveSessionsCanBeProbed()
     {
         if (!OperatingSystem.IsWindows()) return;

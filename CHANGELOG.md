@@ -2,6 +2,12 @@
 
 ## 0.2.2 - 2026-08-14
 
+- 修复全局 ProgressBar 模板缺少 `PART_Track` 导致 Peak 值变化但指示条宽度不变；UI smoke 现直接测量 0/50/100% 与动态 Peak 的 Track/Indicator 实际宽度。
+- Windows Core Audio 拆分为约 1 秒拓扑刷新和 75ms 轻量电平刷新，浏览器增强改为每标签页独立 100ms 电平；两者均快速上升、约 350ms 衰减并归零，峰值更新不再触发完整 Reconcile、配置重载或路由应用。
+- 新增来源展示管线、精确单会话隐藏/恢复、Edge/Chrome 增强时的聚合会话自动隐藏，以及“最近调整/手动排序”；现有 ViewModel 通过 `ObservableCollection.Move` 复用，滑块操作延迟约 300ms 后才重排。
+- 页内 Logo 改用从唯一 SVG 设计源生成的 512×512 透明 PNG；ICO 保留给系统用途并补齐 16/20/24/32/40/48/64/96/128/256 帧，浏览器图标仍为精确尺寸 PNG。
+- 设置 schema 升至 5（产品版本仍为 0.2.2），新增排序、手动隐藏和浏览器聚合隐藏开关；仅持久化安全的 Windows 精确身份，限制容量并清理长期失效记录。
+- 发行测试新增受控真实 WASAPI 会话的逐样本 UI 电平报告，并要求原始 Peak、平滑 Peak、ProgressBar Value、Track/Indicator 可见宽度及停播归零全部成立。
 - 桌面端中文字体统一为 `Microsoft YaHei UI, Microsoft YaHei, Segoe UI, Global User Interface` 回退链，窗口、控件、提示及托盘菜单共享一致字体语义；正文保持 Regular，标题和强调层级统一为 Bold，并增加 UTF-8、乱码、替换字符及关键中文字形审计。
 - 设置型 CheckBox 改为无对勾的纯实心主色选中态，禁用选中态仍可辨识；模板使用 Auto 列和左对齐，使命中/焦点范围仅覆盖 16 DIP 方块、8 DIP 间距及实际标签文字，不再横跨卡片空白。
 - WPF 回归新增真实 SettingsView/EQ 模板、Automation Toggle、Space 键、选中/禁用颜色、焦点模板、不同标签宽度和右侧空白 hit-test；UI screenshot 覆盖 880×600、1180×760、1600×900 及 100/125/150/200 DPI 渲染。

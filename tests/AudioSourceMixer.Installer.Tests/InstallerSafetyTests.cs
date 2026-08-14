@@ -80,6 +80,7 @@ public sealed class InstallerSafetyTests : IDisposable
             Assert.DoesNotMatch(@"\.(pdb|cs|csproj|sln|map)$", path);
         });
         Assert.Contains("BrowserExtension/shared/equalizer.js", runtime);
+        Assert.Contains("BrowserExtension/shared/levels.js", runtime);
         Assert.Contains("browser-extension-origins.json", runtime);
         Assert.DoesNotContain(runtime, path => path.EndsWith("package.json", StringComparison.OrdinalIgnoreCase));
 

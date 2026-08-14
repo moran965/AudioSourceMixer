@@ -177,14 +177,23 @@ public sealed class IdentityAndPersistenceTests : IDisposable
         var store = new JsonApplicationSettingsStore(_directory);
         var expected = new ApplicationSettings(false, false, true, false);
         await store.SaveAsync(expected);
-        Assert.Equal(expected, await store.LoadAsync());
+        var loaded = await store.LoadAsync();
+        Assert.Equal(expected.CloseToTray, loaded.CloseToTray);
+        Assert.Equal(expected.AutoApplyProfiles, loaded.AutoApplyProfiles);
+        Assert.Equal(expected.RememberProfiles, loaded.RememberProfiles);
+        Assert.Equal(expected.ShowInactiveSessions, loaded.ShowInactiveSessions);
+        Assert.Equal(SourceSortModes.Recent, loaded.SourceSortMode);
+        Assert.Empty(loaded.ManualSourceOrder!);
+        Assert.Empty(loaded.ManuallyHiddenSources!);
+        Assert.True(loaded.HideBrowserAggregateSessions);
+        Assert.Equal(5, loaded.SchemaVersion);
     }
 
     [Fact]
     public async Task FreshSettingsRequestOptionalBrowserOnboarding()
     {
         var loaded = await new JsonApplicationSettingsStore(_directory).LoadAsync();
-        Assert.Equal(4, loaded.SchemaVersion);
+        Assert.Equal(5, loaded.SchemaVersion);
         Assert.Equal("undecided", loaded.BrowserOnboardingChoice);
         Assert.Null(loaded.OnboardingCompletedVersion);
         Assert.False(loaded.BrowserGuideDismissed);
@@ -197,12 +206,59 @@ public sealed class IdentityAndPersistenceTests : IDisposable
         await File.WriteAllTextAsync(Path.Combine(_directory, "settings.json"),
             """{"CloseToTray":false,"ShowInactiveSessions":false,"SchemaVersion":3}""");
         var loaded = await new JsonApplicationSettingsStore(_directory).LoadAsync();
-        Assert.Equal(4, loaded.SchemaVersion);
+        Assert.Equal(5, loaded.SchemaVersion);
         Assert.False(loaded.CloseToTray);
         Assert.False(loaded.ShowInactiveSessions);
         Assert.Equal("existing-user", loaded.BrowserOnboardingChoice);
         Assert.Equal("0.2.1", loaded.OnboardingCompletedVersion);
         Assert.True(loaded.BrowserGuideDismissed);
+        Assert.Equal(SourceSortModes.Recent, loaded.SourceSortMode);
+        Assert.Empty(loaded.ManualSourceOrder!);
+        Assert.Empty(loaded.ManuallyHiddenSources!);
+        Assert.True(loaded.HideBrowserAggregateSessions);
+    }
+
+    [Fact]
+    public async Task SchemaFourSettingsGainPresentationDefaultsWithoutChangingOnboarding()
+    {
+        Directory.CreateDirectory(_directory);
+        await File.WriteAllTextAsync(Path.Combine(_directory, "settings.json"),
+            """{"BrowserOnboardingChoice":"not-now","OnboardingCompletedVersion":"0.2.2","BrowserGuideDismissed":true,"SchemaVersion":4}""");
+
+        var loaded = await new JsonApplicationSettingsStore(_directory).LoadAsync();
+
+        Assert.Equal(5, loaded.SchemaVersion);
+        Assert.Equal("not-now", loaded.BrowserOnboardingChoice);
+        Assert.Equal("0.2.2", loaded.OnboardingCompletedVersion);
+        Assert.True(loaded.BrowserGuideDismissed);
+        Assert.Equal(SourceSortModes.Recent, loaded.SourceSortMode);
+        Assert.Empty(loaded.ManualSourceOrder!);
+        Assert.Empty(loaded.ManuallyHiddenSources!);
+        Assert.True(loaded.HideBrowserAggregateSessions);
+    }
+
+    [Fact]
+    public async Task PresentationSettingsRoundTripOnlySafeBoundedWindowsIdentities()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var store = new JsonApplicationSettingsStore(_directory);
+        await store.SaveAsync(new ApplicationSettings(
+            SourceSortMode: SourceSortModes.Manual,
+            ManualSourceOrder: ["win:session-b", "tab:private-title", "win:session-a", "win:session-b"],
+            ManuallyHiddenSources:
+            [
+                new HiddenSourceSetting("win:session-b", AudioSourceKind.WindowsSession, now),
+                new HiddenSourceSetting("tab:private-title", AudioSourceKind.ChromeTab, now)
+            ],
+            HideBrowserAggregateSessions: false));
+
+        var loaded = await store.LoadAsync();
+
+        Assert.Equal(SourceSortModes.Manual, loaded.SourceSortMode);
+        Assert.Equal(["win:session-b", "win:session-a"], loaded.ManualSourceOrder);
+        Assert.Equal("win:session-b", Assert.Single(loaded.ManuallyHiddenSources!).SourceId);
+        Assert.False(loaded.HideBrowserAggregateSessions);
+        Assert.Equal(5, loaded.SchemaVersion);
     }
 
     public void Dispose()

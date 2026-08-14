@@ -20,7 +20,7 @@ internal static class WpfUiStyleAssertions
     private static readonly string[] SettingLabels =
     [
         "登录 Windows 后启动", "启动后留在系统托盘", "关闭窗口时留在托盘", "显示当前无声会话",
-        "记住应用设置", "自动应用已保存设置", "显示操作提示"
+        "浏览器增强时隐藏浏览器聚合会话", "记住应用设置", "自动应用已保存设置", "显示操作提示"
     ];
 
     public static async Task AssertAsync(App app, MainWindow window, MainViewModel viewModel)
@@ -160,7 +160,8 @@ internal static class WpfUiStyleAssertions
         var longLabel = checkBoxes.Single(checkBox => Equals(checkBox.Content, "自动应用已保存设置"));
         Assert.True(longLabel.ActualWidth > shortLabel.ActualWidth + 20);
 
-        foreach (var label in new[] { "关闭窗口时留在托盘", "显示当前无声会话", "记住应用设置", "自动应用已保存设置", "显示操作提示" })
+        foreach (var label in new[] { "关闭窗口时留在托盘", "显示当前无声会话", "浏览器增强时隐藏浏览器聚合会话",
+                     "记住应用设置", "自动应用已保存设置", "显示操作提示" })
         {
             var checkBox = checkBoxes.Single(candidate => Equals(candidate.Content, label));
             Assert.True(checkBox.IsEnabled, $"'{label}' should be enabled for the interaction regression.");
