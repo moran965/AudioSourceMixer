@@ -34,7 +34,7 @@
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                         <Border Grid.Column="0" Background="{DynamicResource SurfaceSecondaryBrush}" CornerRadius="9" Padding="12" Margin="0,0,6,0">
                             <StackPanel>
-                                <TextBlock Text="Microsoft Edge" FontWeight="SemiBold"/>
+                                <TextBlock Text="Microsoft Edge" FontWeight="Bold"/>
                                 <TextBlock Text="{Binding EdgeGuideStatus, Mode=OneWay}" Style="{DynamicResource BodySecondaryTextStyle}" TextWrapping="Wrap" Margin="0,4,0,8"/>
                                 <Button Content="打开 Edge 扩展页" Command="{Binding OpenEdgeExtensionsCommand, Mode=OneWay}"
                                         HorizontalAlignment="Left" AutomationProperties.Name="打开 Edge 扩展管理页"/>
@@ -42,7 +42,7 @@
                         </Border>
                         <Border Grid.Column="1" Background="{DynamicResource SurfaceSecondaryBrush}" CornerRadius="9" Padding="12" Margin="6,0,0,0">
                             <StackPanel>
-                                <TextBlock Text="Google Chrome" FontWeight="SemiBold"/>
+                                <TextBlock Text="Google Chrome" FontWeight="Bold"/>
                                 <TextBlock Text="{Binding ChromeGuideStatus, Mode=OneWay}" Style="{DynamicResource BodySecondaryTextStyle}" TextWrapping="Wrap" Margin="0,4,0,8"/>
                                 <Button Content="打开 Chrome 扩展页" Command="{Binding OpenChromeExtensionsCommand, Mode=OneWay}"
                                         HorizontalAlignment="Left" AutomationProperties.Name="打开 Chrome 扩展管理页"/>

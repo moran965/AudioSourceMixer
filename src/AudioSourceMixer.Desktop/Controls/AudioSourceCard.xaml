@@ -14,11 +14,11 @@
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="150"/></Grid.ColumnDefinitions>
                 <Border Background="{DynamicResource PrimarySoftBrush}" CornerRadius="10" Padding="9,5" VerticalAlignment="Center" Margin="0,0,12,0">
                     <TextBlock Text="{Binding SourceTypeLabel, Mode=OneWay}" Foreground="{DynamicResource PrimaryDarkBrush}"
-                               FontWeight="SemiBold" FontSize="10"/>
+                               FontWeight="Bold" FontSize="10"/>
                 </Border>
                 <StackPanel Grid.Column="1" MinWidth="0">
                     <TextBlock Text="{Binding DisplayName, Mode=OneWay}" ToolTip="{Binding DisplayName, Mode=OneWay}"
-                               FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis"/>
+                               FontWeight="Bold" FontSize="15" TextTrimming="CharacterEllipsis"/>
                     <TextBlock Text="{Binding SourceDescription, Mode=OneWay}" ToolTip="{Binding SourceDescription, Mode=OneWay}"
                                Style="{DynamicResource CaptionTextStyle}" TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
@@ -44,7 +44,7 @@
                 <StackPanel Grid.Column="0" Margin="0,0,18,0">
                     <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <TextBlock Text="音量" FontWeight="SemiBold"/>
+                        <TextBlock Text="音量" FontWeight="Bold"/>
                         <TextBlock Grid.Column="1" Margin="8,0,0,0" Text="{Binding VolumePercent, Mode=OneWay, StringFormat={}{0:F0}%}"/>
                     </Grid>
                     <controls:WheelSafeSlider Minimum="0" Maximum="{Binding VolumeMaximum, Mode=OneWay}" TickFrequency="10"
@@ -56,7 +56,7 @@
                 <StackPanel Grid.Column="1" Margin="0,0,18,0">
                     <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <TextBlock Text="声道平衡" FontWeight="SemiBold"/>
+                        <TextBlock Text="声道平衡" FontWeight="Bold"/>
                         <TextBlock Grid.Column="1" Margin="8,0,0,0" Text="{Binding BalanceText, Mode=OneWay}" Style="{DynamicResource CaptionTextStyle}"/>
                     </Grid>
                     <controls:CenterDetentSlider Minimum="-100" Maximum="100" TickFrequency="1"
@@ -70,7 +70,7 @@
                     </Grid>
                 </StackPanel>
                 <StackPanel Grid.Column="2">
-                    <TextBlock Text="输出设备" FontWeight="SemiBold" Margin="0,0,0,7"/>
+                    <TextBlock Text="输出设备" FontWeight="Bold" Margin="0,0,0,7"/>
                     <ComboBox ItemsSource="{Binding OutputDevices, Mode=OneWay}" SelectedValuePath="Id"
                               SelectedValue="{Binding SelectedOutputDeviceId, Mode=OneWay}"
                               IsEnabled="{Binding SupportsOutputRouting, Mode=OneWay}"

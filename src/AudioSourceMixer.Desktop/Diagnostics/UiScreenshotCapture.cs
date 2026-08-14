@@ -42,15 +42,28 @@ internal static class UiScreenshotCapture
         await SettleAsync(window, cancellationToken);
         files.Add(Save(window, outputDirectory, "04-browser-setup.png"));
 
-        window.SelectSettingsPage();
-        await SettleAsync(window, cancellationToken);
-        files.Add(Save(window, outputDirectory, "05-settings.png"));
+        foreach (var (width, height, scale, fileName) in new[]
+                 {
+                     (1180d, 760d, 1d, "05-settings-1180x760-100dpi.png"),
+                     (880d, 600d, 1d, "06-settings-880x600-100dpi.png"),
+                     (1600d, 900d, 1d, "07-settings-1600x900-100dpi.png"),
+                     (1180d, 760d, 1.25d, "08-settings-1180x760-125dpi.png"),
+                     (1180d, 760d, 1.5d, "09-settings-1180x760-150dpi.png"),
+                     (1180d, 760d, 2d, "10-settings-1180x760-200dpi.png")
+                 })
+        {
+            window.Width = width;
+            window.Height = height;
+            window.SelectSettingsPage();
+            await SettleAsync(window, cancellationToken);
+            files.Add(Save(window, outputDirectory, fileName, scale));
+        }
 
         window.Width = 880;
         window.Height = 600;
         window.SelectMixerPage();
         await ShowSourceAsync(window, browser, cancellationToken);
-        files.Add(Save(window, outputDirectory, "06-minimum-window.png"));
+        files.Add(Save(window, outputDirectory, "11-minimum-window.png"));
         return files;
     }
 
@@ -66,16 +79,18 @@ internal static class UiScreenshotCapture
         await window.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.Render, cancellationToken);
     }
 
-    private static string Save(Window window, string directory, string fileName)
+    private static string Save(Window window, string directory, string fileName, double? renderScale = null)
     {
         window.UpdateLayout();
         var visual = (FrameworkElement)window.Content;
         visual.InvalidateVisual();
         visual.UpdateLayout();
         var dpi = VisualTreeHelper.GetDpi(visual);
-        var width = Math.Max(1, (int)Math.Ceiling(visual.ActualWidth * dpi.DpiScaleX));
-        var height = Math.Max(1, (int)Math.Ceiling(visual.ActualHeight * dpi.DpiScaleY));
-        var bitmap = new RenderTargetBitmap(width, height, 96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY, PixelFormats.Pbgra32);
+        var scaleX = renderScale ?? dpi.DpiScaleX;
+        var scaleY = renderScale ?? dpi.DpiScaleY;
+        var width = Math.Max(1, (int)Math.Ceiling(visual.ActualWidth * scaleX));
+        var height = Math.Max(1, (int)Math.Ceiling(visual.ActualHeight * scaleY));
+        var bitmap = new RenderTargetBitmap(width, height, 96 * scaleX, 96 * scaleY, PixelFormats.Pbgra32);
         var drawing = new DrawingVisual();
         using (var context = drawing.RenderOpen())
         {

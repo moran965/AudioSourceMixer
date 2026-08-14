@@ -10,13 +10,13 @@
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <StackPanel>
                     <TextBlock Text="当前默认输出" Style="{DynamicResource CaptionTextStyle}"/>
-                    <TextBlock Text="{Binding DeviceName, Mode=OneWay}" FontSize="15" FontWeight="SemiBold" Margin="0,3,0,0"
+                    <TextBlock Text="{Binding DeviceName, Mode=OneWay}" FontSize="15" FontWeight="Bold" Margin="0,3,0,0"
                                TextTrimming="CharacterEllipsis" ToolTip="{Binding DeviceName, Mode=OneWay}"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Visibility="{Binding BrowserStatusVisibility, Mode=OneWay}"
                             VerticalAlignment="Center" Margin="24,0,0,0">
                     <TextBlock Text="浏览器增强" Style="{DynamicResource CaptionTextStyle}" HorizontalAlignment="Right"/>
-                    <TextBlock Text="{Binding BrowserStatus, Mode=OneWay}" FontWeight="SemiBold"
+                    <TextBlock Text="{Binding BrowserStatus, Mode=OneWay}" FontWeight="Bold"
                                Foreground="{DynamicResource PrimaryDarkBrush}" Margin="0,3,0,0"/>
                 </StackPanel>
             </Grid>

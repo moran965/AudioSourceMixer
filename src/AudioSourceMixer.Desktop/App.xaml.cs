@@ -18,6 +18,7 @@ public partial class App : System.Windows.Application
     private bool _ownsMutex;
     private Forms.NotifyIcon? _tray;
     private Icon? _productIcon;
+    private Font? _trayMenuFont;
     private WindowsAudioService? _audio;
     private BrowserBridgeServer? _bridge;
     private MainViewModel? _viewModel;
@@ -299,6 +300,8 @@ public partial class App : System.Windows.Application
         _productIcon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? throw new InvalidOperationException("无法读取产品图标。");
         _tray = new Forms.NotifyIcon { Icon = _productIcon, Text = "Audio Source Mixer", Visible = visible };
         var menu = new Forms.ContextMenuStrip();
+        _trayMenuFont = CreateTrayMenuFont(menu.Font.Size);
+        menu.Font = _trayMenuFont;
         menu.Items.Add("打开主窗口", null, (_, _) => ShowMainWindow());
         menu.Items.Add("全部恢复默认", null, async (_, _) =>
         {
@@ -315,6 +318,19 @@ public partial class App : System.Windows.Application
         menu.Items.Add("退出并恢复音频设置", null, async (_, _) => await ExitAndRestoreAsync());
         _tray.ContextMenuStrip = menu;
         _tray.DoubleClick += (_, _) => ShowMainWindow();
+    }
+
+    private static Font CreateTrayMenuFont(float size)
+    {
+        foreach (var family in new[] { "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI" })
+        {
+            var font = new System.Drawing.Font(family, size, System.Drawing.FontStyle.Regular, GraphicsUnit.Point);
+            if (font.Name.Equals(family, StringComparison.OrdinalIgnoreCase)) return font;
+            font.Dispose();
+        }
+        var systemMenuFont = System.Drawing.SystemFonts.MenuFont;
+        var fallbackFamily = systemMenuFont?.FontFamily ?? System.Drawing.FontFamily.GenericSansSerif;
+        return new System.Drawing.Font(fallbackFamily, size, System.Drawing.FontStyle.Regular, GraphicsUnit.Point);
     }
 
     private void RegisterGracefulExitSignal()
@@ -396,6 +412,8 @@ public partial class App : System.Windows.Application
         await CleanupAsync("Tray dispose", () =>
         {
             _tray?.Dispose();
+            _trayMenuFont?.Dispose();
+            _trayMenuFont = null;
             _productIcon?.Dispose();
             _productIcon = null;
             return Task.CompletedTask;

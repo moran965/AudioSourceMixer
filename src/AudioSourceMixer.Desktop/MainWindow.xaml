@@ -4,7 +4,7 @@
         xmlns:views="clr-namespace:AudioSourceMixer.Desktop.Views"
         Title="Audio Source Mixer" Icon="Assets/AudioSourceMixer.ico"
         Width="1180" Height="760" MinWidth="880" MinHeight="600"
-        FontFamily="{DynamicResource ApplicationFont}"
+        Style="{DynamicResource ApplicationWindowTypographyStyle}"
         Background="{DynamicResource WindowBackgroundBrush}"
         WindowStartupLocation="CenterScreen"
         UseLayoutRounding="True" SnapsToDevicePixels="True">

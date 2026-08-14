@@ -134,6 +134,8 @@ public sealed class WpfBindingRegressionTests
                 Assert.Equal(UiSmokeVerifier.UpdatedPeak * 100d, result.PeakValue, 3);
                 Assert.True(result.Bindings.Count >= 11);
 
+                await WpfUiStyleAssertions.AssertAsync(app, window, viewModel);
+
                 AssertEveryBindingDeclaresMode();
                 var sourceBindings = AuditSourceXaml();
                 Assert.True(sourceBindings.Count >= 30);
@@ -540,10 +542,21 @@ public sealed class WpfBindingRegressionTests
             window.Height = height;
             await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.Render);
             var sourceList = Assert.IsType<ListBox>(window.SourceItems);
+            sourceList.InvalidateMeasure();
+            await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.ApplicationIdle);
             var scrollViewer = Descendants(sourceList).OfType<ScrollViewer>().First();
             Assert.Equal(ScrollBarVisibility.Disabled, scrollViewer.HorizontalScrollBarVisibility);
-            Assert.True(scrollViewer.ExtentWidth <= scrollViewer.ViewportWidth + 2.5,
-                $"Source cards overflow horizontally at {width}x{height}: extent={scrollViewer.ExtentWidth}, viewport={scrollViewer.ViewportWidth}.");
+            var realizedWidths = viewModel.Sources.Select(source => sourceList.ItemContainerGenerator.ContainerFromItem(source))
+                .OfType<FrameworkElement>()
+                .Select(container => $"{container.ActualWidth:F1}/{container.DesiredSize.Width:F1}")
+                .ToArray();
+            Assert.True(scrollViewer.ExtentWidth <= sourceList.ActualWidth + 2.5,
+                $"Source cards overflow horizontally at {width}x{height}: extent={scrollViewer.ExtentWidth}, viewport={scrollViewer.ViewportWidth}, " +
+                $"list={sourceList.ActualWidth:F1}, items=[{string.Join(", ", realizedWidths)}].");
+            Assert.All(viewModel.Sources.Select(source => sourceList.ItemContainerGenerator.ContainerFromItem(source))
+                    .OfType<FrameworkElement>(),
+                container => Assert.True(container.ActualWidth <= scrollViewer.ViewportWidth + 0.5,
+                    $"A source item is wider than the horizontal viewport at {width}x{height}: item={container.ActualWidth}, viewport={scrollViewer.ViewportWidth}."));
 
             foreach (var source in viewModel.Sources)
             {

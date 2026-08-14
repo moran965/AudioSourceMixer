@@ -11,7 +11,7 @@
 - 浏览器扩展 Node：39/39 通过；其中 9 项直接执行授权事务并覆盖同步/异步 storage 事件、双击、候选重选、waiter 精确删除、通知失败与重试、无未处理 rejection。
 - Web Audio EQ：Chrome、Edge 各通过；100%→50% RMS 比均为 0.5，左声道测试的右侧泄漏比均为 0。为避免 branded browser 首次模块加载偶发提前 `dump-dom`，测试只对仍为 `WAIT` 的状态使用全新 profile 有界重试；任何 `FAIL` 不重试。
 - 源码 Release、portable、每个安装路径和最终实际安装版的 UI smoke 均退出 0。
-- 最终实际安装版普通可见启动：`WindowShown=True; Sources=11; MaterializedItems=3`，随后应用自有退出信号完成恢复并以退出码 0 结束。
+- 最终实际安装版普通可见启动使用独立临时目录中的受控 WaveOut 会话：`WindowShown=True; Sources=1; MaterializedItems=1`；随后应用自有退出信号完成恢复并以退出码 0 结束，受控音源及临时目录也确定性清理。
 
 ## 授权竞态与 Chrome/Edge 实际运行
 
@@ -32,15 +32,19 @@ UI smoke 必须调用真实 `MainWindow.Show()`，等待 `Loaded`、ApplicationI
 
 STA 回归在 880×600、1180×760、1600×900 三种窗口尺寸验证标签/数值不相交、输出选择框至少 180 DIP、可见按钮不裁剪和无横向溢出。来源列表保持 `CanContentScroll=True`、Recycling、`ScrollUnit=Pixel`、`IsDeferredScrollingEnabled=False`、`PanningMode=VerticalOnly` 和横向滚动禁用。设置页与浏览器引导页也被真实物化并包含可键盘聚焦控件。
 
+全局 `ApplicationFont` 当前为 `Microsoft YaHei UI, Microsoft YaHei, Segoe UI, Global User Interface`。运行时断言验证 MainWindow 及 TextBlock、Button、CheckBox、RadioButton、ComboBox 使用同一资源，语言为 `zh-CN`，Display/ClearType 文本选项生效；本机 Microsoft YaHei UI 的 GlyphTypeface 包含“音频来源设置浏览器均衡器输出设备”。32 个 Desktop XAML/C# 源文件通过严格 UTF-8、Unicode replacement、私用区/兼容汉字和已知乱码片段扫描，关键设置文案逐字匹配。
+
+设置页 7 个 CheckBox 和 EQ“启用均衡器”由真实 WPF 模板完成布局。测试确认视觉树内没有白色 Check Path 或替代勾选字符；未选中为表面色空框，选中为 `PrimaryDarkBrush` 实心块，禁用选中仍保持主色并降低整体不透明度，切换前后 16×16 DIP 方块位置不变。Automation `TogglePattern` 与 Space 键均可切换；宽容器中控件实际宽度等于 16 DIP 方块 + 8 DIP 间距 + ContentPresenter 宽度，长短标签得到不同宽度，标签右侧 30 DIP 空白 hit-test 不属于 CheckBox。紧凑焦点模板无固定宽度，只以 -3 DIP 外边距包围控件实际内容。
+
 全部产品 XAML `{Binding}` 都显式声明模式。只读显示属性（包括 `PeakPercent`、名称、状态、命令、可见性、设备集合、音量/平衡显示文本及 EQ 汇总）均为 OneWay；有效 TwoWay 仅包括具有 public setter 的 `VolumePercent`、`BalancePercent`、`IsEqualizerExpanded`、`IsEqualizerEnabled`、`SelectedEqualizerPresetId`、`EqualizerPreampDb`、`EqualizerBandViewModel.GainDb` 和设置 CheckBox 属性。峰值快照触发 `PropertyChanged(PeakPercent)` 后 ProgressBar 实测更新到 73%。
 
-最终六张截图由安装版 0.2.2 的真实 WPF 窗口生成，位于 `artifacts\screenshots-v0.2.2`：普通混音器、浏览器增强来源、EQ 展开、浏览器引导、设置页和最小窗口。
+最终 11 张截图由安装版 0.2.2 的真实 WPF 窗口生成，位于 `artifacts\screenshots-v0.2.2-ui-detail-final`：普通混音器、浏览器增强来源、EQ 展开、浏览器引导、设置页 880×600 / 1180×760 / 1600×900 的 100 DPI 渲染、设置页 125/150/200 DPI 渲染和最小窗口。逐图复核未发现非标准简体字、白色对勾、基线漂移、裁切、重叠或行尾焦点框；禁用未选中与禁用选中状态可区分。
 
 ## 安装、升级和发行负载
 
 安装验证全部通过：fresh install、同版本 repair、backup 后注入失败回滚、空格路径、中文路径、开机启动/后台托盘、默认不打开浏览器向导、显式 `--browser-setup` 显示真实窗口、无参数卸载 UI、运行中优雅卸载、0.2.1→0.2.2 原位升级、最终普通启动和注册表清理。验证完成后又在用户原默认路径安装最终 0.2.2，恢复原有选择：桌面快捷方式开启、开机启动关闭。
 
-严格 allowlist 下安装目录为 29 个文件、486,981,657 字节：
+严格 allowlist 下安装目录为 29 个文件、486,989,849 字节；没有把截图、测试源或开发报告装入用户目录：
 
 - 三个可执行文件：`AudioSourceMixer.exe`、`AudioSourceMixer.NativeHost.exe`、`AudioSourceMixer.Uninstall.exe`。
 - 身份/桥配置：`install-identity.json`、`native-host-manifest.json`、`browser-extension-origins.json`。
@@ -51,9 +55,11 @@ STA 回归在 880×600、1180×760、1600×900 三种窗口尺寸验证标签/�
 
 ## 最终交付物与哈希
 
-- publish / portable / installed `AudioSourceMixer.exe`：`251259922CD8D15F69311B348FE18C09C45C186AEF8DC5DB43E7241BB4FDB4D2`（三者完全一致）。
-- portable ZIP：95,445,477 字节，SHA-256 `277D8C2D77B7599519123E647AA28C89B556DBFE741805F0F5C4155F2F61FED1`。
-- installer：257,105,505 字节，SHA-256 `8B9EE153ECF61E6F4563D13AD688D67321608F0EA012EBDCF4D7CB586A368789`。
+- publish / portable / installed `AudioSourceMixer.exe`：162,101,428 字节，SHA-256 `AAEA9FF6C7F42CA0CF71F1F0CA06C4B5066EDC1F5966248804FE398F2C59E524`（三者完全一致，文件版本 `0.2.2.0`，产品版本 `0.2.2`）。
+- portable ZIP：95,449,119 字节，SHA-256 `3AC36B3A5AD8A0F27EABF0838B963A4E0539F5B0E33DFC077B3F6B691B76999F`。
+- installer：257,109,601 字节，SHA-256 `265768562E1E58C5F00EF1FC9E51B60BDD785732445D0A2836F53D659B564C8A`（文件版本 `0.2.2.0`，产品版本 `0.2.2`）。
+
+最终 `build-all.ps1` 退出码为 0。此前诊断轮次分别暴露了“机器当时无活动音频会话”、测试播放器占用仓库构建输出，以及一次 Edge 隔离 profile 模块尚未就绪；这些轮次均按失败处理。最终轮次从独立临时目录运行受控音源，Edge 使用全新隔离 profile 后通过，未放宽任何产品、浏览器或安装器门禁。
 
 ## 人工边界
 

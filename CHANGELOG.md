@@ -2,6 +2,9 @@
 
 ## 0.2.2 - 2026-08-14
 
+- 桌面端中文字体统一为 `Microsoft YaHei UI, Microsoft YaHei, Segoe UI, Global User Interface` 回退链，窗口、控件、提示及托盘菜单共享一致字体语义；正文保持 Regular，标题和强调层级统一为 Bold，并增加 UTF-8、乱码、替换字符及关键中文字形审计。
+- 设置型 CheckBox 改为无对勾的纯实心主色选中态，禁用选中态仍可辨识；模板使用 Auto 列和左对齐，使命中/焦点范围仅覆盖 16 DIP 方块、8 DIP 间距及实际标签文字，不再横跨卡片空白。
+- WPF 回归新增真实 SettingsView/EQ 模板、Automation Toggle、Space 键、选中/禁用颜色、焦点模板、不同标签宽度和右侧空白 hit-test；UI screenshot 覆盖 880×600、1180×760、1600×900 及 100/125/150/200 DPI 渲染。
 - 修复输出授权页在 `storage.onChanged` 与确认事务交错时清空全局候选、随后读取空对象的竞态；确认过程改用 await 前不可变快照、单飞事务门、合并刷新和精确 waiter 删除。
 - 映射保存与标签通知分离：通知失败不回滚已保存映射，页面提供幂等重试；所有页面和 service worker 异步事件入口统一捕获，不再产生 `Uncaught (in promise)`。
 - 新增 13 组授权并发执行测试，并在隔离临时 profile 中使用 Chrome/Edge CDP 实际执行添加、修改、删除和重复授权；页面、service worker、日志与未处理 rejection 均为零错误。

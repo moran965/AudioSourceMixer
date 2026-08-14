@@ -28,5 +28,8 @@
     <None Include="..\..\src\AudioSourceMixer.Desktop\Themes\Colors.xaml" Link="SourceXaml\Themes\Colors.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\AudioSourceMixer.Desktop\Themes\Typography.xaml" Link="SourceXaml\Themes\Typography.xaml" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\src\AudioSourceMixer.Desktop\Themes\Controls.xaml" Link="SourceXaml\Themes\Controls.xaml" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\AudioSourceMixer.Desktop\**\*.cs"
+          Exclude="..\..\src\AudioSourceMixer.Desktop\bin\**;..\..\src\AudioSourceMixer.Desktop\obj\**"
+          Link="SourceCode\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
