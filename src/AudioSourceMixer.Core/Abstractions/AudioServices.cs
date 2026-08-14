@@ -11,6 +11,15 @@ public interface IAudioSourceDiscovery
     Task RefreshAsync(CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Optional high-frequency meter channel. Implementations must only sample already-discovered
+/// sources; topology discovery remains the responsibility of <see cref="IAudioSourceDiscovery"/>.
+/// </summary>
+public interface IAudioSourceLevelDiscovery
+{
+    event EventHandler<IReadOnlyList<AudioSourceLevel>>? SourceLevelsChanged;
+}
+
 public interface IAudioSourceController
 {
     Task SetVolumeAsync(AudioSourceId sourceId, float volume, CancellationToken cancellationToken = default);

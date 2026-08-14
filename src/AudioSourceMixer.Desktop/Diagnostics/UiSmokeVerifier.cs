@@ -23,6 +23,8 @@ internal sealed record UiSmokeResult(
     int ItemCount,
     string ContainerType,
     double PeakValue,
+    double PeakTrackWidth,
+    double PeakIndicatorWidth,
     IReadOnlyList<BindingAuditEntry> Bindings);
 
 internal static class UiSmokeVerifier
@@ -148,6 +150,17 @@ internal static class UiSmokeVerifier
                           ?? throw new InvalidOperationException("Peak ProgressBar.Value has no Binding.");
         if (GetEffectiveMode(peakBinding, peakBar, ProgressBar.ValueProperty) != BindingMode.OneWay)
             throw new InvalidOperationException("PeakPercent must have an effective OneWay binding.");
+        peakBar.ApplyTemplate();
+        var peakTrack = peakBar.Template.FindName("PART_Track", peakBar) as FrameworkElement
+                        ?? throw new InvalidOperationException("ProgressBar template does not contain PART_Track.");
+        var peakIndicator = peakBar.Template.FindName("PART_Indicator", peakBar) as FrameworkElement
+                            ?? throw new InvalidOperationException("ProgressBar template does not contain PART_Indicator.");
+        if (peakTrack.ActualWidth <= 0)
+            throw new InvalidOperationException("ProgressBar PART_Track has no measurable width.");
+
+        await AssertIndicatorRatioAsync(0, 0, 0.02);
+        await AssertIndicatorRatioAsync(0.5f, 0.5, 0.06);
+        await AssertIndicatorRatioAsync(1, 1, 0.02);
 
         diagnosticSource.IsEqualizerExpanded = true;
         await window.Dispatcher.InvokeAsync(() => window.UpdateLayout(), DispatcherPriority.Render, cancellationToken);
@@ -174,6 +187,9 @@ internal static class UiSmokeVerifier
         var expectedPeak = UpdatedPeak * 100d;
         if (Math.Abs(peakBar.Value - expectedPeak) > 0.001)
             throw new InvalidOperationException($"Peak ProgressBar did not update. Expected {expectedPeak}, actual {peakBar.Value}.");
+        var updatedRatio = peakIndicator.ActualWidth / peakTrack.ActualWidth;
+        if (Math.Abs(updatedRatio - UpdatedPeak) > 0.06)
+            throw new InvalidOperationException($"Peak indicator width did not update visually. Expected ratio {UpdatedPeak:F2}, actual {updatedRatio:F2}.");
 
         var mixerAudits = AuditBindings(window, window.DataContext)
             .Concat(AuditBindings(container, diagnosticSource)).ToArray();
@@ -207,7 +223,17 @@ internal static class UiSmokeVerifier
         window.SelectMixerPage();
         await window.Dispatcher.InvokeAsync(() => window.UpdateLayout(), DispatcherPriority.ApplicationIdle, cancellationToken);
 
-        return new UiSmokeResult(window.SourceItems.Items.Count, container.GetType().Name, peakBar.Value, audits);
+        return new UiSmokeResult(window.SourceItems.Items.Count, container.GetType().Name, peakBar.Value,
+            peakTrack.ActualWidth, peakIndicator.ActualWidth, audits);
+
+        async Task AssertIndicatorRatioAsync(float peak, double expected, double tolerance)
+        {
+            diagnosticSource.UpdatePeak(peak, DateTimeOffset.UtcNow);
+            await window.Dispatcher.InvokeAsync(() => window.UpdateLayout(), DispatcherPriority.Render, cancellationToken);
+            var actual = peakIndicator.ActualWidth / peakTrack.ActualWidth;
+            if (Math.Abs(actual - expected) > tolerance)
+                throw new InvalidOperationException($"ProgressBar visual ratio for Value={peak * 100:F0} was {actual:F3}; expected {expected:F3}±{tolerance:F3}.");
+        }
 
         void OnPropertyChanged(object? _, System.ComponentModel.PropertyChangedEventArgs args)
         {

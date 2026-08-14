@@ -23,6 +23,8 @@ $dataDirectory = Join-Path $env:LOCALAPPDATA 'AudioSourceMixer'
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "AudioSourceMixer-v022-$PID-$([Guid]::NewGuid().ToString('N'))"
 $dataBackup = Join-Path $temporaryRoot 'user-data'
 $baselineCopy = Join-Path $temporaryRoot 'AudioSourceMixer-0.2.1-win-x64-setup.exe'
+$probeBuildDirectory = Join-Path $root 'src\AudioSourceMixer.CapabilityProbe\bin\Release\net8.0-windows'
+$testWave = Join-Path $root 'tests\audio\short-loop.wav'
 $preexistingRun = $null
 $installedHash = $null
 $results = [ordered]@{}
@@ -105,34 +107,46 @@ function Verify-UninstallerWindow([string] $Directory) {
 }
 
 function Verify-NormalLaunch([string] $Directory) {
+    $probeDirectory = Join-Path $temporaryRoot 'normal-launch-probe'
+    if (Test-Path -LiteralPath $probeDirectory) { Remove-Item -LiteralPath $probeDirectory -Recurse -Force }
+    Copy-Item -LiteralPath $probeBuildDirectory -Destination $probeDirectory -Recurse -Force
+    $player = Start-Process -FilePath (Join-Path $probeDirectory 'AudioSourceMixer.CapabilityProbe.exe') `
+        -ArgumentList @('--play-wav',(Quote-Argument $testWave),'30') -WindowStyle Hidden -PassThru
+    Start-Sleep -Milliseconds 300
+    if ($player.HasExited) { throw 'Controlled WaveOut source exited before normal launch.' }
     $started = [DateTimeOffset]::Now
     $process = Start-Process -FilePath (Join-Path $Directory 'AudioSourceMixer.exe') -PassThru
-    $deadline = [DateTimeOffset]::Now.AddSeconds(30)
-    do { Start-Sleep -Milliseconds 200; $process.Refresh() } while (-not $process.HasExited -and $process.MainWindowHandle -eq 0 -and [DateTimeOffset]::Now -lt $deadline)
-    if ($process.HasExited -or $process.MainWindowHandle -eq 0 -or $process.MainWindowTitle -ne 'Audio Source Mixer') {
-        if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
-        throw 'Normal launch did not show the Audio Source Mixer main window.'
-    }
-    $log = Join-Path $dataDirectory 'logs\AudioSourceMixer.log'
-    $startup = $null
-    $deadline = [DateTimeOffset]::Now.AddSeconds(15)
-    while ($null -eq $startup -and [DateTimeOffset]::Now -lt $deadline) {
-        Start-Sleep -Milliseconds 200
-        if (Test-Path -LiteralPath $log) {
-            $startup = Get-Content -LiteralPath $log -Tail 100 | Where-Object {
-                $_ -match 'Application startup completed successfully\. WindowShown=True; Sources=(\d+); MaterializedItems=(\d+)\.' -and
-                [DateTimeOffset]::Parse($_.Split(' ')[0]) -ge $started.AddSeconds(-1)
-            } | Select-Object -Last 1
+    try {
+        $deadline = [DateTimeOffset]::Now.AddSeconds(30)
+        do { Start-Sleep -Milliseconds 200; $process.Refresh() } while (-not $process.HasExited -and $process.MainWindowHandle -eq 0 -and [DateTimeOffset]::Now -lt $deadline)
+        if ($process.HasExited -or $process.MainWindowHandle -eq 0 -or $process.MainWindowTitle -ne 'Audio Source Mixer') {
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+            throw 'Normal launch did not show the Audio Source Mixer main window.'
         }
+        $log = Join-Path $dataDirectory 'logs\AudioSourceMixer.log'
+        $startup = $null
+        $deadline = [DateTimeOffset]::Now.AddSeconds(15)
+        while ($null -eq $startup -and [DateTimeOffset]::Now -lt $deadline) {
+            Start-Sleep -Milliseconds 200
+            if (Test-Path -LiteralPath $log) {
+                $startup = Get-Content -LiteralPath $log -Tail 100 | Where-Object {
+                    $_ -match 'Application startup completed successfully\. WindowShown=True; Sources=(\d+); MaterializedItems=(\d+)\.' -and
+                    [DateTimeOffset]::Parse($_.Split(' ')[0]) -ge $started.AddSeconds(-1)
+                } | Select-Object -Last 1
+            }
+        }
+        if ($null -eq $startup -or $startup -notmatch 'Sources=(\d+); MaterializedItems=(\d+)' -or [int]$Matches[1] -lt 1 -or [int]$Matches[2] -lt 1) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            throw "Normal launch did not materialize the controlled real audio source: $startup"
+        }
+        $signal = [Threading.EventWaitHandle]::OpenExisting('Local\AudioSourceMixer.Exit')
+        try { $signal.Set() | Out-Null } finally { $signal.Dispose() }
+        if (-not $process.WaitForExit(30000) -or $process.ExitCode -ne 0) { throw 'Normal app did not restore audio and exit cleanly.' }
+        Write-Output "Normal visible launch with controlled WaveOut source passed: $startup"
+    } finally {
+        if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
+        if (-not $player.HasExited) { Stop-Process -Id $player.Id -Force -ErrorAction SilentlyContinue }
     }
-    if ($null -eq $startup -or $startup -notmatch 'Sources=(\d+); MaterializedItems=(\d+)' -or [int]$Matches[1] -lt 1 -or [int]$Matches[2] -lt 1) {
-        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-        throw "Normal launch did not materialize a real audio source: $startup"
-    }
-    $signal = [Threading.EventWaitHandle]::OpenExisting('Local\AudioSourceMixer.Exit')
-    try { $signal.Set() | Out-Null } finally { $signal.Dispose() }
-    if (-not $process.WaitForExit(30000) -or $process.ExitCode -ne 0) { throw 'Normal app did not restore audio and exit cleanly.' }
-    Write-Output "Normal visible launch passed: $startup"
 }
 
 function Wait-Removed([string] $Directory) {
@@ -216,7 +230,7 @@ function Wait-BrowserSetupLaunch([string] $Directory, [DateTimeOffset] $Started)
     Write-Output 'Explicit browser setup launch passed and exited cleanly.'
 }
 
-foreach ($required in @($setup,$publishExe,$portableExe,$manifestPath)) { if (-not (Test-Path -LiteralPath $required)) { throw "Missing verification input: $required" } }
+foreach ($required in @($setup,$publishExe,$portableExe,$manifestPath,$probeBuildDirectory,$testWave)) { if (-not (Test-Path -LiteralPath $required)) { throw "Missing verification input: $required" } }
 if (Test-Path -LiteralPath $uninstallKey) { throw 'Installer verification refuses to replace a pre-existing Audio Source Mixer installation.' }
 foreach ($path in @($defaultInstall,$customSpace,$customChinese)) { if (Test-Path -LiteralPath $path) { throw "Verification target already exists: $path" } }
 
@@ -276,6 +290,7 @@ try {
     Start-Checked $setup @('--silent-install','--install-dir',(Quote-Argument $defaultInstall)) 'Final hash verification install'
     Assert-Install $defaultInstall
     Verify-NormalLaunch $defaultInstall
+    Invoke-LiveMeterUiTest (Join-Path $defaultInstall 'AudioSourceMixer.exe') 'Release' (Join-Path $artifacts 'live-meter-installed.json') 'Installed live WPF meter test'
     $publishHash = Get-Sha256 $publishExe; $portableHash = Get-Sha256 $portableExe; $installedHash = Get-Sha256 (Join-Path $defaultInstall 'AudioSourceMixer.exe')
     if ($publishHash -ne $portableHash -or $portableHash -ne $installedHash) { throw "Executable hash mismatch: $publishHash / $portableHash / $installedHash" }
     $sourceExtension = Get-Inventory (Join-Path $portableDirectory 'BrowserExtension')
@@ -292,7 +307,7 @@ try {
     }
     $installedInventory = @(Get-PayloadInventory $defaultInstall)
     Uninstall-Checked $defaultInstall
-    $results.publishPortableInstalledHash = 'passed'; $results.runtimeAllowlist = 'passed'; $results.installedExtensionInventory = 'passed'; $results.silentUninstall = 'passed'; $results.runningAppGracefulUninstall = 'passed'; $results.normalVisibleLaunch = 'passed'
+    $results.publishPortableInstalledHash = 'passed'; $results.runtimeAllowlist = 'passed'; $results.installedExtensionInventory = 'passed'; $results.silentUninstall = 'passed'; $results.runningAppGracefulUninstall = 'passed'; $results.normalVisibleLaunch = 'passed'; $results.installedLiveMeter = 'passed'
 
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     $manifest | Add-Member -NotePropertyName installed -NotePropertyValue ([ordered]@{

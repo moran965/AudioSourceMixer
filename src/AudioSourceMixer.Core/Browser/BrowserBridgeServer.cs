@@ -28,6 +28,7 @@ public sealed class BrowserBridgeServer : IAsyncDisposable
     private int _disposed;
 
     public event EventHandler<IReadOnlyList<BrowserTabSource>>? TabsChanged;
+    public event EventHandler<IReadOnlyList<AudioSourceLevel>>? SourceLevelsChanged;
     public bool IsConnected => !_connections.IsEmpty;
     public IReadOnlyList<BrowserConnectionStatus> GetConnectionStatuses() => _connections.Values
         .Where(connection => connection.Browser is not null)
@@ -231,40 +232,47 @@ public sealed class BrowserBridgeServer : IAsyncDisposable
             if (message.Type == "tab.update" && ShouldIgnoreTabUpdate(id, connection.Id, message)) return;
             if (message.Generation is { } observedGeneration)
                 _observedGenerations.AddOrUpdate(id, observedGeneration, (_, current) => Math.Max(current, observedGeneration));
+            BrowserTabSource updated;
+            var topologyChanged = message.Type == "tab.register";
+            var levelChanged = false;
             lock (_tabsGate)
             {
                 connection.SourceIds.Add(id);
                 _tabOwners[id] = connection.Id;
-                _tabs.AddOrUpdate(id,
-                    _ => new BrowserTabSource(id, message.Browser!, message.TabId!.Value, message.Title ?? "未命名标签页",
+                var hadPrevious = _tabs.TryGetValue(id, out var previous);
+                updated = hadPrevious
+                    ? previous! with
+                    {
+                        Title = message.Title ?? previous.Title,
+                        Origin = message.Origin is null ? previous.Origin : SanitizeOrigin(message.Origin),
+                        CaptureState = message.CaptureState ?? previous.CaptureState,
+                        Volume = message.Volume ?? previous.Volume,
+                        Balance = message.Balance ?? previous.Balance,
+                        Muted = message.Muted ?? previous.Muted,
+                        Peak = message.Peak ?? previous.Peak,
+                        ProtocolVersion = message.ProtocolVersion,
+                        OutputDeviceId = message.OutputDeviceId ?? previous.OutputDeviceId,
+                        OutputDeviceName = message.OutputDeviceName ?? previous.OutputDeviceName,
+                        OutputStatus = message.OutputStatus ?? previous.OutputStatus,
+                        EffectiveOutputDeviceId = message.EffectiveSinkId ?? previous.EffectiveOutputDeviceId,
+                        EffectiveOutputDeviceName = message.EffectiveSinkLabel ?? previous.EffectiveOutputDeviceName,
+                        RoutingState = message.RoutingState is null ? previous.RoutingState : ParseRoutingState(message.RoutingState),
+                        RoutingError = message.Error ?? (message.RoutingState == "Applied" ? null : previous.RoutingError),
+                        CorrelationId = message.CorrelationId ?? previous.CorrelationId,
+                        BrowserDeviceId = message.BrowserDeviceId ?? previous.BrowserDeviceId,
+                        EffectiveBrowserSinkId = message.EffectiveSinkId ?? previous.EffectiveBrowserSinkId,
+                        Effects = message.Equalizer ?? previous.Effects
+                    }
+                    : new BrowserTabSource(id, message.Browser!, message.TabId!.Value, message.Title ?? "未命名标签页",
                         SanitizeOrigin(message.Origin), message.CaptureState ?? "active", message.Volume ?? 1, message.Balance ?? 0,
                         message.Muted ?? false, message.Peak ?? 0, message.ProtocolVersion,
                         message.OutputDeviceId ?? "", message.OutputDeviceName, message.OutputStatus,
                         message.EffectiveSinkId ?? "", message.EffectiveSinkLabel,
                         ParseRoutingState(message.RoutingState), message.Error, message.CorrelationId,
-                        message.BrowserDeviceId, message.EffectiveSinkId, message.Equalizer),
-                    (_, old) => old with
-                    {
-                        Title = message.Title ?? old.Title,
-                        Origin = message.Origin is null ? old.Origin : SanitizeOrigin(message.Origin),
-                        CaptureState = message.CaptureState ?? old.CaptureState,
-                        Volume = message.Volume ?? old.Volume,
-                        Balance = message.Balance ?? old.Balance,
-                        Muted = message.Muted ?? old.Muted,
-                        Peak = message.Peak ?? old.Peak,
-                        ProtocolVersion = message.ProtocolVersion,
-                        OutputDeviceId = message.OutputDeviceId ?? old.OutputDeviceId,
-                        OutputDeviceName = message.OutputDeviceName ?? old.OutputDeviceName,
-                        OutputStatus = message.OutputStatus ?? old.OutputStatus,
-                        EffectiveOutputDeviceId = message.EffectiveSinkId ?? old.EffectiveOutputDeviceId,
-                        EffectiveOutputDeviceName = message.EffectiveSinkLabel ?? old.EffectiveOutputDeviceName,
-                        RoutingState = message.RoutingState is null ? old.RoutingState : ParseRoutingState(message.RoutingState),
-                        RoutingError = message.Error ?? (message.RoutingState == "Applied" ? null : old.RoutingError),
-                        CorrelationId = message.CorrelationId ?? old.CorrelationId,
-                        BrowserDeviceId = message.BrowserDeviceId ?? old.BrowserDeviceId,
-                        EffectiveBrowserSinkId = message.EffectiveSinkId ?? old.EffectiveBrowserSinkId,
-                        Effects = message.Equalizer ?? old.Effects
-                    });
+                        message.BrowserDeviceId, message.EffectiveSinkId, message.Equalizer);
+                _tabs[id] = updated;
+                topologyChanged |= !hadPrevious || previous! with { Peak = updated.Peak } != updated;
+                levelChanged = message.Peak.HasValue && (!hadPrevious || Math.Abs(previous!.Peak - updated.Peak) > 0.0001f);
             }
             if (!string.IsNullOrWhiteSpace(message.CorrelationId))
             {
@@ -275,7 +283,10 @@ public sealed class BrowserBridgeServer : IAsyncDisposable
                     $"durationMs={message.SetSinkDurationMs}; state={message.RoutingState}; error={message.Error}");
             }
             CompletePendingCommand(id, connection.Id, message);
-            TabsChanged?.Invoke(this, GetTabs());
+            if (levelChanged)
+                SourceLevelsChanged?.Invoke(this, [new AudioSourceLevel(id,
+                    float.IsFinite(updated.Peak) ? Math.Clamp(updated.Peak, 0, 1) : 0, DateTimeOffset.UtcNow)]);
+            if (topologyChanged) TabsChanged?.Invoke(this, GetTabs());
         }
         else if (message.Type == "tab.unregister")
         {

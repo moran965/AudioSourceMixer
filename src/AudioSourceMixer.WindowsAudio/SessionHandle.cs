@@ -56,8 +56,7 @@ internal sealed class SessionHandle : IDisposable
         }
 
         var channels = ReadChannelVolumes();
-        var peak = 0f;
-        if (_meter is not null) ComHelpers.ThrowIfFailed(_meter.GetPeakValue(out peak), "GetPeakValue");
+        var peak = ReadPeak();
         var isStereo = channels.Length == 2;
         var channelLimitation = channels.Length switch
         {
@@ -102,6 +101,13 @@ internal sealed class SessionHandle : IDisposable
         var snapshot = Snapshot();
         _balanceBaseVolumes ??= snapshot.ChannelVolumes.ToArray();
         return new AudioRollbackEntry(Id, Identity, snapshot.Volume, snapshot.Muted, snapshot.ChannelVolumes, DateTimeOffset.UtcNow);
+    }
+
+    public float ReadPeak()
+    {
+        if (_meter is null) return 0;
+        ComHelpers.ThrowIfFailed(_meter.GetPeakValue(out var peak), "GetPeakValue");
+        return float.IsFinite(peak) ? Math.Clamp(peak, 0, 1) : 0;
     }
 
     public void SetVolume(float volume)

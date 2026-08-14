@@ -1,4 +1,5 @@
 import { clamp, sourceId } from '../shared/protocol.js';
+import { smoothPeak } from '../shared/levels.js';
 import {
   EQUALIZER_BANDS,
   createEqualizerPreset,
@@ -73,7 +74,7 @@ async function startGraph(message) {
     const graph = {
       browser, tabId: message.tabId, title: message.title || '未命名标签页', origin: message.origin || '',
       stream, context, source, equalizerFilters, headroom, gain, panner, analyser,
-      levelBuffer: new Float32Array(analyser.fftSize),
+      levelBuffer: new Float32Array(analyser.fftSize), smoothedPeak: 0,
       volume: 1, balance: 0, muted: false, generation: Number(message.generation) || 0,
       requestedOutputDeviceId: '', requestedOutputDeviceName: '',
       browserOutputDeviceId: '', browserOutputDeviceLabel: '', browserGroupId: '',
@@ -289,11 +290,12 @@ setInterval(() => {
     graph.analyser.getFloatTimeDomainData(graph.levelBuffer);
     let peak = 0;
     for (const sample of graph.levelBuffer) peak = Math.max(peak, Math.abs(sample));
+    graph.smoothedPeak = smoothPeak(graph.smoothedPeak, peak, 100);
     runOffscreenTask('发送标签页电平', () => chrome.runtime.sendMessage({
-      type: 'offscreen.level', browser: graph.browser, tabId: graph.tabId, peak: clamp(peak, 0, 1)
+      type: 'offscreen.level', browser: graph.browser, tabId: graph.tabId, peak: graph.smoothedPeak
     }));
   }
-}, 200);
+}, 100);
 
 navigator.mediaDevices.addEventListener('devicechange', () => {
   runOffscreenTask('重新验证输出设备', async () => {

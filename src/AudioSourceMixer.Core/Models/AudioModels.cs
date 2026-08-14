@@ -116,6 +116,11 @@ public sealed record AudioSourceSnapshot(
     DateTimeOffset? ProcessStartTimeUtc = null,
     AudioEffectSettings? Effects = null);
 
+public readonly record struct AudioSourceLevel(
+    AudioSourceId Id,
+    float Peak,
+    DateTimeOffset ObservedAt);
+
 public sealed record OutputDeviceInfo(
     string Id,
     string Name,

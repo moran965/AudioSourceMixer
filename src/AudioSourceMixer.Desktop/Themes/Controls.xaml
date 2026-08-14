@@ -73,6 +73,19 @@
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="BorderThickness" Value="0"/>
     </Style>
+    <Style x:Key="IconButtonStyle" TargetType="Button" BasedOn="{StaticResource QuietButtonStyle}">
+        <Setter Property="Width" Value="28"/>
+        <Setter Property="Height" Value="28"/>
+        <Setter Property="MinWidth" Value="0"/>
+        <Setter Property="MinHeight" Value="0"/>
+        <Setter Property="Padding" Value="5"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+        <Setter Property="Opacity" Value="0.7"/>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True"><Setter Property="Opacity" Value="1"/><Setter Property="Background" Value="{DynamicResource PrimarySoftBrush}"/></Trigger>
+            <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter Property="Opacity" Value="1"/></Trigger>
+        </Style.Triggers>
+    </Style>
 
     <Style x:Key="NavigationButtonStyle" TargetType="RadioButton"
            BasedOn="{StaticResource {x:Type RadioButton}}">
@@ -237,10 +250,11 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ProgressBar">
-                    <Grid ClipToBounds="True">
-                        <Border Background="{TemplateBinding Background}" CornerRadius="4"/>
-                        <Border x:Name="PART_Indicator" Background="{TemplateBinding Foreground}" CornerRadius="4" HorizontalAlignment="Left"/>
-                    </Grid>
+                    <Border x:Name="PART_Track" Background="{TemplateBinding Background}" CornerRadius="4"
+                            ClipToBounds="True" SnapsToDevicePixels="True">
+                        <Border x:Name="PART_Indicator" Background="{TemplateBinding Foreground}" CornerRadius="4"
+                                HorizontalAlignment="Left" SnapsToDevicePixels="True"/>
+                    </Border>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>

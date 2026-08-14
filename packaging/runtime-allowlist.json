@@ -26,6 +26,7 @@
     { "path": "BrowserExtension/service-worker/lifecycle-policy.js", "purpose": "idle recovery policy" },
     { "path": "BrowserExtension/service-worker/service-worker.js", "purpose": "extension event and Native Messaging runtime" },
     { "path": "BrowserExtension/shared/equalizer.js", "purpose": "shared ten-band equalizer definitions and validation" },
+    { "path": "BrowserExtension/shared/levels.js", "purpose": "shared realtime peak smoothing" },
     { "path": "BrowserExtension/shared/protocol.js", "purpose": "extension protocol validation" }
   ],
   "portableOnlyFiles": [

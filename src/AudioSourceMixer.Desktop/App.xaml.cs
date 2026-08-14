@@ -33,6 +33,9 @@ public partial class App : System.Windows.Application
     private bool _background;
     private bool _browserSetup;
     private string? _uiScreenshotDirectory;
+    private uint? _liveMeterProcessId;
+    private string? _liveMeterReportPath;
+    private int _liveMeterDurationSeconds = 8;
     private EventWaitHandle? _exitSignal;
     private RegisteredWaitHandle? _exitSignalRegistration;
 
@@ -41,8 +44,14 @@ public partial class App : System.Windows.Application
         base.OnStartup(e);
         SystemParameters.StaticPropertyChanged += SystemParametersChanged;
         ApplyAccessibilityColors();
+        if (uint.TryParse(ArgumentValue(e.Args, "--ui-live-meter-pid"), out var liveMeterProcessId))
+            _liveMeterProcessId = liveMeterProcessId;
+        _liveMeterReportPath = ArgumentValue(e.Args, "--ui-live-meter-report");
+        if (int.TryParse(ArgumentValue(e.Args, "--ui-live-meter-duration"), out var liveMeterDurationSeconds))
+            _liveMeterDurationSeconds = Math.Clamp(liveMeterDurationSeconds, 3, 30);
         _uiSmokeTest = e.Args.Contains("--ui-smoke-test", StringComparer.OrdinalIgnoreCase) ||
-                       e.Args.Contains("--smoke-test", StringComparer.OrdinalIgnoreCase);
+                       e.Args.Contains("--smoke-test", StringComparer.OrdinalIgnoreCase) ||
+                       _liveMeterProcessId.HasValue;
         _uiScreenshotDirectory = ArgumentValue(e.Args, "--ui-screenshot-dir");
         var diagnosticUi = _uiSmokeTest || _uiScreenshotDirectory is not null;
         _background = e.Args.Contains("--background", StringComparer.OrdinalIgnoreCase) && !diagnosticUi;
@@ -98,8 +107,10 @@ public partial class App : System.Windows.Application
             CreateTray(visible: !diagnosticUi);
 
             _startupStage = StartupStage.AudioInitialization;
-            var diagnosticSources = diagnosticUi ? UiSmokeVerifier.CreateDiagnosticSources() : null;
+            var diagnosticSources = diagnosticUi && !_liveMeterProcessId.HasValue
+                ? UiSmokeVerifier.CreateDiagnosticSources() : null;
             await _viewModel.InitializeAsync(diagnosticSources);
+            if (_liveMeterProcessId.HasValue) _viewModel.SelectMixerForDiagnostics();
 
             _startupStage = StartupStage.WindowDisplay;
             if (_background)
@@ -115,6 +126,21 @@ public partial class App : System.Windows.Application
 
             if (diagnosticUi)
             {
+                if (_liveMeterProcessId is { } processId)
+                {
+                    var report = await LiveMeterVerifier.VerifyAsync(_window, _viewModel, _audio, processId,
+                        _liveMeterDurationSeconds);
+                    var reportPath = _liveMeterReportPath ?? Path.Combine(dataDirectory, "live-meter-report.json");
+                    await LiveMeterVerifier.WriteAsync(reportPath, report);
+                    await FlushAsynchronousFailuresAsync();
+                    _uiSmokeMonitor!.ThrowIfFailed();
+                    _startupStage = StartupStage.Complete;
+                    _logger.Info($"Live WPF meter diagnostic succeeded. PID={processId}; Samples={report.SampleCount}; " +
+                                 $"MaxRaw={report.MaximumRawPeak:F4}; MaxSmoothed={report.MaximumSmoothedPeak:F4}; " +
+                                 $"MaxIndicatorWidth={report.MaximumIndicatorWidth:F2}; ReturnedToZero={report.ReturnedToZero}; Report={reportPath}.");
+                    await ExitAndRestoreAsync(0);
+                    return;
+                }
                 var source = _viewModel.Sources.Single(item => item.Id == diagnosticSources![0].Id);
                 var result = await UiSmokeVerifier.VerifyAsync(_window, source);
                 IReadOnlyList<string> screenshots = [];
@@ -123,7 +149,7 @@ public partial class App : System.Windows.Application
                 await FlushAsynchronousFailuresAsync();
                 _uiSmokeMonitor!.ThrowIfFailed();
                 _startupStage = StartupStage.Complete;
-                _logger.Info($"UI diagnostic succeeded. WindowShown={_window.IsVisible}; Items={result.ItemCount}; Container={result.ContainerType}; Peak={result.PeakValue:F1}; AuditedBindings={result.Bindings.Count}; Screenshots={screenshots.Count}.");
+                _logger.Info($"UI diagnostic succeeded. WindowShown={_window.IsVisible}; Items={result.ItemCount}; Container={result.ContainerType}; Peak={result.PeakValue:F1}; TrackWidth={result.PeakTrackWidth:F2}; IndicatorWidth={result.PeakIndicatorWidth:F2}; AuditedBindings={result.Bindings.Count}; Screenshots={screenshots.Count}.");
                 await ExitAndRestoreAsync(0);
                 return;
             }

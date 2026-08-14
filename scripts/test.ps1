@@ -21,4 +21,5 @@ try {
     }
     $sourceExecutable = Join-Path $root "src\AudioSourceMixer.Desktop\bin\$Configuration\net8.0-windows\win-x64\AudioSourceMixer.exe"
     Invoke-UiSmokeTest $sourceExecutable "Source $Configuration UI smoke test"
+    Invoke-LiveMeterUiTest $sourceExecutable $Configuration (Join-Path $root "artifacts\live-meter-source-$($Configuration.ToLowerInvariant()).json") "Source $Configuration live WPF meter test"
 } finally { Pop-Location }

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using AudioSourceMixer.Core.Abstractions;
 using AudioSourceMixer.Core.Infrastructure;
@@ -6,7 +7,7 @@ using AudioSourceMixer.WindowsAudio.Interop;
 
 namespace AudioSourceMixer.WindowsAudio;
 
-public sealed class WindowsAudioService : IAudioSourceDiscovery, IAudioSourceController, IAudioOutputDeviceService,
+public sealed class WindowsAudioService : IAudioSourceDiscovery, IAudioSourceLevelDiscovery, IAudioSourceController, IAudioOutputDeviceService,
     IAudioRoutingController, IAsyncDisposable
 {
     private readonly AudioWorker _worker = new();
@@ -19,14 +20,19 @@ public sealed class WindowsAudioService : IAudioSourceDiscovery, IAudioSourceCon
     private readonly Dictionary<string, EndpointContext> _endpoints = new(StringComparer.Ordinal);
     private IReadOnlyList<OutputDeviceInfo> _outputDevices = [OutputDeviceInfo.SystemDefault];
     private readonly Timer _refreshTimer;
+    private readonly Timer _levelTimer;
     private readonly Timer _topologyTimer;
     private IMMDeviceEnumerator? _deviceEnumerator;
     private DeviceNotification? _deviceNotification;
     private OutputDeviceInfo? _currentDevice;
     private int _refreshQueued;
+    private int _levelRefreshQueued;
     private int _deviceRefreshQueued;
     private bool _initialized;
     private bool _disposed;
+    private readonly Dictionary<AudioSourceId, float> _smoothedPeaks = [];
+    private readonly HashSet<AudioSourceId> _meterFailures = [];
+    private long _lastLevelTimestamp = Stopwatch.GetTimestamp();
 
     public WindowsAudioService(IRollbackJournal journal, RollingFileLogger logger)
     {
@@ -39,10 +45,12 @@ public sealed class WindowsAudioService : IAudioSourceDiscovery, IAudioSourceCon
             PublishSnapshots();
         };
         _refreshTimer = new Timer(_ => QueueRefresh(), null, Timeout.Infinite, Timeout.Infinite);
+        _levelTimer = new Timer(_ => QueueLevelRefresh(), null, Timeout.Infinite, Timeout.Infinite);
         _topologyTimer = new Timer(_ => QueueTopologyRefresh(), null, Timeout.Infinite, Timeout.Infinite);
     }
 
     public event EventHandler<IReadOnlyList<AudioSourceSnapshot>>? SourcesChanged;
+    public event EventHandler<IReadOnlyList<AudioSourceLevel>>? SourceLevelsChanged;
     public event EventHandler<OutputDeviceInfo>? DefaultDeviceChanged;
     public event EventHandler<IReadOnlyList<OutputDeviceInfo>>? OutputDevicesChanged;
     public event EventHandler<AudioRouteResult>? RoutingStateChanged;
@@ -90,6 +98,8 @@ public sealed class WindowsAudioService : IAudioSourceDiscovery, IAudioSourceCon
 
         _initialized = true;
         _refreshTimer.Change(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+        _lastLevelTimestamp = Stopwatch.GetTimestamp();
+        _levelTimer.Change(TimeSpan.FromMilliseconds(75), TimeSpan.FromMilliseconds(75));
         PublishSnapshots();
         return device;
     }
@@ -458,6 +468,62 @@ public sealed class WindowsAudioService : IAudioSourceDiscovery, IAudioSourceCon
         });
     }
 
+    private void QueueLevelRefresh()
+    {
+        if (!_initialized || _disposed || Interlocked.Exchange(ref _levelRefreshQueued, 1) != 0) return;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var levels = await _worker.InvokeAsync<IReadOnlyList<AudioSourceLevel>>(() =>
+                {
+                    var nowTimestamp = Stopwatch.GetTimestamp();
+                    var elapsed = Stopwatch.GetElapsedTime(_lastLevelTimestamp, nowTimestamp);
+                    _lastLevelTimestamp = nowTimestamp;
+                    var now = DateTimeOffset.UtcNow;
+                    var result = new List<AudioSourceLevel>(_sessions.Count);
+                    foreach (var (id, handle) in _sessions)
+                    {
+                        float raw;
+                        try
+                        {
+                            raw = handle.ReadPeak();
+                            _meterFailures.Remove(id);
+                        }
+                        catch (Exception exception)
+                        {
+                            raw = 0;
+                            if (_meterFailures.Add(id))
+                                _logger.Error($"Realtime meter read failed for {id}; the level was reset to zero.", exception);
+                        }
+                        var smoothed = SmoothPeak(_smoothedPeaks.GetValueOrDefault(id), raw, elapsed);
+                        _smoothedPeaks[id] = smoothed;
+                        result.Add(new AudioSourceLevel(id, smoothed, now));
+                    }
+                    foreach (var stale in _smoothedPeaks.Keys.Where(id => !_sessions.ContainsKey(id)).ToArray())
+                    {
+                        _smoothedPeaks.Remove(stale);
+                        _meterFailures.Remove(stale);
+                    }
+                    return result;
+                }).ConfigureAwait(false);
+                if (levels.Count > 0) SourceLevelsChanged?.Invoke(this, levels);
+            }
+            catch (Exception exception) { _logger.Error("High-frequency audio level refresh failed.", exception); }
+            finally { Interlocked.Exchange(ref _levelRefreshQueued, 0); }
+        });
+    }
+
+    internal static float SmoothPeak(float previous, float current, TimeSpan elapsed)
+    {
+        current = float.IsFinite(current) ? Math.Clamp(current, 0, 1) : 0;
+        previous = float.IsFinite(previous) ? Math.Clamp(previous, 0, 1) : 0;
+        if (current >= previous) return current;
+        var seconds = Math.Clamp(elapsed.TotalSeconds, 0.02, 0.2);
+        var next = Math.Max(current, previous - (float)(seconds / 0.35));
+        return next < 0.002f && current == 0 ? 0 : Math.Clamp(next, 0, 1);
+    }
+
     private void QueueTopologyRefreshDebounced()
     {
         if (!_initialized || _disposed) return;
@@ -779,6 +845,8 @@ public sealed class WindowsAudioService : IAudioSourceDiscovery, IAudioSourceCon
             try { session.Dispose(); } catch { }
         }
         _sessions.Clear();
+        _smoothedPeaks.Clear();
+        _meterFailures.Clear();
         foreach (var context in _endpoints.Values)
         {
             try { context.Dispose(); } catch { }
@@ -801,8 +869,10 @@ public sealed class WindowsAudioService : IAudioSourceDiscovery, IAudioSourceCon
     {
         if (_disposed) return;
         _refreshTimer.Change(Timeout.Infinite, Timeout.Infinite);
+        _levelTimer.Change(Timeout.Infinite, Timeout.Infinite);
         _topologyTimer.Change(Timeout.Infinite, Timeout.Infinite);
         _refreshTimer.Dispose();
+        _levelTimer.Dispose();
         _topologyTimer.Dispose();
         try
         {
