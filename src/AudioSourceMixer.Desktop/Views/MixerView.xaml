@@ -13,12 +13,64 @@
                     <TextBlock Text="{Binding DeviceName, Mode=OneWay}" FontSize="15" FontWeight="Bold" Margin="0,3,0,0"
                                TextTrimming="CharacterEllipsis" ToolTip="{Binding DeviceName, Mode=OneWay}"/>
                 </StackPanel>
-                <StackPanel Grid.Column="1" Visibility="{Binding BrowserStatusVisibility, Mode=OneWay}"
-                            VerticalAlignment="Center" Margin="24,0,0,0">
-                    <TextBlock Text="浏览器增强" Style="{DynamicResource CaptionTextStyle}" HorizontalAlignment="Right"/>
-                    <TextBlock Text="{Binding BrowserStatus, Mode=OneWay}" FontWeight="Bold"
-                               Foreground="{DynamicResource PrimaryDarkBrush}" Margin="0,3,0,0"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="24,0,0,0">
+                    <Button x:Name="SortMenuButton" Style="{DynamicResource QuietButtonStyle}" MinWidth="0" MinHeight="30" Padding="8,4"
+                            Content="{Binding SourceSortModeLabel, Mode=OneWay, StringFormat=排序：{0}}"
+                            ToolTip="选择会话排序方式" AutomationProperties.Name="会话排序方式" Click="OpenHeaderMenu">
+                        <Button.ContextMenu>
+                            <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}, Mode=OneWay}">
+                                <MenuItem Header="最近调整" IsCheckable="True" IsChecked="{Binding IsRecentSortMode, Mode=OneWay}"
+                                          Command="{Binding UseRecentSortCommand, Mode=OneWay}"/>
+                                <MenuItem Header="手动排序" IsCheckable="True" IsChecked="{Binding IsManualSortMode, Mode=OneWay}"
+                                          Command="{Binding UseManualSortCommand, Mode=OneWay}"/>
+                                <Separator/>
+                                <MenuItem Header="恢复默认排序" Command="{Binding ResetSourceOrderCommand, Mode=OneWay}"/>
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
+                    <Button x:Name="HiddenSourcesButton" Style="{DynamicResource QuietButtonStyle}" MinWidth="0" MinHeight="30" Padding="8,4"
+                            Content="{Binding HiddenSourcesLabel, Mode=OneWay}" Visibility="{Binding HiddenSourcesVisibility, Mode=OneWay}"
+                            ToolTip="查看被隐藏的会话" AutomationProperties.Name="查看隐藏会话" Click="ToggleHiddenSourcesPopup"/>
+                    <StackPanel Visibility="{Binding BrowserStatusVisibility, Mode=OneWay}" Margin="16,0,0,0">
+                        <TextBlock Text="浏览器增强" Style="{DynamicResource CaptionTextStyle}" HorizontalAlignment="Right"/>
+                        <TextBlock Text="{Binding BrowserStatus, Mode=OneWay}" FontWeight="Bold"
+                                   Foreground="{DynamicResource PrimaryDarkBrush}" Margin="0,3,0,0"/>
+                    </StackPanel>
                 </StackPanel>
+                <Popup x:Name="HiddenSourcesPopup" PlacementTarget="{x:Reference HiddenSourcesButton}" Placement="Bottom"
+                       StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                    <Border Style="{DynamicResource CardBorderStyle}" Padding="12" Width="380" MaxHeight="360" Margin="0,6,0,0">
+                        <DockPanel>
+                            <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="隐藏的会话" FontWeight="Bold" VerticalAlignment="Center"/>
+                                <Button Grid.Column="1" Content="全部恢复显示" Command="{Binding RestoreAllHiddenCommand, Mode=OneWay}"
+                                        Style="{DynamicResource QuietButtonStyle}" MinHeight="28" MinWidth="0" Padding="7,3"
+                                        ToolTip="只取消手动隐藏；浏览器自动隐藏仍由增强状态决定"/>
+                            </Grid>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <ItemsControl ItemsSource="{Binding HiddenSources, Mode=OneWay}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,4">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding DisplayName, Mode=OneWay}" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Style="{DynamicResource CaptionTextStyle}" TextWrapping="Wrap">
+                                                        <Run Text="{Binding SourceType, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Reason, Mode=OneWay}"/>
+                                                    </TextBlock>
+                                                </StackPanel>
+                                                <Button Grid.Column="1" Content="恢复显示" Command="{Binding RestoreCommand, Mode=OneWay}"
+                                                        IsEnabled="{Binding CanRestore, Mode=OneWay}" Margin="10,0,0,0"
+                                                        Style="{DynamicResource QuietButtonStyle}" MinHeight="28" MinWidth="0" Padding="7,3"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </DockPanel>
+                    </Border>
+                </Popup>
             </Grid>
         </Border>
 
@@ -32,6 +84,7 @@
                  VirtualizingPanel.IsVirtualizing="True"
                  VirtualizingPanel.VirtualizationMode="Recycling"
                  VirtualizingPanel.ScrollUnit="Pixel"
+                 AllowDrop="True" DragOver="SourcesDragOver" Drop="SourcesDrop"
                  KeyboardNavigation.TabNavigation="Continue">
             <ListBox.ItemsPanel>
                 <ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate>

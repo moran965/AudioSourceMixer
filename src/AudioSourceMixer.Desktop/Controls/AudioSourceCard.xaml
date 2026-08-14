@@ -11,7 +11,10 @@
             </Grid.RowDefinitions>
 
             <Grid Grid.Row="0">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="150"/></Grid.ColumnDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="150"/>
+                    <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
                 <Border Background="{DynamicResource PrimarySoftBrush}" CornerRadius="10" Padding="9,5" VerticalAlignment="Center" Margin="0,0,12,0">
                     <TextBlock Text="{Binding SourceTypeLabel, Mode=OneWay}" Foreground="{DynamicResource PrimaryDarkBrush}"
                                FontWeight="Bold" FontSize="10"/>
@@ -27,6 +30,35 @@
                     <ProgressBar Value="{Binding PeakPercent, Mode=OneWay}" Maximum="100" Height="8" Margin="0,5,0,0"
                                  AutomationProperties.Name="实时音量"/>
                 </StackPanel>
+                <Button x:Name="DragHandle" Grid.Column="3" Style="{DynamicResource IconButtonStyle}" Margin="8,0,0,0"
+                        IsEnabled="{Binding ManualDragEnabled, Mode=OneWay}" ToolTip="拖动以手动排序"
+                        AutomationProperties.Name="拖动会话排序"
+                        PreviewMouseLeftButtonDown="DragHandleMouseDown" PreviewMouseMove="DragHandleMouseMove"
+                        PreviewMouseLeftButtonUp="DragHandleMouseUp">
+                    <Canvas Width="12" Height="16" IsHitTestVisible="False">
+                        <Ellipse Width="3" Height="3" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}, Mode=OneWay}" Canvas.Left="1" Canvas.Top="1"/>
+                        <Ellipse Width="3" Height="3" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}, Mode=OneWay}" Canvas.Left="8" Canvas.Top="1"/>
+                        <Ellipse Width="3" Height="3" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}, Mode=OneWay}" Canvas.Left="1" Canvas.Top="6.5"/>
+                        <Ellipse Width="3" Height="3" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}, Mode=OneWay}" Canvas.Left="8" Canvas.Top="6.5"/>
+                        <Ellipse Width="3" Height="3" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}, Mode=OneWay}" Canvas.Left="1" Canvas.Top="12"/>
+                        <Ellipse Width="3" Height="3" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}, Mode=OneWay}" Canvas.Left="8" Canvas.Top="12"/>
+                    </Canvas>
+                </Button>
+                <Button Grid.Column="4" Style="{DynamicResource IconButtonStyle}" Margin="2,0,0,0"
+                        ToolTip="会话显示与排序" AutomationProperties.Name="打开会话菜单" Click="OpenSourceMenu">
+                    <Path Data="M 3,8 L 3.01,8 M 8,8 L 8.01,8 M 13,8 L 13.01,8"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}, Mode=OneWay}"
+                          StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                    <Button.ContextMenu>
+                        <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}, Mode=OneWay}">
+                            <MenuItem Header="隐藏此会话" Command="{Binding HideCommand, Mode=OneWay}"/>
+                            <Separator/>
+                            <MenuItem Header="移至顶部" Command="{Binding MoveToTopCommand, Mode=OneWay}"/>
+                            <MenuItem Header="上移" Command="{Binding MoveUpCommand, Mode=OneWay}"/>
+                            <MenuItem Header="下移" Command="{Binding MoveDownCommand, Mode=OneWay}"/>
+                        </ContextMenu>
+                    </Button.ContextMenu>
+                </Button>
             </Grid>
 
             <Border Grid.Row="1" Background="{DynamicResource WarningSoftBrush}" BorderBrush="{DynamicResource WarningBorderBrush}" BorderThickness="1"

@@ -24,6 +24,10 @@
                     <TextBlock Text="控制来源列表和下次启动时的恢复方式。" Style="{DynamicResource BodySecondaryTextStyle}" Margin="0,4,0,10"/>
                     <CheckBox Content="显示当前无声会话" IsChecked="{Binding ShowInactiveSessions, Mode=TwoWay}"
                               AutomationProperties.Name="显示当前无声会话"/>
+                    <CheckBox Content="浏览器增强时隐藏浏览器聚合会话"
+                              IsChecked="{Binding HideBrowserAggregateSessions, Mode=TwoWay}"
+                              ToolTip="Edge 与 Chrome 分别判断；只隐藏重复的普通 Windows 会话，不改变声音"
+                              AutomationProperties.Name="浏览器增强时隐藏浏览器聚合会话"/>
                     <CheckBox Content="记住应用设置" IsChecked="{Binding RememberProfiles, Mode=TwoWay}"
                               AutomationProperties.Name="记住应用设置"/>
                     <CheckBox Content="自动应用已保存设置" IsChecked="{Binding AutoApplyProfiles, Mode=TwoWay}"

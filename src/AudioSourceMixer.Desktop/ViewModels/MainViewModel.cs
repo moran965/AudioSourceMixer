@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 using AudioSourceMixer.Core.Abstractions;
 using AudioSourceMixer.Core.Browser;
 using AudioSourceMixer.Core.Infrastructure;
@@ -26,6 +27,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly IStartupRegistrationService _startup;
     private readonly IBrowserOnboardingService _browserOnboarding;
     private readonly Dictionary<AudioSourceId, AudioSourceViewModel> _byId = [];
+    private readonly Dictionary<AudioSourceId, long> _modificationSequence = [];
+    private readonly HashSet<string> _runtimeHiddenSourceIds = new(StringComparer.Ordinal);
+    private readonly List<string> _runtimeManualSourceOrder = [];
     private IReadOnlyList<AudioSourceSnapshot> _windowsSources = [];
     private IReadOnlyList<BrowserTabSource> _browserTabs = [];
     private readonly ConcurrentDictionary<string, AudioSourceProfile> _savedProfiles = new(StringComparer.Ordinal);
@@ -43,6 +47,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private string _selectedPage = "mixer";
     private bool _browserSetupRequested;
     private ApplicationSettings _settings = new();
+    private readonly DispatcherTimer _deferredOrderTimer;
+    private long _nextModificationSequence;
 
     public MainViewModel(IAudioSourceDiscovery discovery, IAudioSourceController audio, IAudioOutputDeviceService outputDeviceService,
         BrowserBridgeServer bridge, IAudioProfileStore profiles,
@@ -73,9 +79,19 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         OpenExtensionDirectoryCommand = new RelayCommand(() => RunOnboardingAction(_browserOnboarding.OpenExtensionDirectory));
         CopyExtensionDirectoryCommand = new RelayCommand(() => RunOnboardingAction(_browserOnboarding.CopyExtensionDirectory));
         RecheckBrowserSetupCommand = new RelayCommand(RefreshBrowserGuideStatus);
+        UseRecentSortCommand = new RelayCommand(() => SetSortMode(SourceSortModes.Recent));
+        UseManualSortCommand = new RelayCommand(() => SetSortMode(SourceSortModes.Manual));
+        ResetSourceOrderCommand = new RelayCommand(ResetSourceOrder);
+        RestoreAllHiddenCommand = new RelayCommand(RestoreAllHiddenSources);
+        _deferredOrderTimer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromMilliseconds(300)
+        };
+        _deferredOrderTimer.Tick += DeferredOrderTimerTick;
     }
 
     public ObservableCollection<AudioSourceViewModel> Sources { get; } = [];
+    public ObservableCollection<HiddenSourceViewModel> HiddenSources { get; } = [];
     public ObservableCollection<OutputDeviceInfo> OutputDevices { get; } = [];
     public string DeviceName { get => _deviceName; private set => Set(ref _deviceName, value); }
     public string BrowserStatus { get => _browserStatus; private set { if (Set(ref _browserStatus, value)) Raise(nameof(BrowserStatusVisibility)); } }
@@ -103,6 +119,16 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public ICommand OpenExtensionDirectoryCommand { get; }
     public ICommand CopyExtensionDirectoryCommand { get; }
     public ICommand RecheckBrowserSetupCommand { get; }
+    public ICommand UseRecentSortCommand { get; }
+    public ICommand UseManualSortCommand { get; }
+    public ICommand ResetSourceOrderCommand { get; }
+    public ICommand RestoreAllHiddenCommand { get; }
+    public string SourceSortModeLabel => SourceSortModes.Normalize(_settings.SourceSortMode) == SourceSortModes.Manual
+        ? "手动排序" : "最近调整";
+    public bool IsRecentSortMode => SourceSortModes.Normalize(_settings.SourceSortMode) == SourceSortModes.Recent;
+    public bool IsManualSortMode => SourceSortModes.Normalize(_settings.SourceSortMode) == SourceSortModes.Manual;
+    public string HiddenSourcesLabel => $"已隐藏 {HiddenSources.Count}";
+    public Visibility HiddenSourcesVisibility => HiddenSources.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
     public bool IsMixerPageSelected => _selectedPage == "mixer";
     public bool IsBrowserSetupPageSelected => _selectedPage == "browser";
     public bool IsSettingsPageSelected => _selectedPage == "settings";
@@ -150,6 +176,16 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         get => _settings.ShowInactiveSessions;
         set { _settings = _settings with { ShowInactiveSessions = value }; Raise(); SaveSettings(); Reconcile(); }
     }
+    public bool HideBrowserAggregateSessions
+    {
+        get => _settings.HideBrowserAggregateSessions;
+        set
+        {
+            if (value == _settings.HideBrowserAggregateSessions) return;
+            _settings = _settings with { HideBrowserAggregateSessions = value };
+            Raise(); SaveSettings(); Reconcile();
+        }
+    }
 
     public void RequestBrowserSetup()
     {
@@ -166,9 +202,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         await LoadSettingsAsync();
         foreach (var (key, profile) in await _profiles.LoadAsync()) _savedProfiles[key] = profile;
         _discovery.SourcesChanged += AudioSourcesChanged;
+        if (_discovery is IAudioSourceLevelDiscovery levelDiscovery)
+            levelDiscovery.SourceLevelsChanged += SourceLevelsChanged;
         _discovery.DefaultDeviceChanged += DefaultDeviceChanged;
         _outputDeviceService.OutputDevicesChanged += OutputDevicesChanged;
         _bridge.TabsChanged += BrowserTabsChanged;
+        _bridge.SourceLevelsChanged += SourceLevelsChanged;
         var device = await _discovery.InitializeAsync();
         DeviceName = device.Name;
         ReplaceOutputDevices(await _outputDeviceService.GetOutputDevicesAsync());
@@ -187,11 +226,17 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         if (_settingsLoaded) return;
         _settings = await _settingsStore.LoadAsync(cancellationToken);
+        _runtimeManualSourceOrder.Clear();
+        _runtimeManualSourceOrder.AddRange(_settings.ManualSourceOrder ?? []);
         _settingsLoaded = true;
         Raise(nameof(CloseToTray));
         Raise(nameof(AutoApplyProfiles));
         Raise(nameof(RememberProfiles));
         Raise(nameof(ShowInactiveSessions));
+        Raise(nameof(HideBrowserAggregateSessions));
+        Raise(nameof(SourceSortModeLabel));
+        Raise(nameof(IsRecentSortMode));
+        Raise(nameof(IsManualSortMode));
         Raise(nameof(StartMinimizedToTray));
         Raise(nameof(ShowOperationTips));
         Raise(nameof(StartupEnabled));
@@ -229,6 +274,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         => Dispatch(() => ReplaceOutputDevices(devices));
     private void AudioSourcesChanged(object? sender, IReadOnlyList<AudioSourceSnapshot> sources)
         => Dispatch(() => { _windowsSources = sources; Reconcile(); });
+    private void SourceLevelsChanged(object? sender, IReadOnlyList<AudioSourceLevel> levels)
+        => Dispatch(() =>
+        {
+            foreach (var level in levels)
+                if (_byId.TryGetValue(level.Id, out var source)) source.UpdatePeak(level.Peak, level.ObservedAt);
+        });
     private void BrowserTabsChanged(object? sender, IReadOnlyList<BrowserTabSource> tabs)
         => Dispatch(() => { _browserTabs = tabs; BrowserStatus = _bridge.IsConnected ? $"已连接 · {tabs.Count} 个标签页" : "等待扩展连接";
             Raise(nameof(ChromeConnectionStatus)); Raise(nameof(EdgeConnectionStatus));
@@ -237,29 +288,36 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private void Reconcile()
     {
-        var all = _windowsSources.Concat(_browserTabs.Select(ToSnapshot))
-            .Where(source => _settings.ShowInactiveSessions || source.State == AudioPlaybackState.Active)
-            .OrderByDescending(source => source.State == AudioPlaybackState.Active)
-            .ThenBy(source => source.DisplayName, StringComparer.CurrentCultureIgnoreCase).ToArray();
-        var liveIds = all.Select(source => source.Id).ToHashSet();
+        var discovered = _windowsSources.Concat(_browserTabs.Select(ToSnapshot)).ToArray();
+        SeedPersistedModificationOrder(discovered);
+        var presentation = SourcePresentationPolicy.Apply(discovered, _settings, _modificationSequence,
+            _runtimeHiddenSourceIds, _runtimeManualSourceOrder);
+        var visible = presentation.Visible;
+        var liveIds = visible.Select(source => source.Id).ToHashSet();
         foreach (var stale in _byId.Keys.Where(id => !liveIds.Contains(id)).ToArray())
         {
             var vm = _byId[stale]; Sources.Remove(vm); vm.Dispose(); _byId.Remove(stale); _profileValuesApplied.Remove(stale);
         }
-        foreach (var source in all)
+        foreach (var source in visible)
         {
             if (_byId.TryGetValue(source.Id, out var existing)) existing.Update(source);
             else
             {
                 var vm = new AudioSourceViewModel(source, _audio, _bridge, _profiles, () => _settings, _logger, OutputDevices,
-                    () => _restoring, SaveProfileAsync, RestoreProfileAsync, RouteOutputDeviceAsync);
+                    () => _restoring, SaveProfileAsync, RestoreProfileAsync, RouteOutputDeviceAsync,
+                    MarkUserModified, HideSource, MoveSourceToTop, MoveSourceUp, MoveSourceDown);
                 _byId[source.Id] = vm; Sources.Add(vm);
             }
         }
-        var liveApplications = all.Select(AudioApplicationInstanceKey.For).ToHashSet();
+        SourceCollectionReconciler.Reorder(Sources, visible.Select(source => source.Id).ToArray(), source => source.Id);
+        foreach (var source in Sources) source.SetManualDragEnabled(IsManualSortMode);
+        SynchronizeHiddenSources(presentation.Hidden);
+        if (IsManualSortMode) PersistCurrentManualOrderIfChanged();
+
+        var liveApplications = discovered.Select(AudioApplicationInstanceKey.For).ToHashSet();
         TrackAndPruneApplications(liveApplications);
         if (_restoring || !_settings.RememberProfiles || !_settings.AutoApplyProfiles) return;
-        foreach (var source in all)
+        foreach (var source in visible)
         {
             var browserTab = source.Kind is AudioSourceKind.ChromeTab or AudioSourceKind.EdgeTab;
             // An origin profile is only an initial default for a newly discovered browser tab. Mark the
@@ -277,6 +335,174 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             _ = ApplyProfileSafelyAsync(_byId[source.Id], effectiveProfile, applyRoute, true);
         }
     }
+
+    private void SeedPersistedModificationOrder(IEnumerable<AudioSourceSnapshot> sources)
+    {
+        foreach (var source in sources)
+        {
+            if (_modificationSequence.ContainsKey(source.Id) ||
+                !_savedProfiles.TryGetValue(ProfileKeys.For(source), out var profile) || profile.UpdatedAt == default) continue;
+            var seed = Math.Max(1, profile.UpdatedAt.UtcTicks);
+            _modificationSequence[source.Id] = seed;
+            _nextModificationSequence = Math.Max(_nextModificationSequence, seed);
+        }
+    }
+
+    private void SynchronizeHiddenSources(IReadOnlyList<HiddenSourceDescriptor> hidden)
+    {
+        HiddenSources.Clear();
+        foreach (var descriptor in hidden)
+            HiddenSources.Add(new HiddenSourceViewModel(descriptor, RestoreHiddenSource));
+        Raise(nameof(HiddenSourcesLabel));
+        Raise(nameof(HiddenSourcesVisibility));
+    }
+
+    private void MarkUserModified(AudioSourceViewModel source)
+    {
+        _modificationSequence[source.Id] = ++_nextModificationSequence;
+        if (!IsRecentSortMode) return;
+        _deferredOrderTimer.Stop();
+        _deferredOrderTimer.Start();
+    }
+
+    private void DeferredOrderTimerTick(object? sender, EventArgs e)
+    {
+        _deferredOrderTimer.Stop();
+        Reconcile();
+    }
+
+    internal void FlushPendingPresentationForDiagnostics()
+    {
+        _deferredOrderTimer.Stop();
+        Reconcile();
+    }
+
+    private void HideSource(AudioSourceViewModel source)
+    {
+        _runtimeHiddenSourceIds.Add(source.Id.Value);
+        if (source.Snapshot.Kind == AudioSourceKind.WindowsSession)
+        {
+            var hidden = (_settings.ManuallyHiddenSources ?? [])
+                .Where(item => !string.Equals(item.SourceId, source.Id.Value, StringComparison.Ordinal))
+                .Append(new HiddenSourceSetting(source.Id.Value, source.Snapshot.Kind, DateTimeOffset.UtcNow))
+                .OrderByDescending(item => item.LastSeenUtc).Take(256).ToArray();
+            _settings = _settings with { ManuallyHiddenSources = hidden };
+            SaveSettings();
+        }
+        Reconcile();
+    }
+
+    private void RestoreHiddenSource(AudioSourceId id)
+    {
+        _runtimeHiddenSourceIds.Remove(id.Value);
+        var hidden = (_settings.ManuallyHiddenSources ?? [])
+            .Where(item => !string.Equals(item.SourceId, id.Value, StringComparison.Ordinal)).ToArray();
+        if (hidden.Length != (_settings.ManuallyHiddenSources?.Count ?? 0))
+        {
+            _settings = _settings with { ManuallyHiddenSources = hidden };
+            SaveSettings();
+        }
+        Reconcile();
+    }
+
+    private void RestoreAllHiddenSources()
+    {
+        _runtimeHiddenSourceIds.Clear();
+        if ((_settings.ManuallyHiddenSources?.Count ?? 0) > 0)
+        {
+            _settings = _settings with { ManuallyHiddenSources = [] };
+            SaveSettings();
+        }
+        Reconcile();
+    }
+
+    private void SetSortMode(string mode)
+    {
+        mode = SourceSortModes.Normalize(mode);
+        if (mode == _settings.SourceSortMode) return;
+        var manualOrder = mode == SourceSortModes.Manual
+            ? _runtimeManualSourceOrder.Count > 0
+                ? _runtimeManualSourceOrder.ToArray()
+                : Sources.Select(source => source.Id.Value).ToArray()
+            : _settings.ManualSourceOrder;
+        if (mode == SourceSortModes.Manual)
+        {
+            _runtimeManualSourceOrder.Clear();
+            _runtimeManualSourceOrder.AddRange(manualOrder ?? []);
+        }
+        _settings = _settings with
+        {
+            SourceSortMode = mode,
+            ManualSourceOrder = (manualOrder ?? []).Where(IsPersistablePresentationId).ToArray()
+        };
+        RaiseSortProperties();
+        SaveSettings();
+        Reconcile();
+    }
+
+    private void ResetSourceOrder()
+    {
+        _settings = _settings with { SourceSortMode = SourceSortModes.Recent, ManualSourceOrder = [] };
+        _runtimeManualSourceOrder.Clear();
+        RaiseSortProperties();
+        SaveSettings();
+        Reconcile();
+    }
+
+    private void RaiseSortProperties()
+    {
+        Raise(nameof(SourceSortModeLabel));
+        Raise(nameof(IsRecentSortMode));
+        Raise(nameof(IsManualSortMode));
+    }
+
+    private void MoveSourceToTop(AudioSourceViewModel source) => MoveSource(source, 0);
+    private void MoveSourceUp(AudioSourceViewModel source) => MoveSource(source, Math.Max(0, Sources.IndexOf(source) - 1));
+    private void MoveSourceDown(AudioSourceViewModel source) => MoveSource(source, Math.Min(Sources.Count - 1, Sources.IndexOf(source) + 1));
+
+    private void MoveSource(AudioSourceViewModel source, int targetIndex)
+    {
+        var current = Sources.IndexOf(source);
+        if (current < 0 || Sources.Count == 0) return;
+        if (!IsManualSortMode)
+        {
+            _settings = _settings with
+            {
+                SourceSortMode = SourceSortModes.Manual,
+                ManualSourceOrder = Sources.Select(item => item.Id.Value).Where(IsPersistablePresentationId).ToArray()
+            };
+            _runtimeManualSourceOrder.Clear();
+            _runtimeManualSourceOrder.AddRange(Sources.Select(item => item.Id.Value));
+            RaiseSortProperties();
+        }
+        targetIndex = Math.Clamp(targetIndex, 0, Sources.Count - 1);
+        if (current != targetIndex) Sources.Move(current, targetIndex);
+        PersistCurrentManualOrderIfChanged(forceSave: true);
+        foreach (var item in Sources) item.SetManualDragEnabled(true);
+    }
+
+    internal void MoveSourceBefore(AudioSourceViewModel source, AudioSourceViewModel target)
+    {
+        var targetIndex = Sources.IndexOf(target);
+        if (targetIndex < 0) return;
+        MoveSource(source, targetIndex);
+    }
+
+    private void PersistCurrentManualOrderIfChanged(bool forceSave = false)
+    {
+        var visible = Sources.Select(source => source.Id.Value).ToList();
+        var hidden = _runtimeManualSourceOrder.Where(id => !visible.Contains(id, StringComparer.Ordinal));
+        var desired = visible.Concat(hidden).Distinct(StringComparer.Ordinal).Take(256).ToArray();
+        _runtimeManualSourceOrder.Clear();
+        _runtimeManualSourceOrder.AddRange(desired);
+        var persisted = desired.Where(IsPersistablePresentationId).ToArray();
+        if (!forceSave && persisted.SequenceEqual(_settings.ManualSourceOrder ?? [], StringComparer.Ordinal)) return;
+        _settings = _settings with { ManualSourceOrder = persisted };
+        SaveSettings();
+    }
+
+    private static bool IsPersistablePresentationId(string id)
+        => id.StartsWith("win:", StringComparison.Ordinal);
 
     private void TrackAndPruneApplications(IReadOnlySet<AudioApplicationInstanceKey> liveApplications)
     {
@@ -588,7 +814,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             BrowserOnboardingChoice = "setup-now",
             OnboardingCompletedVersion = typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? "0.2.2",
             BrowserGuideDismissed = true,
-            SchemaVersion = 4
+            SchemaVersion = 5
         };
         Raise(nameof(IsFirstRunBrowserWelcome));
         SaveSettings();
@@ -602,7 +828,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             BrowserOnboardingChoice = choice,
             OnboardingCompletedVersion = typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? "0.2.2",
             BrowserGuideDismissed = true,
-            SchemaVersion = 4
+            SchemaVersion = 5
         };
         Raise(nameof(IsFirstRunBrowserWelcome));
         SaveSettings();
@@ -642,12 +868,19 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         if (System.Windows.MessageBox.Show("恢复全部音频控制和应用设置为默认值？已保存的应用配置也会清除。", "Audio Source Mixer",
                 System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning) != System.Windows.MessageBoxResult.Yes) return;
         _startup.SetEnabled(false, true);
+        _deferredOrderTimer.Stop();
+        _runtimeHiddenSourceIds.Clear();
+        _runtimeManualSourceOrder.Clear();
+        _modificationSequence.Clear();
+        _nextModificationSequence = 0;
         _settings = new ApplicationSettings();
         Raise(nameof(CloseToTray)); Raise(nameof(AutoApplyProfiles)); Raise(nameof(RememberProfiles));
         Raise(nameof(ShowInactiveSessions)); Raise(nameof(StartMinimizedToTray)); Raise(nameof(StartupEnabled));
         Raise(nameof(ShowOperationTips));
+        Raise(nameof(HideBrowserAggregateSessions));
         Raise(nameof(AutoApplyProfilesEnabled));
         Raise(nameof(IsFirstRunBrowserWelcome));
+        RaiseSortProperties();
         SaveSettings();
         SelectPage("browser");
         await RestoreAllAsync();
@@ -699,10 +932,15 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _deferredOrderTimer.Stop();
+        _deferredOrderTimer.Tick -= DeferredOrderTimerTick;
         _discovery.SourcesChanged -= AudioSourcesChanged;
+        if (_discovery is IAudioSourceLevelDiscovery levelDiscovery)
+            levelDiscovery.SourceLevelsChanged -= SourceLevelsChanged;
         _discovery.DefaultDeviceChanged -= DefaultDeviceChanged;
         _outputDeviceService.OutputDevicesChanged -= OutputDevicesChanged;
         _bridge.TabsChanged -= BrowserTabsChanged;
+        _bridge.SourceLevelsChanged -= SourceLevelsChanged;
         foreach (var intent in _applicationRoutes.Values) { intent.Cancel(); intent.Dispose(); }
         _applicationRoutes.Clear();
         foreach (var source in Sources) source.Dispose();
