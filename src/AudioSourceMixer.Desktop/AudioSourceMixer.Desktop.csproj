@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <Resource Include="..\..\assets\generated\AudioSourceMixer.ico" Link="Assets\AudioSourceMixer.ico" />
+    <Resource Include="..\..\assets\generated\AudioSourceMixer-page.png" Link="Assets\AudioSourceMixer-page.png" />
     <ProjectReference Include="..\AudioSourceMixer.Core\AudioSourceMixer.Core.csproj" />
     <ProjectReference Include="..\AudioSourceMixer.WindowsAudio\AudioSourceMixer.WindowsAudio.csproj" />
   </ItemGroup>

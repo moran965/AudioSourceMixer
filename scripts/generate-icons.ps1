@@ -8,44 +8,92 @@ if (-not (Test-Path -LiteralPath $source)) { throw "Editable icon source is miss
 New-Item -ItemType Directory -Path $generated,$extensionAssets -Force | Out-Null
 Add-Type -AssemblyName System.Drawing
 
+[xml]$iconSource = [IO.File]::ReadAllText($source, [Text.Encoding]::UTF8)
+$namespaces = [Xml.XmlNamespaceManager]::new($iconSource.NameTable)
+$namespaces.AddNamespace('svg', 'http://www.w3.org/2000/svg')
+$backgroundNode = $iconSource.SelectSingleNode('/svg:svg/svg:rect', $namespaces)
+$lineGroup = $iconSource.SelectSingleNode('/svg:svg/svg:g[@stroke and not(@fill)]', $namespaces)
+$knobGroup = $iconSource.SelectSingleNode('/svg:svg/svg:g[@fill and @stroke]', $namespaces)
+if ($null -eq $backgroundNode -or $null -eq $lineGroup -or $null -eq $knobGroup) {
+    throw 'product-icon.svg does not match the supported mixer icon structure.'
+}
+
+function Get-Number($Node, [string] $Name) { return [double]::Parse($Node.GetAttribute($Name), [Globalization.CultureInfo]::InvariantCulture) }
+function New-RoundedRectanglePath([double] $X, [double] $Y, [double] $Width, [double] $Height, [double] $Radius) {
+    $path = [Drawing.Drawing2D.GraphicsPath]::new()
+    $diameter = [Math]::Min([Math]::Min($Radius * 2, $Width), $Height)
+    if ($diameter -le 0) { $path.AddRectangle([Drawing.RectangleF]::new($X, $Y, $Width, $Height)); return $path }
+    $path.AddArc($X, $Y, $diameter, $diameter, 180, 90)
+    $path.AddArc($X + $Width - $diameter, $Y, $diameter, $diameter, 270, 90)
+    $path.AddArc($X + $Width - $diameter, $Y + $Height - $diameter, $diameter, $diameter, 0, 90)
+    $path.AddArc($X, $Y + $Height - $diameter, $diameter, $diameter, 90, 90)
+    $path.CloseFigure()
+    return $path
+}
+
 function New-MixerIconPng([int] $Size) {
-    $bitmap = [Drawing.Bitmap]::new($Size, $Size, [Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $renderSize = if ($Size -le 128) { $Size * 4 } else { $Size }
+    $bitmap = [Drawing.Bitmap]::new($renderSize, $renderSize, [Drawing.Imaging.PixelFormat]::Format32bppArgb)
     $graphics = [Drawing.Graphics]::FromImage($bitmap)
     try {
         $graphics.SmoothingMode = [Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $graphics.CompositingQuality = [Drawing.Drawing2D.CompositingQuality]::GammaCorrected
+        $graphics.PixelOffsetMode = [Drawing.Drawing2D.PixelOffsetMode]::HighQuality
         $graphics.Clear([Drawing.Color]::Transparent)
-        $scale = $Size / 256.0
-        $path = [Drawing.Drawing2D.GraphicsPath]::new()
+        $scale = $renderSize / 256.0
+        $path = New-RoundedRectanglePath ((Get-Number $backgroundNode 'x')*$scale) ((Get-Number $backgroundNode 'y')*$scale) `
+            ((Get-Number $backgroundNode 'width')*$scale) ((Get-Number $backgroundNode 'height')*$scale) ((Get-Number $backgroundNode 'rx')*$scale)
         try {
-            $radius = 54 * $scale; $diameter = $radius * 2; $left = 8 * $scale; $top = 8 * $scale; $width = 240 * $scale
-            $path.AddArc($left, $top, $diameter, $diameter, 180, 90)
-            $path.AddArc($left + $width - $diameter, $top, $diameter, $diameter, 270, 90)
-            $path.AddArc($left + $width - $diameter, $top + $width - $diameter, $diameter, $diameter, 0, 90)
-            $path.AddArc($left, $top + $width - $diameter, $diameter, $diameter, 90, 90)
-            $path.CloseFigure()
-            $background = [Drawing.SolidBrush]::new([Drawing.Color]::FromArgb(255,15,23,42))
+            $background = [Drawing.SolidBrush]::new([Drawing.ColorTranslator]::FromHtml($backgroundNode.GetAttribute('fill')))
             try { $graphics.FillPath($background, $path) } finally { $background.Dispose() }
         } finally { $path.Dispose() }
-        $line = [Drawing.Pen]::new([Drawing.Color]::FromArgb(255,248,250,252), [Math]::Max(1.5, 18 * $scale))
+        $line = [Drawing.Pen]::new([Drawing.ColorTranslator]::FromHtml($lineGroup.GetAttribute('stroke')), (Get-Number $lineGroup 'stroke-width')*$scale)
         $line.StartCap = $line.EndCap = [Drawing.Drawing2D.LineCap]::Round
-        try { foreach ($x in @(70,128,186)) { $graphics.DrawLine($line, $x*$scale, 48*$scale, $x*$scale, 208*$scale) } }
+        try {
+            foreach ($lineNode in $lineGroup.SelectNodes('./svg:path', $namespaces)) {
+                if ($lineNode.GetAttribute('d') -notmatch '^M([0-9.]+) ([0-9.]+)v([0-9.]+)$') { throw "Unsupported SVG line path: $($lineNode.GetAttribute('d'))" }
+                $x=[double]$Matches[1]*$scale; $y=[double]$Matches[2]*$scale; $length=[double]$Matches[3]*$scale
+                $graphics.DrawLine($line, $x, $y, $x, $y+$length)
+            }
+        }
         finally { $line.Dispose() }
-        $knob = [Drawing.SolidBrush]::new([Drawing.Color]::FromArgb(255,34,211,238))
-        try { foreach ($item in @(@(45,78),@(103,145),@(161,101))) { $graphics.FillRectangle($knob, $item[0]*$scale, $item[1]*$scale, 50*$scale, 34*$scale) } }
-        finally { $knob.Dispose() }
-        $stream = [IO.MemoryStream]::new()
-        try { $bitmap.Save($stream, [Drawing.Imaging.ImageFormat]::Png); return $stream.ToArray() }
-        finally { $stream.Dispose() }
+        $knobBrush = [Drawing.SolidBrush]::new([Drawing.ColorTranslator]::FromHtml($knobGroup.GetAttribute('fill')))
+        $knobPen = [Drawing.Pen]::new([Drawing.ColorTranslator]::FromHtml($knobGroup.GetAttribute('stroke')), (Get-Number $knobGroup 'stroke-width')*$scale)
+        try {
+            foreach ($knobNode in $knobGroup.SelectNodes('./svg:rect', $namespaces)) {
+                $knobPath = New-RoundedRectanglePath ((Get-Number $knobNode 'x')*$scale) ((Get-Number $knobNode 'y')*$scale) `
+                    ((Get-Number $knobNode 'width')*$scale) ((Get-Number $knobNode 'height')*$scale) ((Get-Number $knobNode 'rx')*$scale)
+                try { $graphics.FillPath($knobBrush, $knobPath); $graphics.DrawPath($knobPen, $knobPath) } finally { $knobPath.Dispose() }
+            }
+        } finally { $knobBrush.Dispose(); $knobPen.Dispose() }
+
+        $outputBitmap = $bitmap
+        if ($renderSize -ne $Size) {
+            $outputBitmap = [Drawing.Bitmap]::new($Size, $Size, [Drawing.Imaging.PixelFormat]::Format32bppArgb)
+            $downsample = [Drawing.Graphics]::FromImage($outputBitmap)
+            try {
+                $downsample.CompositingQuality = [Drawing.Drawing2D.CompositingQuality]::GammaCorrected
+                $downsample.InterpolationMode = [Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+                $downsample.PixelOffsetMode = [Drawing.Drawing2D.PixelOffsetMode]::Half
+                $downsample.DrawImage($bitmap, [Drawing.Rectangle]::new(0,0,$Size,$Size), 0,0,$renderSize,$renderSize,[Drawing.GraphicsUnit]::Pixel)
+            } finally { $downsample.Dispose() }
+        }
+        try {
+            $stream = [IO.MemoryStream]::new()
+            try { $outputBitmap.Save($stream, [Drawing.Imaging.ImageFormat]::Png); return $stream.ToArray() }
+            finally { $stream.Dispose() }
+        } finally { if ($outputBitmap -ne $bitmap) { $outputBitmap.Dispose() } }
     } finally { $graphics.Dispose(); $bitmap.Dispose() }
 }
 
-$sizes = @(16,32,48,128,256)
+$sizes = @(16,20,24,32,40,48,64,96,128,256)
 $images = [Collections.Generic.List[byte[]]]::new()
 foreach ($size in $sizes) {
     $bytes = New-MixerIconPng $size
     $images.Add($bytes)
     if ($size -in @(16,32,48,128)) { [IO.File]::WriteAllBytes((Join-Path $extensionAssets "icon-$size.png"), $bytes) }
 }
+[IO.File]::WriteAllBytes((Join-Path $generated 'AudioSourceMixer-page.png'), (New-MixerIconPng 512))
 $icoPath = Join-Path $generated 'AudioSourceMixer.ico'
 $stream = [IO.File]::Create($icoPath)
 $writer = [IO.BinaryWriter]::new($stream)
