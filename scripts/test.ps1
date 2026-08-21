@@ -5,7 +5,9 @@ $dotnet = Get-DotnetExecutable
 Push-Location $root
 try {
     & (Join-Path $PSScriptRoot 'build.ps1') -Configuration $Configuration
-    Invoke-Checked { & $dotnet test '.\AudioSourceMixer.sln' --configuration $Configuration --no-build --no-restore } '.NET tests'
+    # Serialize Windows test projects so WPF keyboard-focus assertions cannot be disturbed by
+    # another UI-capable test host running at the same time.
+    Invoke-Checked { & $dotnet test '.\AudioSourceMixer.sln' --configuration $Configuration --no-build --no-restore -m:1 } '.NET tests'
     $browserTests = @(Get-ChildItem -LiteralPath '.\tests\browser-extension-tests' -Filter '*.test.mjs' | Select-Object -ExpandProperty FullName)
     Invoke-Checked { & node --test @browserTests } 'Browser extension tests'
     Invoke-Checked { & node '.\scripts\verify-browser-equalizer-runtime.mjs' } 'Chrome/Edge Web Audio EQ runtime tests'

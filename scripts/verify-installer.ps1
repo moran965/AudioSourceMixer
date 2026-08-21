@@ -113,6 +113,20 @@ function Verify-UninstallerWindow([string] $Directory, [ValidateSet('zh-CN','en-
 }
 
 function Verify-NormalLaunch([string] $Directory) {
+    # Fresh installs intentionally open the browser onboarding page, where the mixer ItemsControl is
+    # collapsed. Seed a valid returning-user configuration so this gate verifies the ordinary mixer
+    # launch with a real WaveOut session; first-run onboarding is covered by its dedicated tests.
+    New-Item -ItemType Directory -Path $dataDirectory -Force | Out-Null
+    [ordered]@{
+        CloseToTray = $true; AutoApplyProfiles = $true; RememberProfiles = $true
+        ShowInactiveSessions = $true; StartMinimizedToTray = $true; ShowOperationTips = $true
+        TrayHintShown = $false; BrowserOnboardingChoice = 'completed'
+        OnboardingCompletedVersion = $version; BrowserGuideDismissed = $false
+        SourceSortMode = 'manual'; ManualSourceOrder = @(); ManuallyHiddenSources = @()
+        HideBrowserAggregateSessions = $true; VisibleBrowserAggregates = @()
+        Language = 'zh-CN'; SchemaVersion = 8
+    } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $dataDirectory 'settings.json') -Encoding UTF8
+
     $probeDirectory = Join-Path $temporaryRoot 'normal-launch-probe'
     if (Test-Path -LiteralPath $probeDirectory) { Remove-Item -LiteralPath $probeDirectory -Recurse -Force }
     Copy-Item -LiteralPath $probeBuildDirectory -Destination $probeDirectory -Recurse -Force

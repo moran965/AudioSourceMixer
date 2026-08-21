@@ -38,7 +38,7 @@ function Decode-UiName([string] $Value) {
 }
 $uiName = if ($Language -eq 'en-US') {
     @{ drag = 'Drag session to reorder'; hide = 'Hide this session'; hidden = 'View hidden sessions';
-       restore = 'Restore this source'; restoreAll = 'Restore all' }
+       restore = 'Show again'; restoreAll = 'Restore all' }
 } else {
     @{ drag = Decode-UiName '5ouW5Yqo5Lya6K+d5o6S5bqP'; hide = Decode-UiName '6ZqQ6JeP5q2k5Lya6K+d';
        hidden = Decode-UiName '5p+l55yL6ZqQ6JeP5Lya6K+d'; restore = Decode-UiName '5oGi5aSN5pi+56S6';

@@ -43,4 +43,16 @@ Each language capture includes ordinary and long browser sources, expanded EQ, b
 
 ## Release result
 
-The final counts, artifact size, SHA-256 values, installation matrix results, and screenshot locations are written here after the final build so the report never claims a gate that was not actually executed. The machine-readable source of truth is `artifacts/AudioSourceMixer-1.0.0-build-manifest.json`.
+Final verification was completed on 2026-08-22 on Windows 11 x64:
+
+- Release restore/build: exit 0, 0 warnings, 0 errors.
+- .NET tests: 151/151 passed (Core 93, Native Host 2, Windows Audio 15, Desktop/WPF 29, Installer 12). Test projects run serially so independent WPF hosts cannot steal keyboard focus from one another.
+- browser-extension Node tests: 48/48 passed. Chrome and Edge Web Audio EQ checks passed (`volumeRatio=0.5`, `leftLeakRatio=0`); each browser completed four authorization operations with zero runtime exceptions, log errors, unhandled rejections, or service-worker errors.
+- source Release UI smoke: exit 0. Its real WaveOut meter run collected 71 samples, reached a raw/smoothed peak of 0.3662 and a 49.33-DIP indicator, then returned to zero.
+- bilingual screenshot capture: 13 final PNGs per language in `artifacts/ui-1.0.0-zh-CN` and `artifacts/ui-1.0.0-en-US`; real mouse/keyboard hide, restore, reorder, drag, auto-scroll, Drop, and Escape runs produced eight captures per language in the matching `ui-interaction-1.0.0-*-installed` directories.
+- installer matrix: exit 0. All 24 recorded gates passed, including fresh zh-CN/en-US installs, default/space/Chinese paths, same-version repair, injected rollback, startup/background modes, localized no-argument and silent uninstall, preserve/delete user data, running-app uninstall, browser setup, and 0.2.2 → 1.0.0 migration.
+- normal installed launch used a controlled WaveOut source and completed with `WindowShown=True; Sources=13; MaterializedItems=13`; the installed live meter collected 72 samples, reached 0.3662/49.33 DIP, returned to zero, and exited through the normal audio-restore path.
+- Release publish, installer payload, and installed `AudioSourceMixer.exe` SHA-256: `DEEEA7F9959B91AC8EFC3A0599A75A623773E6D7945FC46CC4BBFA1672EC932A` (all equal). The installed runtime allowlist contains 33 files.
+- final setup: `artifacts/AudioSourceMixer-1.0.0-win-x64-setup.exe`, 257,293,921 bytes, SHA-256 `F76CF0018B0D951CE36FE76942494451E2F0A4395588C1600F08DA82713021E7`.
+
+The machine-readable source of truth is `artifacts/AudioSourceMixer-1.0.0-build-manifest.json`. It contains the publish/payload/installed inventories and each installer verification result.

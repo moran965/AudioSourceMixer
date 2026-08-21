@@ -10,6 +10,7 @@
 - Removed obsolete agent-only assets and the unused ProcessLoopbackProbe experiment while retaining active regression tests, audio fixtures, CapabilityProbe live-meter coverage, browser runtime probes, and architecture records.
 - Unified product, file, extension, installer, uninstall registration, documentation, and artifact versions at 1.0.0 / 1.0.0.0.
 - Expanded release gates for bilingual resource parity, hard-coded UI text audits, runtime language switching, localized extension pages, bilingual install/uninstall, 0.2.2 settings-preserving upgrade, maximum-window screenshots, and publish → installer payload → installed hash equality.
+- Corrected normal-startup UI materialization waiting, removed an English automation-name ambiguity in the hidden-source popup, and made the final installation gate exercise the mixer separately from intentional first-run browser onboarding.
 
 ## 0.2.2 - 2026-08-21
 

@@ -210,7 +210,7 @@
   "Source.Headroom": "Anti-clipping headroom: {0:F1} dB (automatic protection; main volume is unchanged)",
   "Source.DeviceUnavailable": "{0} (unavailable)",
   "Source.HiddenReason": "Manually hidden",
-  "Source.RestoreDisplay": "Restore",
+  "Source.RestoreDisplay": "Show again",
   "BrowserProcess.NotStarted": "The browser process did not start: {0}",
   "BrowserProcess.LaunchFailed": "Could not open {0} in the browser. Copy the address into the browser address bar.",
   "BrowserProcess.AddressBarMissing": "The browser opened, but no verifiable address bar was found.",

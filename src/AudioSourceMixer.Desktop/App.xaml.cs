@@ -324,7 +324,7 @@ public partial class App : System.Windows.Application
     {
         var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
         var materialized = CountMaterializedItems(window);
-        while (viewModel.Sources.Count == 0 && DateTimeOffset.UtcNow < deadline)
+        while (viewModel.Sources.Count > 0 && materialized == 0 && DateTimeOffset.UtcNow < deadline)
         {
             await Task.Delay(100);
             await window.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.ApplicationIdle);

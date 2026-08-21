@@ -101,7 +101,7 @@ internal static class UiSmokeVerifier
             Balance = 0.27f,
             Peak = 0.48f,
             RoutingState = AudioRoutingState.Failed,
-            RoutingError = "浏览器中的设备已变化，请重新选择并试听确认。",
+            RoutingError = "mapping-stale",
             RequestedOutputDeviceName = "Professional USB Audio Interface with an exceptionally long friendly device name",
             OutputDeviceName = "Professional USB Audio Interface with an exceptionally long friendly device name",
             Effects = EqualizerCatalog.CreatePreset("vocal")
