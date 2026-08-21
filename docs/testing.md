@@ -1,8 +1,44 @@
 # Audio Source Mixer 0.2.2 测试报告
 
-测试日期：2026-08-14。环境：Windows 11 x64（build 26200）、.NET SDK 8.0.423、Node 24.18.1、Google Chrome 151、Microsoft Edge 151。
+当前验证日期：2026-08-21。环境：Windows 11 x64（build 26200）、.NET SDK 8.0.423、Node 24.18.1、Google Chrome 151、Microsoft Edge 151。
 
-## 最终自动化结果
+## 2026-08-21 手动排序与浏览器默认路由修复
+
+最终命令 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build-all.ps1` 退出码为 0。Release restore/build 共 11 个项目，0 警告、0 错误；.NET 134/134 通过（Core 89、WindowsAudio 15、Installer 8、Desktop/WPF 20、NativeHost 2），浏览器扩展 Node 42/42 通过。Chrome/Edge Web Audio 引擎的 100%→50% RMS 比均为 0.5、左声道测试右侧泄漏为 0；两种浏览器各完成 4 次隔离授权操作，runtime exception、错误日志、未处理 rejection 和 service worker error 均为 0。
+
+新的 WPF 回归与 UI smoke 覆盖以下行为：
+
+- 来源列表是非选择型虚拟化 `ItemsControl`；真实 `MainWindow.Show()` 后至少一个 `ContentPresenter`、来源卡和 DataTemplate 必须物化，卡片间隙 hit-test 不得命中按钮或产生选择语义。
+- 音量、平衡、静音、输出、EQ、实时电平和超过旧 300ms 延迟后的顺序均保持不变；旧 `recent` 设置迁移为 manual。
+- 拖放索引计算覆盖首项前、卡片上/下半部、不等高卡片、卡片间隙、虚拟化空洞和列表末尾。一次 Drop 只在最终 `ObservableCollection.Move` 后保存一次；当前可见插入线使用 120ms 淡入。
+- XAML 绑定审计仍要求全部 `{Binding}` 显式声明模式；getter-only 显示属性均为 OneWay，TwoWay 仅允许有 setter 的音量、平衡、EQ 与设置属性。
+- `FollowSystemDefault`、解析的 Windows endpoint、browser deviceId 和实际 sink 分开验证；缺少默认设备映射为 `PendingAuthorization`，目标改变会清除旧映射，实际 sink 不一致为失败。
+- Edge/Chrome 自动隐藏例外相互独立，单项恢复与“恢复全部来源”不改变音频参数，重新启用规则后再次自动隐藏。
+
+响应式测试实际记录（字体 12 DIP，全部 `ScaleTransform=False`）：
+
+| 窗口 | ItemsControl ActualHeight | ScrollViewer ViewportHeight | 同时可见卡片数 |
+|---|---:|---:|---:|
+| 880×600 | 1134.0 | 314.7 | 1 |
+| 1240×820（默认） | 1116.0 | 534.7 | 2 |
+| 1600×900 | 1116.0 | 614.7 | 3 |
+| 1920×1080 | 1116.0 | 794.7 | 3 |
+
+1920×1080 的 viewport 比默认窗口增加 260 DIP，并实际显示更多卡片/展开内容，没有按比例放大字体、按钮、图标或滑块。最终 portable 生成 12 张真实 WPF 图，位于 `artifacts\screenshots-v0.2.2-manual-order-final-20260821`，覆盖 880×600、1240×820、1600×900、1920×1080 与 100/125/150/200% 渲染；逐图检查未发现裁切、重叠、乱码或整体缩放，展开 EQ 底部可通过同一垂直列表滚动到可见。
+
+浏览器管理页使用最终 portable 的真实 WPF 按钮触发，并通过 UI Automation 读取真实 Chromium omnibox；机器可读报告为 `artifacts\browser-management-pages-final.json`：Chrome 测试前完全关闭，第一次冷启动和第二次已打开状态均得到 `chrome://extensions`；Edge 已打开状态连续两次均得到 `edge://extensions`。源码传入地址包含尾斜杠，Chromium 地址栏按自身规则规范化隐藏尾斜杠。Chrome/Edge 按钮不再包含 `--new-tab` 或商店地址；Chromium 151 冷启动若丢弃内部 URL，桌面程序在用户这次明确点击后把同一地址写入对应浏览器真实 omnibox、提交并验证。
+
+安装矩阵全部通过：fresh install、同版本 repair、注入失败回滚、空格/中文路径、显式浏览器引导、开机启动/后台托盘、0.2.1→0.2.2 原位升级、安装版 UI smoke、普通可见启动、受控 WaveOut 实时电平、运行中卸载、静默卸载与注册表清理。普通启动得到 `WindowShown=True; Sources=1; MaterializedItems=1`；实时电平共 74 个样本，最大原始/平滑 Peak 为 `0.3662`、Indicator 最大 `49.33 DIP`，停止后回到 0。最终构建随后重新安装到 `%LocalAppData%\Programs\AudioSourceMixer`，再次通过 UI smoke，文件版本 `0.2.2.0`、产品版本 `0.2.2`。
+
+最终产物：
+
+- publish / portable / installed `AudioSourceMixer.exe`：162,246,324 字节，SHA-256 `5A2A698A950203DB35B2D4458038BD91A3A397169D9BEEDDD192360BADBF718F`（三者完全一致）。
+- portable ZIP：95,549,428 字节，SHA-256 `4EBA9FD69BAA70A05059CEE7C31AF8C4AC0A4C2E84F3AD838FC52450011BB8A4`。
+- installer：257,244,769 字节，SHA-256 `AB68FF460583C22F1B8986DA49A108F4DF02A6FA3E03E0F9B04E5B01FB8B514D`。
+
+真实硬件边界：2026-08-21 的能力探针只看到两个 active 物理端点——默认 `耳机 (Realtek(R) Audio)`（`{0.0.0.00000000}.{b71ffe5b-365e-4c0a-8b0d-8713537f9168}`）和 `扬声器 (Realtek(R) Audio)`（`{0.0.0.00000000}.{2ba97857-afaf-4e83-aa26-d2fc73c3c4df}`），没有 active Bluetooth/WH-1000XM5 端点。因此本轮没有伪报“Windows 默认蓝牙耳机、普通 msedge 路由扬声器、增强标签页仍实际从蓝牙出声”或双标签真人听感通过；这些仍需连接蓝牙设备、在真实媒体标签点击扩展并完成浏览器设备授权后人工复核。自动化已验证所需 endpoint/deviceId/sink 状态机和失败门禁，但 API 读回不能替代听感。
+
+## 历史记录：2026-08-14 发行验证
 
 最终命令 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build-all.ps1` 退出码为 0，覆盖 Release restore/build、测试、真实 WPF 窗口、系统浏览器隔离运行、打包、安装、升级、卸载和最终清单/哈希检查。
 

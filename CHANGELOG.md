@@ -1,6 +1,16 @@
 # Changelog
 
-## 0.2.2 - 2026-08-14
+## 0.2.2 - 2026-08-21
+
+- “打开 Edge/Chrome 扩展页”现严格使用对应浏览器和 `edge://extensions/` / `chrome://extensions/`；移除商店 URL 与 `--new-tab` 混用，并为 Chromium 151 冷启动丢弃内部 URL 的情况增加真实 omnibox 导航与结果验证。
+- 完全删除“最近调整”自动置顶及 300ms 定时重排；来源始终保持手动顺序，旧 `recent` 设置原子迁移到 schema 6，新来源稳定追加，浏览器临时 Tab ID 不跨重启持久化。
+- 拖动只从六点把手启动，按可见卡片中线计算插入位置，支持首尾、卡片间隙、不等高/EQ 卡片、虚拟化和边缘自动滚动；插入线使用 120ms 淡入，Drop 最多保存一次。
+- 来源容器从可选择 `ListBox` 改为非选择型虚拟化 `ItemsControl`，卡片间隙和列表空白不再选择、BringIntoView 或滚动；省略号菜单改为主题化 Flyout，补齐置顶、上移、下移、置底和隐藏。
+- 普通 Windows 会话增加友好名称解析和异步冻结图标缓存；浏览器增强名称显示 `[Edge]/[Chrome]`、页面标题和域名。
+- 默认窗口调整为 1240×820 并受工作区约束；最大化只增加列表 viewport，不使用整体 ScaleTransform，展开 EQ 会滚动到可见区域。
+- Edge/Chrome 自动隐藏聚合会话可分别恢复，“恢复全部来源”会清除手动隐藏并强制显示当前聚合会话，且可明确恢复自动隐藏规则。
+- 浏览器“系统默认”改为 `FollowSystemDefault + 当前 Windows Multimedia 物理端点 + 已授权 browser deviceId + 实际 sink` 四层状态；默认设备变化会重绑定，缺少映射进入 `PendingAuthorization`，实际 sink 不一致进入失败，绝不静默使用空 sink。
+- 修复 offscreen 在物理目标变化时复用旧 browser deviceId，以及来源消失后延迟控制任务形成未观察异步异常的竞态；扩展仍为 Manifest V3，权限未增加，产品/文件/安装器版本仍为 0.2.2/0.2.2.0。
 
 - 修复全局 ProgressBar 模板缺少 `PART_Track` 导致 Peak 值变化但指示条宽度不变；UI smoke 现直接测量 0/50/100% 与动态 Peak 的 Track/Indicator 实际宽度。
 - Windows Core Audio 拆分为约 1 秒拓扑刷新和 75ms 轻量电平刷新，浏览器增强改为每标签页独立 100ms 电平；两者均快速上升、约 350ms 衰减并归零，峰值更新不再触发完整 Reconcile、配置重载或路由应用。

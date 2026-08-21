@@ -1,6 +1,6 @@
 # Chrome Web Store Listing — Audio Source Mixer 标签页增强
 
-> Last Updated: 2026-08-14 · Draft only; v0.2.2 is not published in Chrome Web Store or Edge Add-ons.
+> Last Updated: 2026-08-21 · Draft only; v0.2.2 is not published in Chrome Web Store or Edge Add-ons.
 
 ## Store Listing
 
@@ -20,7 +20,7 @@ Audio Source Mixer 标签页增强让正在播放声音的 Chrome 或 Edge 标�
 
 音频始终留在本机，不会录制、保存或上传。扩展不包含广告、分析、远程代码或第三方服务。标签页标题、站点来源和控制状态只在当前设备的扩展与 Audio Source Mixer 桌面程序之间处理。
 
-v0.2.2：增加首次使用指南，修复输出设备确认与存储更新并发错误，并将各增强标签页的独立实时电平提升到 10Hz、快速上升和约 350ms 平滑衰减。
+v0.2.2：增加首次使用指南，修复输出设备确认与存储更新并发错误，并将各增强标签页的独立实时电平提升到 10Hz。选择“系统默认”时，桌面端会解析当前 Windows 默认物理端点；扩展只在该端点已有用户确认的映射时应用具体 sink，缺少映射时明确等待授权，不会静默回退。
 
 **Category**  
 Productivity
@@ -83,7 +83,7 @@ Chinese (Simplified)
 
 | Version | Date | Changes | Status |
 |---|---|---|---|
-| 0.2.2 | 2026-08-14 | 首次使用指南、授权竞态修复、输出映射运行验证、每标签页独立 10Hz 实时电平 | Draft |
+| 0.2.2 | 2026-08-21 | 手动排序配套展示、物理默认端点跟随、授权竞态修复、输出映射运行验证、每标签页独立 10Hz 实时电平 | Draft |
 
 ## Review Notes
 
