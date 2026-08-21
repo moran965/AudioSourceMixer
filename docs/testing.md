@@ -2,6 +2,30 @@
 
 当前验证日期：2026-08-21。环境：Windows 11 x64（build 26200）、.NET SDK 8.0.423、Node 24.18.1、Google Chrome 151、Microsoft Edge 151。
 
+## 2026-08-21 拖拽动画与隐藏来源弹窗补丁
+
+拖拽回归不再只检查最终集合索引。`SourceDragPreviewCoordinator` 单测覆盖上下中线、8 DIP 滞回、相同目标不重复 Move、首尾、不等高/EQ 状态、自动滚动后的重新定位、单次提交、Esc 回滚、来源中途消失及 ViewModel/音频属性保持；STA WPF 测试真实创建 `SessionDragAdorner`，核对预览尺寸、原卡片占位、FLIP Transform、150ms 后归零、插入线只淡入一次以及提交/取消后的完整清理。
+
+真实桌面交互由以下命令使用系统鼠标和键盘执行，不以直接调用集合方法代替拖放：
+
+```powershell
+.\scripts\verify-ui-interactions.ps1 -Executable <待验证的 AudioSourceMixer.exe> -OutputDirectory <截图目录>
+```
+
+脚本创建三个确定性来源并真实 `Show()` 窗口，依次记录拖动开始、相邻卡片实时让位、Drop、边缘自动滚动、Esc 清理、两个手动隐藏来源的弹窗、单项恢复关闭和全部恢复关闭，共 8 张连续截图；同时要求日志出现一次发生变化的提交和一次取消。交互模式使用按进程唯一的退出事件，结束时走产品自己的音频恢复/清理路径，不遗留诊断进程。
+
+隐藏来源的回归把手动隐藏与浏览器聚合自动过滤完全分开：“已隐藏 N”和 Popup 只包含手动隐藏，单项/全部恢复先关闭 Popup 且不改变音量、平衡、静音、路由、EQ、`HideBrowserAggregateSessions` 或 `BrowserStatus`。WPF 测试还直接检查 Popup 内容与 HWND 均不可见、没有额外 `Window`，以及排序按钮、隐藏按钮、浏览器状态和列表顶部在恢复前后及状态文字变长后坐标变化不超过 1 DIP。旧 schema 6 中的 `VisibleBrowserAggregates` 在 schema 7 迁移时安全清空；产品版本仍为 0.2.2。
+
+本补丁最终结果：Debug/Release 均为 11 个项目、0 警告、0 错误；两种配置的 .NET 均为 141/141 通过（Core 90、WindowsAudio 15、Installer 8、Desktop/WPF 26、NativeHost 2），Node 为 42/42。源码 Release、portable 与 installed UI smoke 均退出 0；Debug、源码 Release、portable 和 installed 的真实鼠标交互均退出 0，最终安装版 8 张截图位于 `artifacts\ui-interaction-v0.2.2-installed`。Chrome/Edge Web Audio EQ 与 Native Messaging/授权运行验证全部通过，两种浏览器各 4 次授权操作且 runtime exception、错误日志、未处理 rejection、service worker error 均为 0。
+
+安装矩阵的 18 项全部通过，包括 fresh install、同版本 repair、故障回滚、空格/中文路径、0.2.1 原位升级、普通可见启动、installed UI smoke、真实实时电平、运行中优雅卸载、静默卸载、注册表清理以及完整 payload 比较。最终实时电平报告为 74 个样本，最大 Raw/UI Peak `0.36621094`，最大 Indicator `49.3333 DIP`，停播后 Raw/UI/Indicator 全部回到 0。验证矩阵清理后使用最终安装器重新安装到 `%LocalAppData%\Programs\AudioSourceMixer`，文件/产品版本为 0.2.2.0/0.2.2，开机启动保持关闭。
+
+最终产物与哈希：
+
+- publish / portable / installed `AudioSourceMixer.exe`：162,266,804 字节，SHA-256 `A3934AC025C6A6367CA831F4D5DC51FEA360E919AA60350DFB821C309B8364A4`（三者完全一致）。
+- portable ZIP：95,547,592 字节，SHA-256 `F620F5622BC72F9A666D2E75A06862859ABA7AE0942E311EE5C6868A73714A2E`。
+- installer：257,240,673 字节，SHA-256 `1E0F0A2A4DA11875ADAA2D0915D12ABC0ADFCEA03276ABC1FE5DB560C126E6D2`。
+
 ## 2026-08-21 手动排序与浏览器默认路由修复
 
 最终命令 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build-all.ps1` 退出码为 0。Release restore/build 共 11 个项目，0 警告、0 错误；.NET 134/134 通过（Core 89、WindowsAudio 15、Installer 8、Desktop/WPF 20、NativeHost 2），浏览器扩展 Node 42/42 通过。Chrome/Edge Web Audio 引擎的 100%→50% RMS 比均为 0.5、左声道测试右侧泄漏为 0；两种浏览器各完成 4 次隔离授权操作，runtime exception、错误日志、未处理 rejection 和 service worker error 均为 0。
@@ -13,7 +37,7 @@
 - 拖放索引计算覆盖首项前、卡片上/下半部、不等高卡片、卡片间隙、虚拟化空洞和列表末尾。一次 Drop 只在最终 `ObservableCollection.Move` 后保存一次；当前可见插入线使用 120ms 淡入。
 - XAML 绑定审计仍要求全部 `{Binding}` 显式声明模式；getter-only 显示属性均为 OneWay，TwoWay 仅允许有 setter 的音量、平衡、EQ 与设置属性。
 - `FollowSystemDefault`、解析的 Windows endpoint、browser deviceId 和实际 sink 分开验证；缺少默认设备映射为 `PendingAuthorization`，目标改变会清除旧映射，实际 sink 不一致为失败。
-- Edge/Chrome 自动隐藏例外相互独立，单项恢复与“恢复全部来源”不改变音频参数，重新启用规则后再次自动隐藏。
+- 自动隐藏的 Edge/Chrome 聚合会话不进入手动隐藏列表；单项恢复与“恢复全部来源”不改变音频参数或自动隐藏开关，旧强制显示例外迁移后被清空。
 
 响应式测试实际记录（字体 12 DIP，全部 `ScaleTransform=False`）：
 
@@ -30,7 +54,7 @@
 
 安装矩阵全部通过：fresh install、同版本 repair、注入失败回滚、空格/中文路径、显式浏览器引导、开机启动/后台托盘、0.2.1→0.2.2 原位升级、安装版 UI smoke、普通可见启动、受控 WaveOut 实时电平、运行中卸载、静默卸载与注册表清理。普通启动得到 `WindowShown=True; Sources=1; MaterializedItems=1`；实时电平共 74 个样本，最大原始/平滑 Peak 为 `0.3662`、Indicator 最大 `49.33 DIP`，停止后回到 0。最终构建随后重新安装到 `%LocalAppData%\Programs\AudioSourceMixer`，再次通过 UI smoke，文件版本 `0.2.2.0`、产品版本 `0.2.2`。
 
-最终产物：
+该轮基线产物（已由本页顶部的拖拽/Popup 补丁产物替换）：
 
 - publish / portable / installed `AudioSourceMixer.exe`：162,246,324 字节，SHA-256 `5A2A698A950203DB35B2D4458038BD91A3A397169D9BEEDDD192360BADBF718F`（三者完全一致）。
 - portable ZIP：95,549,428 字节，SHA-256 `4EBA9FD69BAA70A05059CEE7C31AF8C4AC0A4C2E84F3AD838FC52450011BB8A4`。
@@ -64,7 +88,7 @@
 
 ## WPF、响应式布局与绑定
 
-UI smoke 必须调用真实 `MainWindow.Show()`，等待 `Loaded`、ApplicationIdle 和 Render，并注入三个确定性来源：普通 Windows 会话、超长中文 Edge 标签、超长英文 Chrome 标签。场景同时覆盖 200% 增益、非默认长设备名、路由/授权错误、EQ 展开和实时峰值。验证器强制物化每个 `ListBoxItem`、来源卡、ProgressBar 和 10 段 EQ DataTemplate；还必须找到 `PART_Track`/`PART_Indicator` 并实测 Value=0/50/100 时宽度约为 0/一半/全部，动态 Peak=73% 时 Indicator 必须真正变宽。缺少容器、绑定错误、XAML 错误、Dispatcher 异常或未观察异步异常都会返回非零。
+UI smoke 必须调用真实 `MainWindow.Show()`，等待 `Loaded`、ApplicationIdle 和 Render，并注入三个确定性来源：普通 Windows 会话、超长中文 Edge 标签、超长英文 Chrome 标签。场景同时覆盖 200% 增益、非默认长设备名、路由/授权错误、EQ 展开和实时峰值。验证器强制物化每个 `ContentPresenter`、来源卡、ProgressBar 和 10 段 EQ DataTemplate；还必须找到 `PART_Track`/`PART_Indicator` 并实测 Value=0/50/100 时宽度约为 0/一半/全部，动态 Peak=73% 时 Indicator 必须真正变宽。缺少容器、绑定错误、XAML 错误、Dispatcher 异常或未观察异步异常都会返回非零。
 
 STA 回归在 880×600、1180×760、1600×900 三种窗口尺寸验证标签/数值不相交、输出选择框至少 180 DIP、可见按钮不裁剪和无横向溢出。来源列表保持 `CanContentScroll=True`、Recycling、`ScrollUnit=Pixel`、`IsDeferredScrollingEnabled=False`、`PanningMode=VerticalOnly` 和横向滚动禁用。设置页与浏览器引导页也被真实物化并包含可键盘聚焦控件。
 
@@ -72,7 +96,7 @@ STA 回归在 880×600、1180×760、1600×900 三种窗口尺寸验证标签/�
 
 设置页 8 个 CheckBox（含“浏览器增强时隐藏浏览器聚合会话”）和 EQ“启用均衡器”由真实 WPF 模板完成布局。测试确认视觉树内没有白色 Check Path 或替代勾选字符；未选中为表面色空框，选中为 `PrimaryDarkBrush` 实心块，禁用选中仍保持主色并降低整体不透明度，切换前后 16×16 DIP 方块位置不变。Automation `TogglePattern` 与 Space 键均可切换；宽容器中控件实际宽度等于 16 DIP 方块 + 8 DIP 间距 + ContentPresenter 宽度，长短标签得到不同宽度，标签右侧 30 DIP 空白 hit-test 不属于 CheckBox。紧凑焦点模板无固定宽度，只以 -3 DIP 外边距包围控件实际内容。
 
-全部产品 XAML `{Binding}` 都显式声明模式。只读显示属性（包括 `PeakPercent`、名称、状态、命令、可见性、设备集合、音量/平衡显示文本及 EQ 汇总）均为 OneWay；有效 TwoWay 仅包括具有 public setter 的 `VolumePercent`、`BalancePercent`、`IsEqualizerExpanded`、`IsEqualizerEnabled`、`SelectedEqualizerPresetId`、`EqualizerPreampDb`、`EqualizerBandViewModel.GainDb` 和设置 CheckBox 属性。峰值快照触发 `PropertyChanged(PeakPercent)` 后 ProgressBar 实测更新到 73%。
+全部产品 XAML `{Binding}` 都显式声明模式。只读显示属性（包括 `PeakPercent`、`DragPlaceholderOpacity`、名称、状态、命令、可见性、设备集合、音量/平衡显示文本及 EQ 汇总）均为 OneWay；有效 TwoWay 仅包括具有 setter 的 `VolumePercent`、`BalancePercent`、`IsEqualizerExpanded`、`IsEqualizerEnabled`、`SelectedEqualizerPresetId`、`EqualizerPreampDb`、`EqualizerBandViewModel.GainDb`、`IsHiddenSourcesPopupOpen` 和设置 CheckBox 属性。峰值快照触发 `PropertyChanged(PeakPercent)` 后 ProgressBar 实测更新到 73%。
 
 最终 11 张截图由安装版 0.2.2 的真实 WPF 窗口生成，位于 `artifacts\screenshots-v0.2.2-session-meter-final-20260814`：普通混音器、浏览器增强来源、EQ 展开、浏览器引导、设置页 880×600 / 1180×760 / 1600×900 的 100 DPI 渲染、设置页 125/150/200 DPI 渲染和最小窗口。逐图复核页内 PNG Logo 在各 DPI 下边缘清晰，电平指示条有可见宽度，六点把手/省略号低调且不挤压标题；未发现裁切、重叠、乱码或行尾焦点框。
 
@@ -82,7 +106,7 @@ STA 回归在 880×600、1180×760、1600×900 三种窗口尺寸验证标签/�
 
 普通 Windows 会话保留约 1 秒的低频拓扑枚举，另由 AudioWorker 每 75ms（约 13.3Hz）只读取已有 `IAudioMeterInformation` 句柄；浏览器 offscreen 图每 100ms（10Hz）独立读取各自 Analyser。两条路径都以来源 ID 发送轻量电平事件，MainViewModel 只调用对应 ViewModel 的 `UpdatePeak`，不执行 Reconcile、配置读取或路由应用；上升立即响应、下降约 350ms 线性衰减并最终精确归零。真实报告位于 `artifacts\live-meter-source-release.json`、`live-meter-installed.json` 和 `live-meter-debug.json`。
 
-来源展示固定按“无声会话设置→Edge/Chrome 聚合自动隐藏→精确手动隐藏→最近调整/手动排序→ObservableCollection.Move”处理。测试覆盖同 exe 两个会话只隐藏一个、手动/自动原因不混淆、Electron/其他 Chromium 不误判、最后一个增强标签结束后聚合会话恢复、最近修改 A 后 A 置顶再修改 B 得到 B/A、Peak 与自动应用不置顶、300ms 延迟避免 Slider 操作中跳卡、手动模式保持顺序，以及 Move 后原 ViewModel 实例不变。设置 schema 4→5 迁移保留原 onboarding；手动顺序/隐藏仅保存 `win:` 精确身份，各限 256 项并清理超过 30 天的隐藏记录，不保存标签页标题或 URL。
+来源展示固定按“无声会话设置→精确手动隐藏→Edge/Chrome 聚合自动过滤→永久手动顺序→ObservableCollection.Move”处理。测试覆盖同 exe 两个会话只隐藏一个、自动过滤不进入隐藏 Popup、Electron/其他 Chromium 不误判、最后一个增强标签结束后聚合会话恢复、Peak/自动应用不改顺序、拖拽期间预览 Move 不触发持久化，以及 Move 后原 ViewModel 实例、EQ 展开和音频状态不变。设置 schema 7 保留原 onboarding、手动顺序和隐藏记录，同时清空旧的浏览器强制显示例外；手动顺序/隐藏仅保存 `win:` 精确身份，各限 256 项并清理超过 30 天的隐藏记录，不保存标签页标题或 URL。
 
 ## 安装、升级和发行负载
 
@@ -97,7 +121,7 @@ STA 回归在 880×600、1180×760、1600×900 三种窗口尺寸验证标签/�
 
 安装目录不含 docs、tests、tools、源码、PDB、package.json、测试脚本或构建机绝对路径。机器可读完整清单和安装矩阵位于 `artifacts\AudioSourceMixer-0.2.2-build-manifest.json`。
 
-## 最终交付物与哈希
+## 2026-08-14 交付物与哈希（历史）
 
 - publish / portable / installed `AudioSourceMixer.exe`：162,223,796 字节，SHA-256 `AF4668315991E4D46EEA256DCA59C07386FF25BA6EC13C06D1D3ED072B7F87BE`（三者完全一致，文件版本 `0.2.2.0`，产品版本 `0.2.2`）。
 - portable ZIP：95,541,574 字节，SHA-256 `21BEAC258C58B5EF1F6DEA17D9498C4A609CE01EB1ABF1DDE6304A65A9CDCDF2`。
