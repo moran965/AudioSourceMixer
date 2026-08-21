@@ -33,14 +33,12 @@ public partial class AudioSourceCard : System.Windows.Controls.UserControl
 
     private void OpenSourceMenu(object sender, RoutedEventArgs e)
     {
-        if (sender is not System.Windows.Controls.Button button || button.ContextMenu is null) return;
-        button.ContextMenu.PlacementTarget = button;
-        button.ContextMenu.IsOpen = true;
+        SourceMenuPopup.IsOpen = true;
     }
 
     private void DragHandleMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (DataContext is not AudioSourceViewModel { ManualDragEnabled: true }) return;
+        if (DataContext is not AudioSourceViewModel) return;
         _dragStart = e.GetPosition(this);
         e.Handled = true;
     }
@@ -48,14 +46,17 @@ public partial class AudioSourceCard : System.Windows.Controls.UserControl
     private void DragHandleMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
     {
         if (_dragStart is not { } start || e.LeftButton != MouseButtonState.Pressed ||
-            DataContext is not AudioSourceViewModel { ManualDragEnabled: true } source) return;
+            DataContext is not AudioSourceViewModel source) return;
         var current = e.GetPosition(this);
         if (Math.Abs(current.X - start.X) < SystemParameters.MinimumHorizontalDragDistance &&
             Math.Abs(current.Y - start.Y) < SystemParameters.MinimumVerticalDragDistance) return;
         _dragStart = null;
-        System.Windows.DragDrop.DoDragDrop(DragHandle, source, System.Windows.DragDropEffects.Move);
+        CardRoot.Opacity = 0.62;
+        try { System.Windows.DragDrop.DoDragDrop(DragHandle, source, System.Windows.DragDropEffects.Move); }
+        finally { CardRoot.Opacity = 1; _dragStart = null; }
         e.Handled = true;
     }
 
     private void DragHandleMouseUp(object sender, MouseButtonEventArgs e) => _dragStart = null;
+    private void DragHandleLostMouseCapture(object sender, System.Windows.Input.MouseEventArgs e) => _dragStart = null;
 }

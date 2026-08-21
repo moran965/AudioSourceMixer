@@ -183,10 +183,14 @@ export function queueAuthorizationRequest(queue, request) {
 }
 
 export function pendingAuthorizationState(state) {
+  const name = state.resolvedOutputDeviceName || state.outputDeviceName ||
+    state.resolvedOutputDeviceId || state.outputDeviceId;
   return {
     ...state,
     routingState: 'PendingAuthorization',
-    outputStatus: `等待浏览器授权：${state.outputDeviceName || state.outputDeviceId}`,
+    outputStatus: state.followSystemDefault
+      ? `需要授权当前系统默认设备：${name}`
+      : `等待浏览器授权：${name}`,
     error: 'No verified browser output mapping exists for the requested Windows endpoint.'
   };
 }

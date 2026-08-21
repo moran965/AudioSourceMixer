@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:AudioSourceMixer.Desktop.Views"
         Title="Audio Source Mixer" Icon="Assets/AudioSourceMixer.ico"
-        Width="1180" Height="760" MinWidth="880" MinHeight="600"
+        Width="1240" Height="820" MinWidth="880" MinHeight="600"
         Style="{DynamicResource ApplicationWindowTypographyStyle}"
         Background="{DynamicResource WindowBackgroundBrush}"
         WindowStartupLocation="CenterScreen"

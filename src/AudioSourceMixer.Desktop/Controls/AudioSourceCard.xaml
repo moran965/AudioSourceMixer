@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:AudioSourceMixer.Desktop.Controls"
              Focusable="False">
-    <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10" Padding="16,14">
+    <Border x:Name="CardRoot" Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10" Padding="16,14">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
@@ -12,29 +12,35 @@
 
             <Grid Grid.Row="0">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="150"/>
+                    <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="150"/>
                     <ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <Border Background="{DynamicResource PrimarySoftBrush}" CornerRadius="10" Padding="9,5" VerticalAlignment="Center" Margin="0,0,12,0">
                     <TextBlock Text="{Binding SourceTypeLabel, Mode=OneWay}" Foreground="{DynamicResource PrimaryDarkBrush}"
                                FontWeight="Bold" FontSize="10"/>
                 </Border>
-                <StackPanel Grid.Column="1" MinWidth="0">
+                <Border Grid.Column="1" Width="30" Height="30" CornerRadius="7" Background="{DynamicResource SurfaceSecondaryBrush}"
+                        Margin="0,0,10,0" VerticalAlignment="Center">
+                    <Image Source="{Binding IconSource, Mode=OneWay}" Width="24" Height="24"
+                           Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"
+                           AutomationProperties.Name="{Binding DisplayName, Mode=OneWay}"/>
+                </Border>
+                <StackPanel Grid.Column="2" MinWidth="0">
                     <TextBlock Text="{Binding DisplayName, Mode=OneWay}" ToolTip="{Binding DisplayName, Mode=OneWay}"
                                FontWeight="Bold" FontSize="15" TextTrimming="CharacterEllipsis"/>
                     <TextBlock Text="{Binding SourceDescription, Mode=OneWay}" ToolTip="{Binding SourceDescription, Mode=OneWay}"
                                Style="{DynamicResource CaptionTextStyle}" TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
-                <StackPanel Grid.Column="2" Margin="16,0,0,0" VerticalAlignment="Center">
+                <StackPanel Grid.Column="3" Margin="16,0,0,0" VerticalAlignment="Center">
                     <TextBlock Text="实时电平" Style="{DynamicResource CaptionTextStyle}" HorizontalAlignment="Right"/>
                     <ProgressBar Value="{Binding PeakPercent, Mode=OneWay}" Maximum="100" Height="8" Margin="0,5,0,0"
                                  AutomationProperties.Name="实时音量"/>
                 </StackPanel>
-                <Button x:Name="DragHandle" Grid.Column="3" Style="{DynamicResource IconButtonStyle}" Margin="8,0,0,0"
-                        IsEnabled="{Binding ManualDragEnabled, Mode=OneWay}" ToolTip="拖动以手动排序"
+                <Button x:Name="DragHandle" Grid.Column="4" Style="{DynamicResource IconButtonStyle}" Margin="8,0,0,0"
+                        ToolTip="拖动以手动排序" Cursor="SizeAll"
                         AutomationProperties.Name="拖动会话排序"
                         PreviewMouseLeftButtonDown="DragHandleMouseDown" PreviewMouseMove="DragHandleMouseMove"
-                        PreviewMouseLeftButtonUp="DragHandleMouseUp">
+                        PreviewMouseLeftButtonUp="DragHandleMouseUp" LostMouseCapture="DragHandleLostMouseCapture">
                     <Canvas Width="12" Height="16" IsHitTestVisible="False">
                         <Ellipse Width="3" Height="3" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}, Mode=OneWay}" Canvas.Left="1" Canvas.Top="1"/>
                         <Ellipse Width="3" Height="3" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}, Mode=OneWay}" Canvas.Left="8" Canvas.Top="1"/>
@@ -44,21 +50,31 @@
                         <Ellipse Width="3" Height="3" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}, Mode=OneWay}" Canvas.Left="8" Canvas.Top="12"/>
                     </Canvas>
                 </Button>
-                <Button Grid.Column="4" Style="{DynamicResource IconButtonStyle}" Margin="2,0,0,0"
+                <Button x:Name="SourceMenuButton" Grid.Column="5" Style="{DynamicResource IconButtonStyle}" Margin="2,0,0,0"
                         ToolTip="会话显示与排序" AutomationProperties.Name="打开会话菜单" Click="OpenSourceMenu">
                     <Path Data="M 3,8 L 3.01,8 M 8,8 L 8.01,8 M 13,8 L 13.01,8"
                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}, Mode=OneWay}"
                           StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
-                    <Button.ContextMenu>
-                        <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}, Mode=OneWay}">
-                            <MenuItem Header="隐藏此会话" Command="{Binding HideCommand, Mode=OneWay}"/>
-                            <Separator/>
-                            <MenuItem Header="移至顶部" Command="{Binding MoveToTopCommand, Mode=OneWay}"/>
-                            <MenuItem Header="上移" Command="{Binding MoveUpCommand, Mode=OneWay}"/>
-                            <MenuItem Header="下移" Command="{Binding MoveDownCommand, Mode=OneWay}"/>
-                        </ContextMenu>
-                    </Button.ContextMenu>
                 </Button>
+                <Popup x:Name="SourceMenuPopup" Grid.Column="5" PlacementTarget="{x:Reference SourceMenuButton}"
+                       Placement="Bottom" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                    <Border Style="{DynamicResource CardBorderStyle}" Padding="7" Width="168" Margin="0,5,0,0">
+                        <Border.Effect><DropShadowEffect Color="#330F172A" BlurRadius="14" ShadowDepth="3" Opacity="0.28"/></Border.Effect>
+                        <StackPanel KeyboardNavigation.DirectionalNavigation="Cycle">
+                            <Button Content="移至顶部" Command="{Binding MoveToTopCommand, Mode=OneWay}"
+                                    Style="{DynamicResource FlyoutMenuButtonStyle}" AutomationProperties.Name="将会话移至顶部"/>
+                            <Button Content="上移一项" Command="{Binding MoveUpCommand, Mode=OneWay}"
+                                    Style="{DynamicResource FlyoutMenuButtonStyle}" AutomationProperties.Name="将会话上移一项"/>
+                            <Button Content="下移一项" Command="{Binding MoveDownCommand, Mode=OneWay}"
+                                    Style="{DynamicResource FlyoutMenuButtonStyle}" AutomationProperties.Name="将会话下移一项"/>
+                            <Button Content="移至底部" Command="{Binding MoveToBottomCommand, Mode=OneWay}"
+                                    Style="{DynamicResource FlyoutMenuButtonStyle}" AutomationProperties.Name="将会话移至底部"/>
+                            <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="6,5"/>
+                            <Button Content="隐藏此会话" Command="{Binding HideCommand, Mode=OneWay}"
+                                    Style="{DynamicResource FlyoutMenuButtonStyle}" AutomationProperties.Name="隐藏此会话"/>
+                        </StackPanel>
+                    </Border>
+                </Popup>
             </Grid>
 
             <Border Grid.Row="1" Background="{DynamicResource WarningSoftBrush}" BorderBrush="{DynamicResource WarningBorderBrush}" BorderThickness="1"

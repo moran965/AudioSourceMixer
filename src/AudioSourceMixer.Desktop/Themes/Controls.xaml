@@ -86,6 +86,16 @@
             <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter Property="Opacity" Value="1"/></Trigger>
         </Style.Triggers>
     </Style>
+    <Style x:Key="FlyoutMenuButtonStyle" TargetType="Button" BasedOn="{StaticResource QuietButtonStyle}">
+        <Setter Property="MinWidth" Value="0"/>
+        <Setter Property="MinHeight" Value="32"/>
+        <Setter Property="Padding" Value="9,6"/>
+        <Setter Property="Margin" Value="0,1"/>
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        <Setter Property="FontWeight" Value="Normal"/>
+        <Setter Property="AutomationProperties.HelpText" Value="会话操作菜单项"/>
+    </Style>
 
     <Style x:Key="NavigationButtonStyle" TargetType="RadioButton"
            BasedOn="{StaticResource {x:Type RadioButton}}">

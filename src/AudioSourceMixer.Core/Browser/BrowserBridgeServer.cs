@@ -73,7 +73,10 @@ public sealed class BrowserBridgeServer : IAsyncDisposable
         IReadOnlyList<OutputDeviceInfo>? outputDevices = null, CancellationToken cancellationToken = default,
         AudioRouteRequestSource requestSource = AudioRouteRequestSource.ProfileRestore,
         bool forceAuthorization = false,
-        AudioEffectSettings? effects = null)
+        AudioEffectSettings? effects = null,
+        bool followSystemDefault = false,
+        string? resolvedOutputDeviceId = null,
+        string? resolvedOutputDeviceName = null)
     {
         var tab = _tabs.TryGetValue(sourceId, out var value) ? value : throw new KeyNotFoundException($"Browser source {sourceId} is unavailable.");
         var connection = GetOwnerConnection(sourceId);
@@ -106,6 +109,9 @@ public sealed class BrowserBridgeServer : IAsyncDisposable
                 Balance = Math.Clamp(balance, -1, 1), Muted = muted,
                 OutputDeviceId = tab.ProtocolVersion >= BrowserProtocol.RoutingVersion ? outputDeviceId : null,
                 OutputDeviceName = tab.ProtocolVersion >= BrowserProtocol.RoutingVersion ? outputDeviceName : null,
+                FollowSystemDefault = tab.ProtocolVersion >= BrowserProtocol.RoutingVersion ? followSystemDefault : null,
+                ResolvedOutputDeviceId = tab.ProtocolVersion >= BrowserProtocol.RoutingVersion ? resolvedOutputDeviceId : null,
+                ResolvedOutputDeviceName = tab.ProtocolVersion >= BrowserProtocol.RoutingVersion ? resolvedOutputDeviceName : null,
                 CorrelationId = correlationId,
                 Generation = tab.ProtocolVersion >= BrowserProtocol.RoutingVersion ? generation : null,
                 RequestSource = tab.ProtocolVersion >= BrowserProtocol.RoutingVersion ? requestSource.ToString() : null,
@@ -253,6 +259,9 @@ public sealed class BrowserBridgeServer : IAsyncDisposable
                         ProtocolVersion = message.ProtocolVersion,
                         OutputDeviceId = message.OutputDeviceId ?? previous.OutputDeviceId,
                         OutputDeviceName = message.OutputDeviceName ?? previous.OutputDeviceName,
+                        FollowSystemDefault = message.FollowSystemDefault ?? previous.FollowSystemDefault,
+                        ResolvedOutputDeviceId = message.ResolvedOutputDeviceId ?? previous.ResolvedOutputDeviceId,
+                        ResolvedOutputDeviceName = message.ResolvedOutputDeviceName ?? previous.ResolvedOutputDeviceName,
                         OutputStatus = message.OutputStatus ?? previous.OutputStatus,
                         EffectiveOutputDeviceId = message.EffectiveSinkId ?? previous.EffectiveOutputDeviceId,
                         EffectiveOutputDeviceName = message.EffectiveSinkLabel ?? previous.EffectiveOutputDeviceName,
@@ -269,7 +278,8 @@ public sealed class BrowserBridgeServer : IAsyncDisposable
                         message.OutputDeviceId ?? "", message.OutputDeviceName, message.OutputStatus,
                         message.EffectiveSinkId ?? "", message.EffectiveSinkLabel,
                         ParseRoutingState(message.RoutingState), message.Error, message.CorrelationId,
-                        message.BrowserDeviceId, message.EffectiveSinkId, message.Equalizer);
+                        message.BrowserDeviceId, message.EffectiveSinkId, message.Equalizer,
+                        message.FollowSystemDefault ?? false, message.ResolvedOutputDeviceId ?? "", message.ResolvedOutputDeviceName);
                 _tabs[id] = updated;
                 topologyChanged |= !hadPrevious || previous! with { Peak = updated.Peak } != updated;
                 levelChanged = message.Peak.HasValue && (!hadPrevious || Math.Abs(previous!.Peak - updated.Peak) > 0.0001f);
@@ -277,7 +287,8 @@ public sealed class BrowserBridgeServer : IAsyncDisposable
             if (!string.IsNullOrWhiteSpace(message.CorrelationId))
             {
                 _logger?.Info($"Browser sink result correlation={message.CorrelationId}; browser={message.Browser}; " +
-                    $"tab={message.TabId}; windowsEndpoint={message.OutputDeviceId}; windowsName={message.OutputDeviceName}; " +
+                    $"tab={message.TabId}; followDefault={message.FollowSystemDefault}; selectedEndpoint={message.OutputDeviceId}; " +
+                    $"resolvedEndpoint={message.ResolvedOutputDeviceId}; resolvedName={message.ResolvedOutputDeviceName}; " +
                     $"browserDeviceHash={HashIdentifier(message.BrowserDeviceId)}; sinkHash={HashIdentifier(message.EffectiveSinkId)}; " +
                     $"setSinkSupported={message.SetSinkIdSupported}; sinkMatched={string.Equals(message.BrowserDeviceId, message.EffectiveSinkId, StringComparison.Ordinal) && !string.IsNullOrEmpty(message.EffectiveSinkId)}; " +
                     $"durationMs={message.SetSinkDurationMs}; state={message.RoutingState}; error={message.Error}");

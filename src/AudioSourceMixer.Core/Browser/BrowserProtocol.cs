@@ -29,6 +29,9 @@ public sealed record BrowserMessage
     public float? Peak { get; init; }
     public string? OutputDeviceId { get; init; }
     public string? OutputDeviceName { get; init; }
+    public bool? FollowSystemDefault { get; init; }
+    public string? ResolvedOutputDeviceId { get; init; }
+    public string? ResolvedOutputDeviceName { get; init; }
     public string? OutputStatus { get; init; }
     public IReadOnlyList<BrowserOutputEndpoint>? OutputDevices { get; init; }
     public string? CorrelationId { get; init; }
@@ -116,6 +119,8 @@ public static class BrowserProtocol
         if (message.Origin?.Length > 512) throw new InvalidDataException("origin is too long.");
         if (message.OutputDeviceId?.Length > 1024) throw new InvalidDataException("outputDeviceId is too long.");
         if (message.OutputDeviceName?.Length > 512) throw new InvalidDataException("outputDeviceName is too long.");
+        if (message.ResolvedOutputDeviceId?.Length > 1024) throw new InvalidDataException("resolvedOutputDeviceId is too long.");
+        if (message.ResolvedOutputDeviceName?.Length > 512) throw new InvalidDataException("resolvedOutputDeviceName is too long.");
         if (message.OutputStatus?.Length > 512) throw new InvalidDataException("outputStatus is too long.");
         if (message.CorrelationId?.Length > 128) throw new InvalidDataException("correlationId is too long.");
         if (message.Generation is < 0 or > MaximumJavaScriptSafeInteger)

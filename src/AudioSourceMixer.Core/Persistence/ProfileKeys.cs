@@ -19,7 +19,7 @@ public static class SourceSortModes
 {
     public const string Recent = "recent";
     public const string Manual = "manual";
-    public static string Normalize(string? value) => value == Manual ? Manual : Recent;
+    public static string Normalize(string? value) => Manual;
 }
 
 public sealed record HiddenSourceSetting(
@@ -38,11 +38,12 @@ public sealed record ApplicationSettings(
     string BrowserOnboardingChoice = "undecided",
     string? OnboardingCompletedVersion = null,
     bool BrowserGuideDismissed = false,
-    string SourceSortMode = SourceSortModes.Recent,
+    string SourceSortMode = SourceSortModes.Manual,
     IReadOnlyList<string>? ManualSourceOrder = null,
     IReadOnlyList<HiddenSourceSetting>? ManuallyHiddenSources = null,
     bool HideBrowserAggregateSessions = true,
-    int SchemaVersion = 5);
+    IReadOnlyList<string>? VisibleBrowserAggregates = null,
+    int SchemaVersion = 6);
 
 public sealed class JsonApplicationSettingsStore(string directory)
 {
@@ -55,9 +56,10 @@ public sealed class JsonApplicationSettingsStore(string directory)
         try
         {
             if (!File.Exists(_path)) return new ApplicationSettings();
-            await using var stream = File.OpenRead(_path);
-            var loaded = await System.Text.Json.JsonSerializer.DeserializeAsync<ApplicationSettings>(stream, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+            ApplicationSettings? loaded;
+            await using (var stream = File.OpenRead(_path))
+                loaded = await System.Text.Json.JsonSerializer.DeserializeAsync<ApplicationSettings>(stream, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
             if (loaded is null) return new ApplicationSettings();
             if (loaded.SchemaVersion < 4)
             {
@@ -66,10 +68,14 @@ public sealed class JsonApplicationSettingsStore(string directory)
                     BrowserOnboardingChoice = "existing-user",
                     OnboardingCompletedVersion = "0.2.1",
                     BrowserGuideDismissed = true,
-                    SchemaVersion = 5
+                    SchemaVersion = 6
                 };
             }
-            return Normalize(loaded);
+            var normalized = Normalize(loaded);
+            if (!string.Equals(System.Text.Json.JsonSerializer.Serialize(loaded),
+                    System.Text.Json.JsonSerializer.Serialize(normalized), StringComparison.Ordinal))
+                await WriteUnsafeAsync(normalized, cancellationToken).ConfigureAwait(false);
+            return normalized;
         }
         catch (System.Text.Json.JsonException) { return new ApplicationSettings(); }
         finally { _gate.Release(); }
@@ -90,12 +96,17 @@ public sealed class JsonApplicationSettingsStore(string directory)
             .Select(group => group.OrderByDescending(value => value.LastSeenUtc).First())
             .Take(256)
             .ToArray();
+        var visibleAggregates = (settings.VisibleBrowserAggregates ?? [])
+            .Where(value => value is "edge" or "chrome")
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
         return settings with
         {
-            SourceSortMode = SourceSortModes.Normalize(settings.SourceSortMode),
+            SourceSortMode = SourceSortModes.Manual,
             ManualSourceOrder = manualOrder,
             ManuallyHiddenSources = hidden,
-            SchemaVersion = 5
+            VisibleBrowserAggregates = visibleAggregates,
+            SchemaVersion = 6
         };
     }
 
@@ -103,6 +114,15 @@ public sealed class JsonApplicationSettingsStore(string directory)
     {
         settings = Normalize(settings);
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await WriteUnsafeAsync(settings, cancellationToken).ConfigureAwait(false);
+        }
+        finally { _gate.Release(); }
+    }
+
+    private async Task WriteUnsafeAsync(ApplicationSettings settings, CancellationToken cancellationToken)
+    {
         var temporaryPath = $"{_path}.{Guid.NewGuid():N}.tmp";
         try
         {
@@ -115,10 +135,6 @@ public sealed class JsonApplicationSettingsStore(string directory)
             }
             File.Move(temporaryPath, _path, true);
         }
-        finally
-        {
-            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
-            _gate.Release();
-        }
+        finally { if (File.Exists(temporaryPath)) File.Delete(temporaryPath); }
     }
 }

@@ -15,19 +15,22 @@
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="24,0,0,0">
                     <Button x:Name="SortMenuButton" Style="{DynamicResource QuietButtonStyle}" MinWidth="0" MinHeight="30" Padding="8,4"
-                            Content="{Binding SourceSortModeLabel, Mode=OneWay, StringFormat=排序：{0}}"
-                            ToolTip="选择会话排序方式" AutomationProperties.Name="会话排序方式" Click="OpenHeaderMenu">
-                        <Button.ContextMenu>
-                            <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}, Mode=OneWay}">
-                                <MenuItem Header="最近调整" IsCheckable="True" IsChecked="{Binding IsRecentSortMode, Mode=OneWay}"
-                                          Command="{Binding UseRecentSortCommand, Mode=OneWay}"/>
-                                <MenuItem Header="手动排序" IsCheckable="True" IsChecked="{Binding IsManualSortMode, Mode=OneWay}"
-                                          Command="{Binding UseManualSortCommand, Mode=OneWay}"/>
-                                <Separator/>
-                                <MenuItem Header="恢复默认排序" Command="{Binding ResetSourceOrderCommand, Mode=OneWay}"/>
-                            </ContextMenu>
-                        </Button.ContextMenu>
-                    </Button>
+                            Content="调整顺序" ToolTip="拖动卡片右上角把手可调整顺序"
+                            AutomationProperties.Name="调整会话顺序" Click="OpenHeaderMenu"/>
+                    <Popup x:Name="OrderMenuPopup" PlacementTarget="{x:Reference SortMenuButton}" Placement="Bottom"
+                           StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                        <Border Style="{DynamicResource CardBorderStyle}" Padding="8" Width="250" Margin="0,6,0,0">
+                            <StackPanel KeyboardNavigation.DirectionalNavigation="Cycle">
+                                <TextBlock Text="拖动卡片右上角把手可调整顺序" Style="{DynamicResource CaptionTextStyle}"
+                                           TextWrapping="Wrap" Margin="7,4,7,7"/>
+                                <Button Content="恢复默认顺序" Command="{Binding ResetSourceOrderCommand, Mode=OneWay}"
+                                        Style="{DynamicResource FlyoutMenuButtonStyle}" AutomationProperties.Name="恢复默认会话顺序"/>
+                                <Button Content="恢复浏览器自动隐藏规则" Command="{Binding RestoreBrowserAutoHideCommand, Mode=OneWay}"
+                                        Visibility="{Binding BrowserAutoHideRestoreVisibility, Mode=OneWay}"
+                                        Style="{DynamicResource FlyoutMenuButtonStyle}" AutomationProperties.Name="恢复浏览器自动隐藏规则"/>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
                     <Button x:Name="HiddenSourcesButton" Style="{DynamicResource QuietButtonStyle}" MinWidth="0" MinHeight="30" Padding="8,4"
                             Content="{Binding HiddenSourcesLabel, Mode=OneWay}" Visibility="{Binding HiddenSourcesVisibility, Mode=OneWay}"
                             ToolTip="查看被隐藏的会话" AutomationProperties.Name="查看隐藏会话" Click="ToggleHiddenSourcesPopup"/>
@@ -46,7 +49,7 @@
                                 <TextBlock Text="隐藏的会话" FontWeight="Bold" VerticalAlignment="Center"/>
                                 <Button Grid.Column="1" Content="全部恢复显示" Command="{Binding RestoreAllHiddenCommand, Mode=OneWay}"
                                         Style="{DynamicResource QuietButtonStyle}" MinHeight="28" MinWidth="0" Padding="7,3"
-                                        ToolTip="只取消手动隐藏；浏览器自动隐藏仍由增强状态决定"/>
+                                        ToolTip="显示所有手动隐藏和浏览器自动隐藏的会话"/>
                             </Grid>
                             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                 <ItemsControl ItemsSource="{Binding HiddenSources, Mode=OneWay}">
@@ -60,8 +63,8 @@
                                                         <Run Text="{Binding SourceType, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Reason, Mode=OneWay}"/>
                                                     </TextBlock>
                                                 </StackPanel>
-                                                <Button Grid.Column="1" Content="恢复显示" Command="{Binding RestoreCommand, Mode=OneWay}"
-                                                        IsEnabled="{Binding CanRestore, Mode=OneWay}" Margin="10,0,0,0"
+                                                <Button Grid.Column="1" Content="{Binding RestoreLabel, Mode=OneWay}" Command="{Binding RestoreCommand, Mode=OneWay}"
+                                                        Margin="10,0,0,0"
                                                         Style="{DynamicResource QuietButtonStyle}" MinHeight="28" MinWidth="0" Padding="7,3"/>
                                             </Grid>
                                         </DataTemplate>
@@ -74,24 +77,30 @@
             </Grid>
         </Border>
 
-        <ListBox x:Name="SourcesItemsControl" Grid.Row="1" ItemsSource="{Binding Sources, Mode=OneWay}"
-                 Background="Transparent" BorderThickness="0"
-                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                 ScrollViewer.VerticalScrollBarVisibility="Auto"
-                 ScrollViewer.CanContentScroll="True"
-                 ScrollViewer.IsDeferredScrollingEnabled="False"
-                 ScrollViewer.PanningMode="VerticalOnly"
-                 VirtualizingPanel.IsVirtualizing="True"
-                 VirtualizingPanel.VirtualizationMode="Recycling"
-                 VirtualizingPanel.ScrollUnit="Pixel"
-                 AllowDrop="True" DragOver="SourcesDragOver" Drop="SourcesDrop"
-                 KeyboardNavigation.TabNavigation="Continue">
-            <ListBox.ItemsPanel>
-                <ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate>
-            </ListBox.ItemsPanel>
-            <ListBox.ItemTemplate>
-                <DataTemplate><controls:AudioSourceCard/></DataTemplate>
-            </ListBox.ItemTemplate>
-        </ListBox>
+        <Grid Grid.Row="1">
+            <ScrollViewer x:Name="SourceScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                          CanContentScroll="True" IsDeferredScrollingEnabled="False" PanningMode="VerticalOnly"
+                          Focusable="False">
+                <ItemsControl x:Name="SourcesItemsControl" ItemsSource="{Binding Sources, Mode=OneWay}"
+                              Background="{x:Null}" Focusable="False"
+                              VirtualizingPanel.IsVirtualizing="True"
+                              VirtualizingPanel.VirtualizationMode="Recycling"
+                              VirtualizingPanel.ScrollUnit="Pixel"
+                              AllowDrop="True" DragOver="SourcesDragOver" DragLeave="SourcesDragLeave" Drop="SourcesDrop"
+                              KeyboardNavigation.TabNavigation="Continue">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><VirtualizingStackPanel IsItemsHost="True"/></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate><controls:AudioSourceCard/></DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+            <Border x:Name="InsertionLine" Height="2" Background="{DynamicResource PrimaryBrush}"
+                    CornerRadius="1" VerticalAlignment="Top" Margin="8,0,18,0" Visibility="Collapsed"
+                    IsHitTestVisible="False" Panel.ZIndex="10">
+                <Border.RenderTransform><TranslateTransform x:Name="InsertionLineTransform"/></Border.RenderTransform>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

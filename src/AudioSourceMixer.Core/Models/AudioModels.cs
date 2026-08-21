@@ -114,7 +114,11 @@ public sealed record AudioSourceSnapshot(
     AudioRoutingState RoutingState = AudioRoutingState.SystemDefault,
     string? RoutingError = null,
     DateTimeOffset? ProcessStartTimeUtc = null,
-    AudioEffectSettings? Effects = null);
+    AudioEffectSettings? Effects = null,
+    string? IconPath = null,
+    bool FollowSystemDefault = false,
+    string ResolvedOutputDeviceId = "",
+    string? ResolvedOutputDeviceName = null);
 
 public readonly record struct AudioSourceLevel(
     AudioSourceId Id,
@@ -173,7 +177,10 @@ public sealed record BrowserTabSource(
     string? CorrelationId = null,
     string? BrowserDeviceId = null,
     string? EffectiveBrowserSinkId = null,
-    AudioEffectSettings? Effects = null);
+    AudioEffectSettings? Effects = null,
+    bool FollowSystemDefault = false,
+    string ResolvedOutputDeviceId = "",
+    string? ResolvedOutputDeviceName = null);
 
 public sealed record AudioSessionIdentity(
     string DeviceId,

@@ -125,7 +125,7 @@ internal static class UiSmokeVerifier
 
         foreach (var item in window.SourceItems.Items.Cast<object>())
         {
-            if (window.SourceItems is System.Windows.Controls.ListBox list) list.ScrollIntoView(item);
+            (window.SourceItems.ItemContainerGenerator.ContainerFromItem(item) as FrameworkElement)?.BringIntoView();
             await window.Dispatcher.InvokeAsync(() => window.SourceItems.UpdateLayout(), DispatcherPriority.Render, cancellationToken);
             var itemContainer = window.SourceItems.ItemContainerGenerator.ContainerFromItem(item)
                                 ?? throw new InvalidOperationException("ItemsControl did not generate every diagnostic source container.");
@@ -133,11 +133,8 @@ internal static class UiSmokeVerifier
                 throw new InvalidOperationException("A diagnostic source DataTemplate was not instantiated.");
         }
 
-        if (window.SourceItems is System.Windows.Controls.ListBox virtualizedList)
-        {
-            virtualizedList.ScrollIntoView(diagnosticSource);
-            await window.Dispatcher.InvokeAsync(() => virtualizedList.UpdateLayout(), DispatcherPriority.Render, cancellationToken);
-        }
+        (window.SourceItems.ItemContainerGenerator.ContainerFromItem(diagnosticSource) as FrameworkElement)?.BringIntoView();
+        await window.Dispatcher.InvokeAsync(() => window.SourceItems.UpdateLayout(), DispatcherPriority.Render, cancellationToken);
 
         var container = window.SourceItems.ItemContainerGenerator.ContainerFromItem(diagnosticSource)
                         ?? throw new InvalidOperationException("ItemsControl did not generate a container for the diagnostic audio source.");

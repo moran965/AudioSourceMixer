@@ -4,7 +4,7 @@
              xmlns:controls="clr-namespace:AudioSourceMixer.Desktop.Controls"
              Visibility="{Binding EqualizerVisibility, Mode=OneWay}"
              Focusable="False">
-    <Expander x:Name="EqualizerExpander" IsExpanded="{Binding IsEqualizerExpanded, Mode=TwoWay}"
+    <Expander x:Name="EqualizerExpander" IsExpanded="{Binding IsEqualizerExpanded, Mode=TwoWay}" Expanded="EqualizerExpanded"
               AutomationProperties.Name="音效均衡器">
         <Expander.Header>
             <Grid Background="Transparent" Margin="0,4">

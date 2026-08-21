@@ -126,7 +126,8 @@ async function startTabCore(browser, tab) {
       title: tab.title || '未命名标签页', origin: sanitizeOrigin(tab.url),
       volume: 1, balance: 0, muted: false,
       equalizer: createEqualizerPreset('off'),
-      outputDeviceId: '', outputDeviceName: '', outputStatus: '系统默认',
+      outputDeviceId: '', outputDeviceName: '', followSystemDefault: false,
+      resolvedOutputDeviceId: '', resolvedOutputDeviceName: '', outputStatus: '系统默认',
       correlationId: '', commandGeneration: 0
     };
     const response = await chrome.runtime.sendMessage({ type: 'audio.start', streamId, ...metadata });
@@ -186,6 +187,9 @@ async function forwardLevel(message) {
     volume: state.volume, balance: state.balance, muted: state.muted, peak: message.peak,
     equalizer: state.equalizer || createEqualizerPreset('off'),
     outputDeviceId: state.outputDeviceId || '', outputDeviceName: state.outputDeviceName || '',
+    followSystemDefault: Boolean(state.followSystemDefault),
+    resolvedOutputDeviceId: state.resolvedOutputDeviceId || '',
+    resolvedOutputDeviceName: state.resolvedOutputDeviceName || '',
     outputStatus: state.outputStatus || '系统默认'
   });
 }
@@ -298,6 +302,9 @@ function createRegisterMessage(state) {
     volume: state.volume ?? 1, balance: state.balance ?? 0, muted: Boolean(state.muted), peak: 0,
     equalizer: state.equalizer || createEqualizerPreset('off'),
     outputDeviceId: state.outputDeviceId || '', outputDeviceName: state.outputDeviceName || '',
+    followSystemDefault: Boolean(state.followSystemDefault),
+    resolvedOutputDeviceId: state.resolvedOutputDeviceId || '',
+    resolvedOutputDeviceName: state.resolvedOutputDeviceName || '',
     outputStatus: state.outputStatus || '系统默认', effectiveSinkId: state.effectiveSinkId || '',
     effectiveSinkLabel: state.effectiveSinkLabel || '', routingState: state.routingState || 'Default',
     generation: state.commandGeneration || state.generation || 0, correlationId: state.correlationId || ''
@@ -349,10 +356,11 @@ async function handleNativeMessage(message) {
       await publishOutputState(message.tabId, state, 'stale-command');
       return;
     }
-    let mapping = audio.forceAuthorization ? null : await resolveOutputMapping(browser, audio.outputDeviceId, audio.outputDeviceName);
+    const target = outputTarget(audio);
+    let mapping = audio.forceAuthorization ? null : await resolveOutputMapping(browser, target.id, target.name);
     const desired = { ...state, ...audio, browser, tabId: message.tabId, commandGeneration: audio.generation };
     await setTabState(browser, message.tabId, desired);
-    if (audio.outputDeviceId && !mapping) {
+    if (target.id && !mapping) {
       await requestOutputAuthorization(browser, message.tabId, audio);
       const pending = pendingAuthorizationState(desired);
       await setTabState(browser, message.tabId, pending);
@@ -378,7 +386,13 @@ async function handleNativeMessage(message) {
 }
 
 function shouldOpenAuthorization(audio) {
-  return audio.forceAuthorization || audio.requestSource === 'User';
+  return audio.forceAuthorization || audio.requestSource === 'User' || audio.followSystemDefault;
+}
+
+function outputTarget(state) {
+  return state.followSystemDefault
+    ? { id: state.resolvedOutputDeviceId || '', name: state.resolvedOutputDeviceName || '' }
+    : { id: state.outputDeviceId || '', name: state.outputDeviceName || '' };
 }
 
 async function resolveOutputMapping(browser, windowsEndpointId, windowsEndpointName) {
@@ -394,28 +408,30 @@ async function loadOutputMappingStore() {
 }
 
 async function reconcileMappingResult(state) {
-  if (!state.outputDeviceId) return;
+  const target = outputTarget(state);
+  if (!target.id) return;
   let mappings = await loadOutputMappingStore();
   if (state.mappingRebound) {
     mappings = saveOutputMapping(mappings, {
       ...state.mappingRebound,
       browser: state.browser,
-      windowsEndpointId: state.outputDeviceId,
-      windowsEndpointName: state.outputDeviceName || state.outputDeviceId,
+      windowsEndpointId: target.id,
+      windowsEndpointName: target.name || target.id,
       updatedAt: new Date().toISOString()
     });
     await chrome.storage.local.set({ [OUTPUT_MAPPINGS_KEY]: mappings });
   } else if (state.mappingStale) {
-    mappings = markOutputMappingStale(mappings, state.browser, state.outputDeviceId);
+    mappings = markOutputMappingStale(mappings, state.browser, target.id);
     await chrome.storage.local.set({ [OUTPUT_MAPPINGS_KEY]: mappings });
   }
 }
 
 async function requestOutputAuthorization(browser, tabId, audio) {
+  const target = outputTarget(audio);
   const request = {
     browser, tabId, correlationId: audio.correlationId, generation: audio.generation,
-    windowsEndpointId: audio.outputDeviceId,
-    windowsEndpointName: audio.outputDeviceName || audio.outputDeviceId,
+    windowsEndpointId: target.id,
+    windowsEndpointName: target.name || target.id,
     outputDevices: audio.outputDevices,
     requestedAt: new Date().toISOString()
   };
@@ -443,17 +459,21 @@ async function revalidateActiveOutputs(message = {}) {
   for (const state of Object.values(states)) {
     if (state.state !== 'active') continue;
     if (message.browser && state.browser !== message.browser) continue;
-    if (message.windowsEndpointId && state.outputDeviceId !== message.windowsEndpointId) continue;
+    if (message.windowsEndpointId && outputTarget(state).id !== message.windowsEndpointId) continue;
     try {
       await withSourceLock(sourceId(state.browser, state.tabId), async () => {
         const latest = await getTabState(state.browser, state.tabId);
         if (!latest || latest.state !== 'active') return;
-        const mapping = await resolveOutputMapping(latest.browser, latest.outputDeviceId, latest.outputDeviceName);
+        const target = outputTarget(latest);
+        const mapping = await resolveOutputMapping(latest.browser, target.id, target.name);
         const response = await chrome.runtime.sendMessage({
           type: 'audio.update', browser: latest.browser, tabId: latest.tabId,
           volume: latest.volume, balance: latest.balance, muted: latest.muted,
           equalizer: latest.equalizer || createEqualizerPreset('off'),
           outputDeviceId: latest.outputDeviceId || '', outputDeviceName: latest.outputDeviceName || '',
+          followSystemDefault: Boolean(latest.followSystemDefault),
+          resolvedOutputDeviceId: latest.resolvedOutputDeviceId || '',
+          resolvedOutputDeviceName: latest.resolvedOutputDeviceName || '',
           correlationId: latest.correlationId || crypto.randomUUID(), generation: latest.commandGeneration || 0,
           browserOutputDeviceId: mapping?.deviceId || '', browserOutputDeviceLabel: mapping?.browserLabel || '',
           browserGroupId: mapping?.browserGroupId || ''
@@ -475,13 +495,16 @@ async function publishOutputState(tabId, state, mappingMatchKind) {
     sourceId: sourceId(state.browser, tabId),
     equalizer: state.equalizer || createEqualizerPreset('off'),
     outputDeviceId: state.outputDeviceId || '', outputDeviceName: state.outputDeviceName || '',
+    followSystemDefault: Boolean(state.followSystemDefault),
+    resolvedOutputDeviceId: state.resolvedOutputDeviceId || '',
+    resolvedOutputDeviceName: state.resolvedOutputDeviceName || '',
     outputStatus: state.outputStatus || '', correlationId: state.correlationId || '',
     generation: state.commandGeneration || state.generation || 0,
     browserDeviceId: state.browserDeviceId || '', browserDeviceLabel: state.browserDeviceLabel || '',
     browserGroupId: state.browserGroupId || '', effectiveSinkId: state.effectiveSinkId || '',
     effectiveSinkLabel: state.effectiveSinkLabel || '', routingState: state.routingState || 'Failed',
     setSinkDurationMs: state.setSinkDurationMs ?? 0, setSinkIdSupported: Boolean(state.setSinkIdSupported),
-    error: state.error || (mappingMatchKind === 'none' && state.outputDeviceId ? 'Browser authorization is required.' : null)
+    error: state.error || (mappingMatchKind === 'none' && outputTarget(state).id ? 'Browser authorization is required.' : null)
   });
 }
 

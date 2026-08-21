@@ -20,8 +20,8 @@ internal static class UiScreenshotCapture
         outputDirectory = Path.GetFullPath(outputDirectory);
         Directory.CreateDirectory(outputDirectory);
         var files = new List<string>();
-        window.Width = 1180;
-        window.Height = 760;
+        window.Width = 1240;
+        window.Height = 820;
         window.SelectMixerPage();
 
         var ordinary = viewModel.Sources.First(source => source.Snapshot.Kind == AudioSourceKind.WindowsSession);
@@ -44,12 +44,13 @@ internal static class UiScreenshotCapture
 
         foreach (var (width, height, scale, fileName) in new[]
                  {
-                     (1180d, 760d, 1d, "05-settings-1180x760-100dpi.png"),
+                     (1240d, 820d, 1d, "05-settings-1240x820-100dpi.png"),
                      (880d, 600d, 1d, "06-settings-880x600-100dpi.png"),
                      (1600d, 900d, 1d, "07-settings-1600x900-100dpi.png"),
-                     (1180d, 760d, 1.25d, "08-settings-1180x760-125dpi.png"),
-                     (1180d, 760d, 1.5d, "09-settings-1180x760-150dpi.png"),
-                     (1180d, 760d, 2d, "10-settings-1180x760-200dpi.png")
+                     (1920d, 1080d, 1d, "08-settings-1920x1080-100dpi.png"),
+                     (1240d, 820d, 1.25d, "09-settings-1240x820-125dpi.png"),
+                     (1240d, 820d, 1.5d, "10-settings-1240x820-150dpi.png"),
+                     (1240d, 820d, 2d, "11-settings-1240x820-200dpi.png")
                  })
         {
             window.Width = width;
@@ -63,13 +64,14 @@ internal static class UiScreenshotCapture
         window.Height = 600;
         window.SelectMixerPage();
         await ShowSourceAsync(window, browser, cancellationToken);
-        files.Add(Save(window, outputDirectory, "11-minimum-window.png"));
+        files.Add(Save(window, outputDirectory, "12-minimum-window.png"));
         return files;
     }
 
     private static async Task ShowSourceAsync(MainWindow window, AudioSourceViewModel source, CancellationToken cancellationToken)
     {
-        if (window.SourceItems is System.Windows.Controls.ListBox list) list.ScrollIntoView(source);
+        if (window.SourceItems.ItemContainerGenerator.ContainerFromItem(source) is FrameworkElement container)
+            container.BringIntoView();
         await SettleAsync(window, cancellationToken);
     }
 

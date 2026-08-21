@@ -33,6 +33,9 @@ export function validateAudioCommand(message) {
     muted: Boolean(message.muted),
     outputDeviceId: typeof message.outputDeviceId === 'string' ? message.outputDeviceId : '',
     outputDeviceName: typeof message.outputDeviceName === 'string' ? message.outputDeviceName : '',
+    followSystemDefault: Boolean(message.followSystemDefault),
+    resolvedOutputDeviceId: typeof message.resolvedOutputDeviceId === 'string' ? message.resolvedOutputDeviceId : '',
+    resolvedOutputDeviceName: typeof message.resolvedOutputDeviceName === 'string' ? message.resolvedOutputDeviceName : '',
     outputDevices: Array.isArray(message.outputDevices) ? message.outputDevices.filter((device) =>
       device && typeof device.endpointId === 'string' && typeof device.friendlyName === 'string') : [],
     correlationId: typeof message.correlationId === 'string' && message.correlationId

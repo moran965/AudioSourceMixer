@@ -1,5 +1,8 @@
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Windows.Automation;
+using System.Windows.Forms;
 using Microsoft.Win32;
 
 namespace AudioSourceMixer.Desktop.Services;
@@ -19,13 +22,141 @@ internal interface IBrowserOnboardingService
     void CopyExtensionDirectory();
 }
 
+internal interface IBrowserProcessLauncher
+{
+    void Launch(string executablePath, string address);
+}
+
+internal sealed class BrowserProcessLauncher : IBrowserProcessLauncher
+{
+    public void Launch(string executablePath, string address)
+    {
+        var start = new ProcessStartInfo(executablePath)
+        {
+            UseShellExecute = false
+        };
+        start.ArgumentList.Add(address);
+        try
+        {
+            using var startedProcess = Process.Start(start);
+            if (startedProcess is null)
+                throw new InvalidOperationException($"浏览器进程未启动：{executablePath}");
+            EnsureInternalPageOpened(executablePath, address, startedProcess);
+        }
+        catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or InvalidOperationException
+                                          or ElementNotAvailableException)
+        {
+            throw new InvalidOperationException($"无法启动浏览器并打开 {address}。可复制该地址到对应浏览器的地址栏。", exception);
+        }
+    }
+
+    private static void EnsureInternalPageOpened(string executablePath, string address, Process startedProcess)
+    {
+        var processName = Path.GetFileNameWithoutExtension(executablePath);
+        var deadline = DateTime.UtcNow.AddSeconds(8);
+        nint windowHandle = 0;
+        ValuePattern? valuePattern = null;
+        AutomationElement? addressBar = null;
+        while (DateTime.UtcNow < deadline)
+        {
+            windowHandle = FindBrowserWindow(processName, startedProcess);
+            if (windowHandle != 0)
+            {
+                var window = AutomationElement.FromHandle(windowHandle);
+                addressBar = window.FindFirst(TreeScope.Descendants,
+                    new PropertyCondition(AutomationElement.ClassNameProperty, "OmniboxViewViews"));
+                if (addressBar?.TryGetCurrentPattern(ValuePattern.Pattern, out var pattern) == true)
+                {
+                    valuePattern = (ValuePattern)pattern;
+                    if (AddressMatches(valuePattern.Current.Value, address)) return;
+                    break;
+                }
+            }
+            Thread.Sleep(100);
+        }
+
+        if (windowHandle == 0 || addressBar is null || valuePattern is null)
+            throw new InvalidOperationException("浏览器窗口已启动，但没有找到可验证的地址栏。");
+
+        // Chromium 151 may discard chrome:// or edge:// arguments during a cold start. The explicit
+        // user action authorizes bringing that browser's real omnibox forward and completing navigation.
+        SetForegroundWindow(windowHandle);
+        addressBar.SetFocus();
+        valuePattern.SetValue(address);
+        SendKeys.SendWait("{ENTER}");
+        // SetValue changes the omnibox text before Chromium has accepted the navigation. Wait for
+        // the browser to either commit the internal page or replace the text with its fallback page.
+        Thread.Sleep(500);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (AddressMatches(valuePattern.Current.Value, address)) return;
+            Thread.Sleep(100);
+        }
+        throw new InvalidOperationException($"浏览器已启动，但管理页未能打开：{address}");
+    }
+
+    private static nint FindBrowserWindow(string processName, Process startedProcess)
+    {
+        var foreground = GetForegroundWindow();
+        if (foreground != 0 && WindowBelongsToProcess(foreground, processName)) return foreground;
+        try
+        {
+            startedProcess.Refresh();
+            if (startedProcess.MainWindowHandle != 0) return startedProcess.MainWindowHandle;
+        }
+        catch (InvalidOperationException) { }
+        foreach (var process in Process.GetProcessesByName(processName))
+        {
+            using (process)
+            {
+                if (process.MainWindowHandle != 0) return process.MainWindowHandle;
+            }
+        }
+        return 0;
+    }
+
+    private static bool WindowBelongsToProcess(nint windowHandle, string processName)
+    {
+        _ = GetWindowThreadProcessId(windowHandle, out var processId);
+        try
+        {
+            using var process = Process.GetProcessById((int)processId);
+            return process.ProcessName.Equals(processName, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (ArgumentException) { return false; }
+    }
+
+    private static bool AddressMatches(string? actual, string expected)
+        => actual?.TrimEnd('/').Equals(expected.TrimEnd('/'), StringComparison.OrdinalIgnoreCase) == true;
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetForegroundWindow(nint windowHandle);
+
+    [DllImport("user32.dll")]
+    private static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(nint windowHandle, out uint processId);
+}
+
 internal sealed class BrowserOnboardingService : IBrowserOnboardingService
 {
     private const string HostName = "com.audiosourcemixer.bridge";
+    private readonly IBrowserProcessLauncher _processLauncher;
+    private readonly Func<string, BrowserInstallation>? _detector;
+
+    internal BrowserOnboardingService(IBrowserProcessLauncher? processLauncher = null,
+        Func<string, BrowserInstallation>? detector = null)
+    {
+        _processLauncher = processLauncher ?? new BrowserProcessLauncher();
+        _detector = detector;
+    }
     public string ExtensionDirectory => Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "BrowserExtension"));
 
     public BrowserInstallation Detect(string browser)
     {
+        if (_detector is not null) return _detector(browser);
         var normalized = browser.ToLowerInvariant();
         var displayName = normalized == "edge" ? "Microsoft Edge" : normalized == "chrome" ? "Google Chrome"
             : throw new ArgumentOutOfRangeException(nameof(browser));
@@ -57,12 +188,15 @@ internal sealed class BrowserOnboardingService : IBrowserOnboardingService
     public void OpenExtensionsPage(string browser)
     {
         var installation = Detect(browser);
-        if (!installation.IsInstalled) throw new FileNotFoundException($"未检测到 {installation.DisplayName}。 ");
-        var url = installation.StoreUri?.AbsoluteUri ?? (installation.Id == "edge" ? "edge://extensions" : "chrome://extensions");
-        var start = new ProcessStartInfo(installation.ExecutablePath!) { UseShellExecute = true };
-        start.ArgumentList.Add("--new-tab");
-        start.ArgumentList.Add(url);
-        Process.Start(start);
+        var address = installation.Id switch
+        {
+            "edge" => "edge://extensions/",
+            "chrome" => "chrome://extensions/",
+            _ => throw new ArgumentOutOfRangeException(nameof(browser))
+        };
+        if (!installation.IsInstalled)
+            throw new FileNotFoundException($"未检测到 {installation.DisplayName}。请安装后重试，或在对应浏览器地址栏输入 {address}。");
+        _processLauncher.Launch(installation.ExecutablePath!, address);
     }
 
     public void OpenExtensionDirectory()

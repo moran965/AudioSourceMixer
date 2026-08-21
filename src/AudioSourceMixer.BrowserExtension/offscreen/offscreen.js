@@ -76,6 +76,8 @@ async function startGraph(message) {
       stream, context, source, equalizerFilters, headroom, gain, panner, analyser,
       levelBuffer: new Float32Array(analyser.fftSize), smoothedPeak: 0,
       volume: 1, balance: 0, muted: false, generation: Number(message.generation) || 0,
+      selectedOutputDeviceId: '', selectedOutputDeviceName: '', followSystemDefault: false,
+      resolvedOutputDeviceId: '', resolvedOutputDeviceName: '',
       requestedOutputDeviceId: '', requestedOutputDeviceName: '',
       browserOutputDeviceId: '', browserOutputDeviceLabel: '', browserGroupId: '',
       effectiveSinkId: '', effectiveSinkLabel: '', routingState: 'Default',
@@ -139,11 +141,26 @@ async function enqueueOutputDevice(graph, message) {
 }
 
 async function applyOutputDevice(graph, message) {
-  graph.requestedOutputDeviceId = message.outputDeviceId ?? graph.requestedOutputDeviceId ?? '';
-  graph.requestedOutputDeviceName = message.outputDeviceName ?? graph.requestedOutputDeviceName ?? '';
-  graph.browserOutputDeviceId = message.browserOutputDeviceId ?? graph.browserOutputDeviceId ?? '';
-  graph.browserOutputDeviceLabel = message.browserOutputDeviceLabel ?? graph.browserOutputDeviceLabel ?? '';
-  graph.browserGroupId = message.browserGroupId ?? graph.browserGroupId ?? '';
+  const previousRequestedOutputDeviceId = graph.requestedOutputDeviceId ?? '';
+  graph.selectedOutputDeviceId = message.outputDeviceId ?? graph.selectedOutputDeviceId ?? '';
+  graph.selectedOutputDeviceName = message.outputDeviceName ?? graph.selectedOutputDeviceName ?? '';
+  graph.followSystemDefault = message.followSystemDefault ?? graph.followSystemDefault ?? false;
+  graph.resolvedOutputDeviceId = message.resolvedOutputDeviceId ?? graph.resolvedOutputDeviceId ?? '';
+  graph.resolvedOutputDeviceName = message.resolvedOutputDeviceName ?? graph.resolvedOutputDeviceName ?? '';
+  graph.requestedOutputDeviceId = graph.followSystemDefault
+    ? graph.resolvedOutputDeviceId : graph.selectedOutputDeviceId;
+  graph.requestedOutputDeviceName = graph.followSystemDefault
+    ? graph.resolvedOutputDeviceName : graph.selectedOutputDeviceName;
+  const requestedEndpointChanged = previousRequestedOutputDeviceId !== graph.requestedOutputDeviceId;
+  graph.browserOutputDeviceId = Object.hasOwn(message, 'browserOutputDeviceId')
+    ? (message.browserOutputDeviceId ?? '')
+    : (requestedEndpointChanged ? '' : (graph.browserOutputDeviceId ?? ''));
+  graph.browserOutputDeviceLabel = Object.hasOwn(message, 'browserOutputDeviceLabel')
+    ? (message.browserOutputDeviceLabel ?? '')
+    : (requestedEndpointChanged ? '' : (graph.browserOutputDeviceLabel ?? ''));
+  graph.browserGroupId = Object.hasOwn(message, 'browserGroupId')
+    ? (message.browserGroupId ?? '')
+    : (requestedEndpointChanged ? '' : (graph.browserGroupId ?? ''));
   graph.correlationId = message.correlationId || graph.correlationId || crypto.randomUUID();
   graph.setSinkIdSupported = typeof graph.context.setSinkId === 'function';
   graph.error = null;
@@ -160,7 +177,13 @@ async function applyOutputDevice(graph, message) {
     return outputResult(graph);
   }
 
-  if (!graph.requestedOutputDeviceId) return setAndVerifySink(graph, '', '系统默认', 'Default');
+  if (!graph.requestedOutputDeviceId) {
+    if (!graph.followSystemDefault) return setAndVerifySink(graph, '', '系统默认', 'Default');
+    graph.routingState = 'PendingAuthorization';
+    graph.outputStatus = '无法解析当前 Windows 系统默认物理设备。';
+    graph.error = 'FollowSystemDefault requires a resolved physical Windows endpoint.';
+    return outputResult(graph);
+  }
 
   if (!graph.browserOutputDeviceId) {
     graph.routingState = 'PendingAuthorization';
@@ -234,8 +257,11 @@ function outputResult(graph) {
     tabId: graph.tabId,
     generation: graph.generation,
     correlationId: graph.correlationId,
-    outputDeviceId: graph.requestedOutputDeviceId,
-    outputDeviceName: graph.requestedOutputDeviceName,
+    outputDeviceId: graph.selectedOutputDeviceId,
+    outputDeviceName: graph.selectedOutputDeviceName,
+    followSystemDefault: graph.followSystemDefault,
+    resolvedOutputDeviceId: graph.resolvedOutputDeviceId,
+    resolvedOutputDeviceName: graph.resolvedOutputDeviceName,
     browserDeviceId: graph.browserOutputDeviceId,
     browserDeviceLabel: graph.browserOutputDeviceLabel,
     browserGroupId: graph.browserGroupId,
@@ -305,8 +331,11 @@ navigator.mediaDevices.addEventListener('devicechange', () => {
           browser: graph.browser,
           tabId: graph.tabId,
           generation: graph.generation,
-          outputDeviceId: graph.requestedOutputDeviceId,
-          outputDeviceName: graph.requestedOutputDeviceName,
+          outputDeviceId: graph.selectedOutputDeviceId,
+          outputDeviceName: graph.selectedOutputDeviceName,
+          followSystemDefault: graph.followSystemDefault,
+          resolvedOutputDeviceId: graph.resolvedOutputDeviceId,
+          resolvedOutputDeviceName: graph.resolvedOutputDeviceName,
           browserOutputDeviceId: graph.browserOutputDeviceId,
           browserOutputDeviceLabel: graph.browserOutputDeviceLabel,
           browserGroupId: graph.browserGroupId,

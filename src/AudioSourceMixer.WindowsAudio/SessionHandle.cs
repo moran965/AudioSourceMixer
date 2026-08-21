@@ -45,7 +45,8 @@ internal sealed class SessionHandle : IDisposable
         ComHelpers.ThrowIfFailed(_control.GetState(out var state), "GetState");
         var displayName = ReadString(_control.GetDisplayName, "GetDisplayName");
         var processName = ResolveProcessName(Identity.ProcessId);
-        if (string.IsNullOrWhiteSpace(displayName)) displayName = processName;
+        var presentation = SessionPresentationResolver.Resolve(displayName, Identity.ExecutablePath, Identity.ProcessId, processName);
+        var iconPath = TryReadString(_control.GetIconPath);
 
         var volume = 1f;
         var muted = false;
@@ -70,8 +71,8 @@ internal sealed class SessionHandle : IDisposable
         return new AudioSourceSnapshot(
             Id,
             AudioSourceKind.WindowsSession,
-            displayName,
-            $"Windows 会话 · {_endpointName} · PID {Identity.ProcessId}",
+            presentation.DisplayName,
+            Identity.ProcessId == 0 ? $"当前端点：{_endpointName}" : $"进程：{presentation.ProcessFileName} · PID {Identity.ProcessId} · 当前端点：{_endpointName}",
             Identity.ProcessId,
             Identity.ExecutablePath,
             Identity.DeviceId,
@@ -93,7 +94,8 @@ internal sealed class SessionHandle : IDisposable
             DateTimeOffset.UtcNow,
             OutputDeviceId: Identity.DeviceId,
             OutputDeviceName: _endpointName,
-            ProcessStartTimeUtc: Identity.ProcessStartTimeUtc);
+            ProcessStartTimeUtc: Identity.ProcessStartTimeUtc,
+            IconPath: string.IsNullOrWhiteSpace(iconPath) ? Identity.ExecutablePath : iconPath);
     }
 
     public AudioRollbackEntry CaptureOriginal()
@@ -210,6 +212,12 @@ internal sealed class SessionHandle : IDisposable
     {
         var result = getter(out var value);
         return ComHelpers.ReadAndFreeString(result, value, operation);
+    }
+
+    private static string? TryReadString(StringGetter getter)
+    {
+        try { return ReadString(getter, "GetIconPath"); }
+        catch { return null; }
     }
 
     private static (string? Path, DateTimeOffset? StartTime) ResolveProcess(uint processId)

@@ -6,6 +6,8 @@ using AudioSourceMixer.Core.Browser;
 using AudioSourceMixer.Core.Infrastructure;
 using AudioSourceMixer.Core.Models;
 using AudioSourceMixer.Core.Persistence;
+using AudioSourceMixer.Desktop.Services;
+using System.Windows.Media;
 
 namespace AudioSourceMixer.Desktop.ViewModels;
 
@@ -20,11 +22,12 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     private readonly Func<AudioSourceProfile, CancellationToken, Task>? _saveProfile;
     private readonly Func<AudioSourceViewModel, CancellationToken, Task>? _restoreProfile;
     private readonly Func<AudioSourceViewModel, OutputDeviceInfo, Task>? _routeOutputDevice;
-    private readonly Action<AudioSourceViewModel>? _userModified;
     private readonly Action<AudioSourceViewModel>? _hideSource;
     private readonly Action<AudioSourceViewModel>? _moveToTop;
     private readonly Action<AudioSourceViewModel>? _moveUp;
     private readonly Action<AudioSourceViewModel>? _moveDown;
+    private readonly Action<AudioSourceViewModel>? _moveToBottom;
+    private readonly Func<OutputDeviceInfo?> _systemDefaultOutputDevice;
     private readonly RollingFileLogger _logger;
     private readonly AsyncDebouncer _volumeDebouncer = new(TimeSpan.FromMilliseconds(60));
     private readonly AsyncDebouncer _balanceDebouncer = new(TimeSpan.FromMilliseconds(60));
@@ -42,7 +45,8 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     private DateTimeOffset _lastUserChange;
     private AudioEffectSettings _effects;
     private bool _equalizerExpanded;
-    private bool _manualDragEnabled;
+    private ImageSource _iconSource;
+    private string? _iconCacheKey;
 
     public AudioSourceViewModel(AudioSourceSnapshot snapshot, IAudioSourceController audio, BrowserBridgeServer bridge,
         IAudioProfileStore profiles, Func<ApplicationSettings> settings, RollingFileLogger logger,
@@ -51,11 +55,12 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         Func<AudioSourceProfile, CancellationToken, Task>? saveProfile = null,
         Func<AudioSourceViewModel, CancellationToken, Task>? restoreProfile = null,
         Func<AudioSourceViewModel, OutputDeviceInfo, Task>? routeOutputDevice = null,
-        Action<AudioSourceViewModel>? userModified = null,
         Action<AudioSourceViewModel>? hideSource = null,
         Action<AudioSourceViewModel>? moveToTop = null,
         Action<AudioSourceViewModel>? moveUp = null,
-        Action<AudioSourceViewModel>? moveDown = null)
+        Action<AudioSourceViewModel>? moveDown = null,
+        Action<AudioSourceViewModel>? moveToBottom = null,
+        Func<OutputDeviceInfo?>? systemDefaultOutputDevice = null)
     {
         _snapshot = snapshot;
         _audio = audio;
@@ -68,15 +73,17 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         _saveProfile = saveProfile;
         _restoreProfile = restoreProfile;
         _routeOutputDevice = routeOutputDevice;
-        _userModified = userModified;
         _hideSource = hideSource;
         _moveToTop = moveToTop;
         _moveUp = moveUp;
         _moveDown = moveDown;
+        _moveToBottom = moveToBottom;
+        _systemDefaultOutputDevice = systemDefaultOutputDevice ?? (() => OutputDevices.FirstOrDefault(device => device.IsDefaultMultimedia && !device.IsSystemDefault));
         _volumePercent = snapshot.Volume * 100;
         _balancePercent = snapshot.Balance * 100;
         _muted = snapshot.Muted;
         _effects = EqualizerCatalog.Normalize(snapshot.Effects);
+        _iconSource = ProcessIconProvider.Fallback(snapshot.Kind);
         _preferredOutputDeviceId = string.IsNullOrWhiteSpace(snapshot.RequestedOutputDeviceId) && snapshot.Kind != AudioSourceKind.WindowsSession
             ? snapshot.OutputDeviceId : snapshot.RequestedOutputDeviceId;
         _preferredOutputDeviceName = snapshot.RequestedOutputDeviceName ?? snapshot.OutputDeviceName;
@@ -93,6 +100,8 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         MoveToTopCommand = new RelayCommand(() => _moveToTop?.Invoke(this));
         MoveUpCommand = new RelayCommand(() => _moveUp?.Invoke(this));
         MoveDownCommand = new RelayCommand(() => _moveDown?.Invoke(this));
+        MoveToBottomCommand = new RelayCommand(() => _moveToBottom?.Invoke(this));
+        BeginIconLoad(snapshot);
     }
 
     public AudioSourceId Id => _snapshot.Id;
@@ -100,6 +109,7 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     public AudioApplicationInstanceKey ApplicationInstanceKey => AudioApplicationInstanceKey.For(_snapshot);
     public string DisplayName => _snapshot.DisplayName;
     public string SourceDescription => _snapshot.SourceDescription;
+    public ImageSource IconSource => _iconSource;
     public string? Limitation => _snapshot.Capabilities.Limitation;
     public bool SupportsBalance => _snapshot.Capabilities.SupportsStereoBalance;
     public bool SupportsExtendedGain => _snapshot.Capabilities.SupportsExtendedGain;
@@ -109,7 +119,6 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         ? "浏览器增强" : "Windows 应用";
     public double VolumeMaximum => SupportsExtendedGain ? 200 : 100;
     public double PeakPercent => Math.Clamp(_snapshot.Peak, 0, 1) * 100;
-    public bool ManualDragEnabled => _manualDragEnabled;
     public Visibility StopVisibility => _snapshot.Kind == AudioSourceKind.WindowsSession ? Visibility.Collapsed : Visibility.Visible;
     public Visibility EnhancedStatusVisibility => _snapshot.Kind == AudioSourceKind.WindowsSession ? Visibility.Collapsed : Visibility.Visible;
     public Visibility ReauthorizeOutputVisibility => _snapshot.Kind != AudioSourceKind.WindowsSession &&
@@ -120,9 +129,13 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     public string OutputStatus => SupportsOutputRouting
         ? _snapshot.RoutingState switch
         {
-            AudioRoutingState.PendingAuthorization => $"等待浏览器授权：{_preferredOutputDeviceName ?? _preferredOutputDeviceId}",
+            AudioRoutingState.PendingAuthorization => _snapshot.FollowSystemDefault
+                ? $"需要授权当前系统默认设备：{_snapshot.ResolvedOutputDeviceName ?? "未知设备"}"
+                : $"等待浏览器授权：{_preferredOutputDeviceName ?? _preferredOutputDeviceId}",
             AudioRoutingState.PendingStreamRestart => $"策略已设置；暂停/恢复播放或重开应用：{_preferredOutputDeviceName ?? "系统默认"}",
             AudioRoutingState.Partial => $"部分音频流已迁移：{_snapshot.RoutingError}",
+            AudioRoutingState.Applied when _snapshot.FollowSystemDefault =>
+                $"选择：系统默认；当前解析：{_snapshot.ResolvedOutputDeviceName ?? "未知"}；实际生效：{_snapshot.EffectiveOutputDeviceName ?? "未知"}",
             AudioRoutingState.Applied => $"已生效：{_snapshot.EffectiveOutputDeviceName ?? _snapshot.EffectiveOutputDeviceId}",
             AudioRoutingState.SystemDefault => $"系统默认；实际：{_snapshot.EffectiveOutputDeviceName ?? _snapshot.OutputDeviceName ?? "未知"}",
             AudioRoutingState.Disconnected => $"目标设备已断开，策略保留：{_preferredOutputDeviceName ?? _preferredOutputDeviceId}",
@@ -209,6 +222,7 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     public ICommand MoveToTopCommand { get; }
     public ICommand MoveUpCommand { get; }
     public ICommand MoveDownCommand { get; }
+    public ICommand MoveToBottomCommand { get; }
     internal AudioSourceSnapshot Snapshot => _snapshot;
     internal AudioEffectSettings Effects => _effects;
 
@@ -219,10 +233,9 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         {
             if (_updating || _isRestoring() || !Set(ref _volumePercent, Math.Clamp(value, 0, VolumeMaximum))) return;
             _lastUserChange = DateTimeOffset.UtcNow;
-            NotifyUserModified();
             Raise(nameof(GainWarning));
             Raise(nameof(GainWarningVisibility));
-            _volumeDebouncer.Schedule(async token => { await ApplyAudioAsync(token); await SaveProfileAsync(token); });
+            ScheduleAudioChange(_volumeDebouncer);
         }
     }
 
@@ -233,15 +246,15 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         {
             if (_updating || _isRestoring() || !SupportsBalance || !Set(ref _balancePercent, Math.Clamp(value, -100, 100))) return;
             _lastUserChange = DateTimeOffset.UtcNow;
-            NotifyUserModified();
             Raise(nameof(BalanceText));
-            _balanceDebouncer.Schedule(async token => { await ApplyAudioAsync(token); await SaveProfileAsync(token); });
+            ScheduleAudioChange(_balanceDebouncer);
         }
     }
 
     public void Update(AudioSourceSnapshot snapshot)
     {
         _snapshot = snapshot;
+        BeginIconLoad(snapshot);
         _updating = true;
         try
         {
@@ -267,13 +280,6 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         if (Math.Abs(_snapshot.Peak - normalized) < 0.0001f) return;
         _snapshot = _snapshot with { Peak = normalized, ObservedAt = observedAt };
         Raise(nameof(PeakPercent));
-    }
-
-    internal void SetManualDragEnabled(bool enabled)
-    {
-        if (_manualDragEnabled == enabled) return;
-        _manualDragEnabled = enabled;
-        Raise(nameof(ManualDragEnabled));
     }
 
     public Task ApplyProfileAsync(AudioSourceProfile profile, bool applyRoute = true, bool applyOutputPreference = true)
@@ -326,7 +332,6 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         Set(ref _selectedOutputDevice, device, nameof(SelectedOutputDevice));
         Raise(nameof(SelectedOutputDeviceId));
         _lastUserChange = DateTimeOffset.UtcNow;
-        NotifyUserModified();
         Raise(nameof(OutputStatus));
         if (_snapshot.Kind == AudioSourceKind.WindowsSession && _routeOutputDevice is not null)
             return _routeOutputDevice(this, device);
@@ -349,9 +354,8 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
             }
             else
             {
-                await _bridge.SetAudioAsync(Id, (float)(_volumePercent / 100), (float)(_balancePercent / 100),
-                    _muted, _preferredOutputDeviceId, _preferredOutputDeviceName, OutputDevices.ToArray(), current.Token,
-                    AudioRouteRequestSource.User, effects: _effects);
+                await SetBrowserAudioAsync((float)(_volumePercent / 100), (float)(_balancePercent / 100),
+                    _muted, current.Token, AudioRouteRequestSource.User, false, _effects);
             }
             await SaveProfileAsync(current.Token);
         }
@@ -415,7 +419,6 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         if (_isRestoring()) return;
         _muted = !_muted;
         _lastUserChange = DateTimeOffset.UtcNow;
-        NotifyUserModified();
         Raise(nameof(MuteLabel));
         await ApplyAudioAsync(CancellationToken.None);
         await SaveProfileAsync(CancellationToken.None);
@@ -423,7 +426,6 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
 
     private async Task RestoreAsync()
     {
-        NotifyUserModified();
         await CancelPendingChangesAsync();
         if (_restoreProfile is not null)
         {
@@ -431,18 +433,18 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
             return;
         }
         if (_snapshot.Kind == AudioSourceKind.WindowsSession) await _audio.RestoreAsync(Id);
-        else await _bridge.SetAudioAsync(Id, 1, 0, false, "", null, OutputDevices.ToArray(), effects: EqualizerCatalog.Off);
+        else await SetBrowserAudioAsync(1, 0, false, CancellationToken.None,
+            AudioRouteRequestSource.User, false, EqualizerCatalog.Off, forceSystemDefault: true);
         await _profiles.RemoveAsync(StableProfileKey);
         ResetDisplayToDefaults();
     }
 
     private Task ReauthorizeOutputAsync()
     {
-        if (_snapshot.Kind == AudioSourceKind.WindowsSession || string.IsNullOrEmpty(_preferredOutputDeviceId))
+        if (_snapshot.Kind == AudioSourceKind.WindowsSession)
             return Task.CompletedTask;
-        return _bridge.SetAudioAsync(Id, (float)(_volumePercent / 100), (float)(_balancePercent / 100), _muted,
-            _preferredOutputDeviceId, _preferredOutputDeviceName, OutputDevices.ToArray(), CancellationToken.None,
-            AudioRouteRequestSource.User, forceAuthorization: true, effects: _effects);
+        return SetBrowserAudioAsync((float)(_volumePercent / 100), (float)(_balancePercent / 100), _muted,
+            CancellationToken.None, AudioRouteRequestSource.User, true, _effects);
     }
 
     private async Task ApplyAudioAsync(CancellationToken token)
@@ -457,8 +459,8 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         }
         else
         {
-            await _bridge.SetAudioAsync(Id, AudioSourceMixer.Core.AudioMath.EnsureUserGain(volume), balance, _muted,
-                _preferredOutputDeviceId, _preferredOutputDeviceName, OutputDevices.ToArray(), token, effects: _effects);
+            await SetBrowserAudioAsync(AudioSourceMixer.Core.AudioMath.EnsureUserGain(volume), balance, _muted,
+                token, AudioRouteRequestSource.ProfileRestore, false, _effects);
         }
     }
 
@@ -471,6 +473,27 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
             Effects: SupportsEqualizer ? _effects : null);
         if (_saveProfile is not null) await _saveProfile(profile, token);
         else await _profiles.SaveAsync(profile, token);
+    }
+
+    private void ScheduleAudioChange(AsyncDebouncer debouncer)
+    {
+        debouncer.Schedule(async token =>
+        {
+            try
+            {
+                await ApplyAudioAsync(token);
+                await SaveProfileAsync(token);
+            }
+            catch (KeyNotFoundException exception) when (_snapshot.Kind is AudioSourceKind.ChromeTab or AudioSourceKind.EdgeTab)
+            {
+                _logger.Info($"Ignored a delayed browser control update after the source disappeared. Source={Id}; Detail={exception.Message}");
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+            catch (Exception exception)
+            {
+                Error(exception);
+            }
+        });
     }
 
     public void UpdateOutputDevices(IEnumerable<OutputDeviceInfo> devices)
@@ -555,9 +578,8 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     {
         _effects = _effects with { UpdatedAt = DateTimeOffset.UtcNow };
         _lastUserChange = DateTimeOffset.UtcNow;
-        NotifyUserModified();
         RaiseEqualizerProperties();
-        _equalizerDebouncer.Schedule(async token => { await ApplyAudioAsync(token); await SaveProfileAsync(token); });
+        ScheduleAudioChange(_equalizerDebouncer);
     }
 
     private void ResetEqualizer()
@@ -586,7 +608,47 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
 
     private void Error(Exception exception) => _logger.Error($"Audio source command failed for {Id}.", exception);
 
-    private void NotifyUserModified() => _userModified?.Invoke(this);
+    private void BeginIconLoad(AudioSourceSnapshot snapshot)
+    {
+        var key = $"{snapshot.Kind}:{snapshot.IconPath}:{snapshot.ExecutablePath}";
+        if (string.Equals(key, _iconCacheKey, StringComparison.Ordinal)) return;
+        _iconCacheKey = key;
+        _ = LoadIconAsync(snapshot, key);
+    }
+
+    private async Task LoadIconAsync(AudioSourceSnapshot snapshot, string key)
+    {
+        var icon = await ProcessIconProvider.GetAsync(snapshot).ConfigureAwait(false);
+        await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            if (!string.Equals(key, _iconCacheKey, StringComparison.Ordinal)) return;
+            _iconSource = icon;
+            Raise(nameof(IconSource));
+        });
+    }
+
+    internal Task RebindSystemDefaultAsync(OutputDeviceInfo device)
+    {
+        if (_snapshot.Kind == AudioSourceKind.WindowsSession || !string.IsNullOrEmpty(_preferredOutputDeviceId))
+            return Task.CompletedTask;
+        return SetBrowserAudioAsync((float)(_volumePercent / 100), (float)(_balancePercent / 100), _muted,
+            CancellationToken.None, AudioRouteRequestSource.DeviceReconnect, false, _effects, resolvedDefault: device);
+    }
+
+    private Task SetBrowserAudioAsync(float volume, float balance, bool muted, CancellationToken cancellationToken,
+        AudioRouteRequestSource requestSource, bool forceAuthorization, AudioEffectSettings effects,
+        bool forceSystemDefault = false, OutputDeviceInfo? resolvedDefault = null)
+    {
+        var followSystemDefault = forceSystemDefault || string.IsNullOrEmpty(_preferredOutputDeviceId);
+        resolvedDefault ??= followSystemDefault ? _systemDefaultOutputDevice() : null;
+        if (followSystemDefault && (resolvedDefault is null || string.IsNullOrWhiteSpace(resolvedDefault.Id)))
+            return Task.FromException(new InvalidOperationException("无法解析当前 Windows 默认多媒体输出设备。"));
+        return _bridge.SetAudioAsync(Id, volume, balance, muted,
+            followSystemDefault ? string.Empty : _preferredOutputDeviceId,
+            followSystemDefault ? null : _preferredOutputDeviceName,
+            OutputDevices.ToArray(), cancellationToken, requestSource, forceAuthorization, effects,
+            followSystemDefault, resolvedDefault?.Id, resolvedDefault?.Name);
+    }
 
     private CancellationTokenSource BeginRouteOperation()
     {

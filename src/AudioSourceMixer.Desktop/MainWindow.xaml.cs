@@ -10,6 +10,7 @@ public partial class MainWindow : System.Windows.Window
     private readonly MainViewModel _viewModel;
     public bool AllowClose { get; set; }
     internal ItemsControl SourceItems => MixerPageView.SourceItems;
+    internal ScrollViewer SourceScroller => MixerPageView.SourceScroller;
     internal SettingsView SettingsPage => SettingsPageView;
     internal BrowserSetupView BrowserSetupPage => BrowserSetupPageView;
     internal MixerView MixerPage => MixerPageView;
@@ -19,6 +20,15 @@ public partial class MainWindow : System.Windows.Window
         InitializeComponent();
         _viewModel = viewModel;
         DataContext = viewModel;
+        Loaded += ConstrainInitialSizeToWorkArea;
+    }
+
+    private void ConstrainInitialSizeToWorkArea(object sender, System.Windows.RoutedEventArgs e)
+    {
+        Loaded -= ConstrainInitialSizeToWorkArea;
+        var workArea = System.Windows.SystemParameters.WorkArea;
+        Width = Math.Min(1240, Math.Max(MinWidth, workArea.Width - 32));
+        Height = Math.Min(820, Math.Max(MinHeight, workArea.Height - 32));
     }
 
     internal void SelectMixerPage() => _viewModel.SelectMixerForDiagnostics();

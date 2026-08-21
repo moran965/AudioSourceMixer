@@ -8,7 +8,8 @@ namespace AudioSourceMixer.Desktop.ViewModels;
 internal sealed record HiddenSourceDescriptor(
     AudioSourceSnapshot Source,
     bool IsManual,
-    string Reason);
+    string Reason,
+    string? BrowserAggregate = null);
 
 internal sealed record SourcePresentationResult(
     IReadOnlyList<AudioSourceSnapshot> Visible,
@@ -19,7 +20,6 @@ internal static class SourcePresentationPolicy
     public static SourcePresentationResult Apply(
         IEnumerable<AudioSourceSnapshot> discovered,
         ApplicationSettings settings,
-        IReadOnlyDictionary<AudioSourceId, long> modificationSequence,
         IReadOnlySet<string>? runtimeManuallyHidden = null,
         IReadOnlyList<string>? runtimeManualOrder = null)
     {
@@ -31,6 +31,7 @@ internal static class SourcePresentationPolicy
         var manuallyHidden = (settings.ManuallyHiddenSources ?? [])
             .Select(item => item.SourceId).ToHashSet(StringComparer.Ordinal);
         if (runtimeManuallyHidden is not null) manuallyHidden.UnionWith(runtimeManuallyHidden);
+        var visibleBrowserAggregates = (settings.VisibleBrowserAggregates ?? []).ToHashSet(StringComparer.Ordinal);
         var hidden = new List<HiddenSourceDescriptor>();
         var visible = new List<AudioSourceSnapshot>(candidates.Length);
 
@@ -45,17 +46,16 @@ internal static class SourcePresentationPolicy
             var aggregate = settings.HideBrowserAggregateSessions
                 ? MatchBrowserAggregate(source)
                 : null;
-            if ((aggregate == "edge" && activeEdge) || (aggregate == "chrome" && activeChrome))
+            if (!visibleBrowserAggregates.Contains(aggregate ?? string.Empty) &&
+                ((aggregate == "edge" && activeEdge) || (aggregate == "chrome" && activeChrome)))
             {
-                hidden.Add(new HiddenSourceDescriptor(source, false, "由浏览器增强自动隐藏"));
+                hidden.Add(new HiddenSourceDescriptor(source, false, "由浏览器增强自动隐藏", aggregate));
                 continue;
             }
             visible.Add(source);
         }
 
-        var ordered = SourceSortModes.Normalize(settings.SourceSortMode) == SourceSortModes.Manual
-            ? OrderManually(visible, runtimeManualOrder ?? settings.ManualSourceOrder ?? [])
-            : OrderByRecentModification(visible, modificationSequence);
+        var ordered = OrderManually(visible, runtimeManualOrder ?? settings.ManualSourceOrder ?? []);
         return new SourcePresentationResult(ordered, hidden
             .OrderBy(item => item.Source.DisplayName, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(item => item.Source.Id.Value, StringComparer.Ordinal).ToArray());
@@ -83,17 +83,6 @@ internal static class SourcePresentationPolicy
         return null;
     }
 
-    private static IReadOnlyList<AudioSourceSnapshot> OrderByRecentModification(
-        IEnumerable<AudioSourceSnapshot> sources,
-        IReadOnlyDictionary<AudioSourceId, long> modificationSequence)
-        => sources.OrderByDescending(source => modificationSequence.ContainsKey(source.Id))
-            .ThenByDescending(source => modificationSequence.GetValueOrDefault(source.Id))
-            .ThenByDescending(source => source.Peak > 0.001f)
-            .ThenByDescending(source => source.State == AudioPlaybackState.Active)
-            .ThenBy(source => source.DisplayName, StringComparer.CurrentCultureIgnoreCase)
-            .ThenBy(source => source.Id.Value, StringComparer.Ordinal)
-            .ToArray();
-
     private static IReadOnlyList<AudioSourceSnapshot> OrderManually(
         IEnumerable<AudioSourceSnapshot> sources,
         IReadOnlyList<string> manualOrder)
@@ -102,8 +91,6 @@ internal static class SourcePresentationPolicy
             .GroupBy(item => item.id, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.First().index, StringComparer.Ordinal);
         return sources.OrderBy(source => positions.TryGetValue(source.Id.Value, out var index) ? index : int.MaxValue)
-            .ThenBy(source => source.DisplayName, StringComparer.CurrentCultureIgnoreCase)
-            .ThenBy(source => source.Id.Value, StringComparer.Ordinal)
             .ToArray();
     }
 }
@@ -134,18 +121,20 @@ internal static class SourceCollectionReconciler
 
 public sealed class HiddenSourceViewModel
 {
-    private readonly Action<AudioSourceId> _restore;
+    private readonly Action<HiddenSourceDescriptor> _restore;
 
-    internal HiddenSourceViewModel(HiddenSourceDescriptor descriptor, Action<AudioSourceId> restore)
+    internal HiddenSourceViewModel(HiddenSourceDescriptor descriptor, Action<HiddenSourceDescriptor> restore)
     {
         Id = descriptor.Source.Id;
         DisplayName = descriptor.Source.DisplayName;
         SourceType = descriptor.Source.Kind is AudioSourceKind.ChromeTab or AudioSourceKind.EdgeTab
             ? "浏览器增强" : "Windows 应用";
         Reason = descriptor.Reason;
-        CanRestore = descriptor.IsManual;
+        Descriptor = descriptor;
+        CanRestore = true;
+        RestoreLabel = descriptor.IsManual ? "恢复显示" : "显示此聚合会话";
         _restore = restore;
-        RestoreCommand = new RelayCommand(() => _restore(Id), () => CanRestore);
+        RestoreCommand = new RelayCommand(() => _restore(Descriptor));
     }
 
     public AudioSourceId Id { get; }
@@ -153,5 +142,7 @@ public sealed class HiddenSourceViewModel
     public string SourceType { get; }
     public string Reason { get; }
     public bool CanRestore { get; }
+    public string RestoreLabel { get; }
+    internal HiddenSourceDescriptor Descriptor { get; }
     public ICommand RestoreCommand { get; }
 }
