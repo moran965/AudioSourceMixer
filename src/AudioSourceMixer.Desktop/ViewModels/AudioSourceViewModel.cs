@@ -147,7 +147,7 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
             AudioRoutingState.Applied => _localization.Format("Source.RouteApplied", _snapshot.EffectiveOutputDeviceName ?? _snapshot.EffectiveOutputDeviceId),
             AudioRoutingState.SystemDefault => _localization.Format("Source.RouteSystemDefault", _snapshot.EffectiveOutputDeviceName ?? _snapshot.OutputDeviceName ?? _localization["Common.Unknown"]),
             AudioRoutingState.Disconnected => _localization.Format("Source.RouteDisconnected", _preferredOutputDeviceName ?? _preferredOutputDeviceId),
-            AudioRoutingState.Failed => _localization.Format("Source.RouteFailed", _snapshot.RoutingError),
+            AudioRoutingState.Failed => _localization.Format("Source.RouteFailed", LocalizeRoutingError(_snapshot.RoutingError)),
             _ => _localization.Format("Source.RouteRequested", _preferredOutputDeviceName ?? _localization["Common.SystemDefault"], _snapshot.EffectiveOutputDeviceName ?? _localization["Common.Unknown"])
         }
         : _snapshot.Kind == AudioSourceKind.WindowsSession
@@ -166,7 +166,7 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
                 AudioRoutingState.PendingStreamRestart => _localization["Source.RestartHelp"],
                 AudioRoutingState.Partial => _localization["Source.PartialHelp"],
                 AudioRoutingState.Disconnected => _localization.Format("Source.DisconnectedHelp", _preferredOutputDeviceName ?? _localization["Common.SelectedDevice"]),
-                AudioRoutingState.Failed => _localization.Format("Source.FailedHelp", string.IsNullOrWhiteSpace(_snapshot.RoutingError) ? "" : $" {_snapshot.RoutingError}"),
+                AudioRoutingState.Failed => _localization.Format("Source.FailedHelp", string.IsNullOrWhiteSpace(_snapshot.RoutingError) ? "" : $" {LocalizeRoutingError(_snapshot.RoutingError)}"),
                 _ => string.Empty
             };
         }
@@ -240,6 +240,18 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     public ICommand MoveToBottomCommand { get; }
     internal AudioSourceSnapshot Snapshot => _snapshot;
     internal AudioEffectSettings Effects => _effects;
+
+    private string LocalizeRoutingError(string? error) => error switch
+    {
+        "set-sink-id-unavailable" => _localization["Source.ErrorSetSinkUnavailable"],
+        "default-endpoint-unresolved" => _localization["Source.ErrorDefaultUnresolved"],
+        "authorization-required" => _localization["Source.ErrorAuthorizationRequired"],
+        "mapping-stale" => _localization["Source.ErrorMappingStale"],
+        "sink-mismatch" => _localization["Source.ErrorSinkMismatch"],
+        "set-sink-failed" => _localization["Source.ErrorSetSinkFailed"],
+        "device-revalidation-failed" => _localization["Source.ErrorRevalidationFailed"],
+        _ => string.IsNullOrWhiteSpace(error) ? _localization["Source.ErrorUnknown"] : error
+    };
 
     public double VolumePercent
     {

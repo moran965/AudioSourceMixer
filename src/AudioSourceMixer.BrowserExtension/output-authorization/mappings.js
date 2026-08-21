@@ -188,10 +188,9 @@ export function pendingAuthorizationState(state) {
   return {
     ...state,
     routingState: 'PendingAuthorization',
-    outputStatus: state.followSystemDefault
-      ? `需要授权当前系统默认设备：${name}`
-      : `等待浏览器授权：${name}`,
-    error: 'No verified browser output mapping exists for the requested Windows endpoint.'
+    outputStatus: state.followSystemDefault ? 'authorizationRequiredForDefault' : 'authorizationRequired',
+    outputStatusDetail: name,
+    error: 'authorization-required'
   };
 }
 
@@ -231,9 +230,9 @@ export function mappingIsVisible(mapping, devices) {
 }
 
 export function mappingDisplayState(mapping, devices) {
-  if (mapping.verificationState === 'needs-reauthorization') return '需要重新授权';
-  if (!mappingIsVisible(mapping, devices)) return '设备不可用';
-  return mapping.verificationState === 'verified' ? '已验证' : '未验证';
+  if (mapping.verificationState === 'needs-reauthorization') return 'needs-reauthorization';
+  if (!mappingIsVisible(mapping, devices)) return 'unavailable';
+  return mapping.verificationState === 'verified' ? 'verified' : 'unverified';
 }
 
 function rebound(mapping, device, matchKind) {

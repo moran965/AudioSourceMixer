@@ -24,6 +24,7 @@ import {
   installationPlan,
   needsOnboarding
 } from '../onboarding/onboarding-policy.js';
+import { message as localizedMessage } from '../shared/i18n.js';
 
 const OFFSCREEN_URL = 'offscreen/offscreen.html';
 const AUTHORIZATION_URL = 'output-authorization/authorize.html';
@@ -32,26 +33,26 @@ const NATIVE_RETRY_DELAY_MS = 5000;
 let nativePort = null;
 let nativeReady = null;
 
-chrome.action.onClicked.addListener((tab) => runEventTask('切换标签页增强', () => toggleTab(tab)));
-chrome.tabs.onRemoved.addListener((tabId) => runEventTask('清理已关闭标签页', () => stopTab(browserName(), tabId, true)));
+chrome.action.onClicked.addListener((tab) => runEventTask('toggle tab enhancement', () => toggleTab(tab)));
+chrome.tabs.onRemoved.addListener((tabId) => runEventTask('clean up closed tab', () => stopTab(browserName(), tabId, true)));
 chrome.tabCapture.onStatusChanged.addListener((info) => {
   if (info.status === 'stopped' || info.status === 'error')
-    runEventTask('同步标签页捕获状态', () => stopTab(browserName(), info.tabId, true));
+    runEventTask('synchronize tab capture state', () => stopTab(browserName(), info.tabId, true));
 });
-chrome.runtime.onStartup.addListener(() => runEventTask('浏览器启动恢复', () => recoverRuntimeState('runtime-startup')));
-chrome.runtime.onInstalled.addListener((details) => runEventTask('扩展安装或更新', () => handleInstalled(details)));
+chrome.runtime.onStartup.addListener(() => runEventTask('browser startup recovery', () => recoverRuntimeState('runtime-startup')));
+chrome.runtime.onInstalled.addListener((details) => runEventTask('extension install or update', () => handleInstalled(details)));
 
 chrome.runtime.onMessage.addListener((message) => {
-  if (message.type === 'offscreen.level') runEventTask('转发标签页电平', () => forwardLevel(message));
+  if (message.type === 'offscreen.level') runEventTask('forward tab level', () => forwardLevel(message));
   else if (message.type === 'offscreen.tabEnded')
-    runEventTask('清理已结束标签页', () => stopTab(message.browser || browserName(), message.tabId, true));
+    runEventTask('clean up ended tab', () => stopTab(message.browser || browserName(), message.tabId, true));
   else if (message.type === 'offscreen.outputChanged')
-    runEventTask('同步浏览器输出状态', () => forwardOutputStatus(message));
+    runEventTask('synchronize browser output state', () => forwardOutputStatus(message));
   else if (message.type === 'authorization.mappingChanged')
-    runEventTask('重新验证输出映射', () => revalidateActiveOutputs(message));
+    runEventTask('revalidate output mapping', () => revalidateActiveOutputs(message));
 });
 
-runEventTask('service worker 状态恢复', () => recoverRuntimeState('service-worker-evaluated'));
+runEventTask('service worker state recovery', () => recoverRuntimeState('service-worker-evaluated'));
 
 function runEventTask(name, action) {
   executeEventTask(name, action);
@@ -61,9 +62,9 @@ async function executeEventTask(name, action) {
   try { await action(); }
   catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error(`[Audio Source Mixer] ${name}失败`, error);
-    try { await chrome.storage.session.set({ lastExtensionError: `${name}：${message}` }); }
-    catch (storageError) { console.error('[Audio Source Mixer] 无法记录扩展错误', storageError); }
+    console.error(`[Audio Source Mixer] ${name} failed`, error);
+    try { await chrome.storage.session.set({ lastExtensionError: `${name}: ${message}` }); }
+    catch (storageError) { console.error('[Audio Source Mixer] could not record extension error', storageError); }
   }
 }
 
@@ -109,8 +110,8 @@ async function startTabCore(browser, tab) {
   await updateBadge();
   try {
     if (!await ensureNativeReady()) {
-      await chrome.storage.session.set({ nativeStatus: '请先打开 Audio Source Mixer' });
-      throw new Error('请先打开 Audio Source Mixer');
+      await chrome.storage.session.set({ nativeStatus: 'desktop-required' });
+      throw new Error('Audio Source Mixer desktop app is not connected.');
     }
     await ensureOffscreenDocument();
     const existing = await listOffscreenGraphs();
@@ -123,11 +124,11 @@ async function startTabCore(browser, tab) {
     const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
     const metadata = {
       state: 'active', browser, tabId, generation,
-      title: tab.title || '未命名标签页', origin: sanitizeOrigin(tab.url),
+      title: tab.title || await localizedMessage('untitledTab'), origin: sanitizeOrigin(tab.url),
       volume: 1, balance: 0, muted: false,
       equalizer: createEqualizerPreset('off'),
       outputDeviceId: '', outputDeviceName: '', followSystemDefault: false,
-      resolvedOutputDeviceId: '', resolvedOutputDeviceName: '', outputStatus: '系统默认',
+      resolvedOutputDeviceId: '', resolvedOutputDeviceName: '', outputStatus: 'systemDefault',
       correlationId: '', commandGeneration: 0
     };
     const response = await chrome.runtime.sendMessage({ type: 'audio.start', streamId, ...metadata });
@@ -190,7 +191,7 @@ async function forwardLevel(message) {
     followSystemDefault: Boolean(state.followSystemDefault),
     resolvedOutputDeviceId: state.resolvedOutputDeviceId || '',
     resolvedOutputDeviceName: state.resolvedOutputDeviceName || '',
-    outputStatus: state.outputStatus || '系统默认'
+    outputStatus: state.outputStatus || 'systemDefault'
   });
 }
 
@@ -241,29 +242,30 @@ async function ensureNativePort() {
     port.postMessage({ protocolVersion: PROTOCOL_VERSION, type: 'bridge.hello', browser: browserName(),
       extensionVersion: chrome.runtime.getManifest().version });
     port.onMessage.addListener((message) => {
-      runEventTask('处理桌面命令', async () => {
+      runEventTask('handle desktop command', async () => {
         try { await handleNativeMessage(message); }
         catch (error) {
-          await chrome.storage.session.set({ nativeStatus: `Native 命令失败：${error.message}` });
+          await chrome.storage.session.set({ nativeStatus: 'native-command-failed', nativeStatusDetail: error.message });
           await updateBadge();
           throw error;
         }
       });
     });
     port.onDisconnect.addListener(() => {
-      runEventTask('处理桌面连接断开', async () => {
+      runEventTask('handle desktop disconnect', async () => {
         nativeReady?.resolve(false);
         nativeReady = null;
         nativePort = null;
-        await chrome.storage.session.set({ nativeRetryAfter: Date.now() + NATIVE_RETRY_DELAY_MS, nativeStatus: '请先打开 Audio Source Mixer' });
+        await chrome.storage.session.set({ nativeRetryAfter: Date.now() + NATIVE_RETRY_DELAY_MS, nativeStatus: 'desktop-required' });
         if (chrome.runtime.lastError) console.warn('Native host disconnected:', chrome.runtime.lastError.message);
         await updateBadge();
       });
     });
-    runEventTask('注册活动增强标签页', () => registerAllActiveTabs(port));
+    runEventTask('register active enhanced tabs', () => registerAllActiveTabs(port));
     return port;
   } catch (error) {
-    await chrome.storage.session.set({ nativeRetryAfter: Date.now() + NATIVE_RETRY_DELAY_MS, nativeStatus: `Native Host 不可用：${error.message}` });
+    await chrome.storage.session.set({ nativeRetryAfter: Date.now() + NATIVE_RETRY_DELAY_MS,
+      nativeStatus: 'native-host-unavailable', nativeStatusDetail: error.message });
     console.warn('Native host unavailable:', error.message);
     return null;
   }
@@ -305,7 +307,7 @@ function createRegisterMessage(state) {
     followSystemDefault: Boolean(state.followSystemDefault),
     resolvedOutputDeviceId: state.resolvedOutputDeviceId || '',
     resolvedOutputDeviceName: state.resolvedOutputDeviceName || '',
-    outputStatus: state.outputStatus || '系统默认', effectiveSinkId: state.effectiveSinkId || '',
+    outputStatus: state.outputStatus || 'systemDefault', effectiveSinkId: state.effectiveSinkId || '',
     effectiveSinkLabel: state.effectiveSinkLabel || '', routingState: state.routingState || 'Default',
     generation: state.commandGeneration || state.generation || 0, correlationId: state.correlationId || ''
   };
@@ -315,7 +317,8 @@ async function postNative(message) {
   try { (await ensureNativePort())?.postMessage(message); }
   catch (error) {
     nativePort = null;
-    await chrome.storage.session.set({ nativeRetryAfter: Date.now() + NATIVE_RETRY_DELAY_MS, nativeStatus: `Native Host 不可用：${error.message}` });
+    await chrome.storage.session.set({ nativeRetryAfter: Date.now() + NATIVE_RETRY_DELAY_MS,
+      nativeStatus: 'native-host-unavailable', nativeStatusDetail: error.message });
     console.warn('Native host unavailable:', error.message);
   }
 }
@@ -324,7 +327,9 @@ async function handleNativeMessage(message) {
   if (message.type === 'bridge.status') {
     nativeReady?.resolve(!message.error);
     if (!message.error) nativeReady = null;
-    await chrome.storage.session.set({ nativeStatus: message.error || `Native Host 协议 ${PROTOCOL_VERSION} 已连接` });
+    await chrome.storage.session.set(message.error
+      ? { nativeStatus: 'native-protocol-error', nativeStatusDetail: message.error }
+      : { nativeStatus: 'connected', nativeStatusDetail: `protocol-${PROTOCOL_VERSION}` });
     await updateBadge();
     return;
   }
@@ -444,7 +449,7 @@ async function requestOutputAuthorization(browser, tabId, audio) {
 }
 
 function openAuthorizationPageInBackground() {
-  runEventTask('打开输出授权页', openAuthorizationPageOnce);
+  runEventTask('open output authorization page', openAuthorizationPageOnce);
 }
 
 async function openAuthorizationPageOnce() {
@@ -572,10 +577,13 @@ async function withStorageLock(key, action) {
 
 async function updateBadge() {
   const states = await getStates();
-  const { nativeStatus = '' } = await chrome.storage.session.get('nativeStatus');
+  const { nativeStatus = '', nativeStatusDetail = '' } = await chrome.storage.session.get(['nativeStatus', 'nativeStatusDetail']);
   const count = Object.values(states).filter((state) => state.state === 'active').length;
-  const hasNativeError = nativeStatus && !nativeStatus.includes('已连接');
+  const hasNativeError = Boolean(nativeStatus && nativeStatus !== 'connected');
   await chrome.action.setBadgeBackgroundColor({ color: hasNativeError ? '#B45309' : '#2563EB' });
   await chrome.action.setBadgeText({ text: hasNativeError ? '!' : count > 0 ? String(count) : '' });
-  await chrome.action.setTitle({ title: hasNativeError ? nativeStatus : count > 0 ? `已增强 ${count} 个标签页；点击切换当前标签页` : '启用当前标签页的独立音频控制' });
+  const title = hasNativeError
+    ? `${await localizedMessage(nativeStatus === 'desktop-required' ? 'desktopRequired' : 'badgeNativeUnavailable')}${nativeStatusDetail ? `: ${nativeStatusDetail}` : ''}`
+    : count > 0 ? await localizedMessage('badgeEnhancedTabs', count) : await localizedMessage('badgeEnable');
+  await chrome.action.setTitle({ title });
 }

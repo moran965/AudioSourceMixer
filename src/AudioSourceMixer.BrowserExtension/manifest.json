@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Audio Source Mixer 标签页增强",
-  "version": "0.2.2",
-  "description": "在用户点击后，将当前标签页音频交给 Audio Source Mixer 独立控制。",
+  "name": "__MSG_extensionName__",
+  "version": "1.0.0",
+  "description": "__MSG_extensionDescription__",
+  "default_locale": "zh_CN",
   "minimum_chrome_version": "116",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtLpSrwo/Da7F/7UIPQa/eQ6qAxdfk0olY/V9tjhCpsrqhrnBv+nhQKFEaNbqYQDyMi+u3o/3JHIaR6gighfAsPyQc5nfob2w5eGzX14HHK+KSlWMfcxng3Z38Tb5UUn+mhBEkb5jcycpjdO+NVmH2iQhWFtODGcMQiaPH1y4JjzwULp+mPQ4g1oReNil6yH8PZRE3FDILkwA6IZeRc92BOSFbuPv0bf8QGlDujcBc7farL16jAXeM9jNXZWHzRoHRCA/RSZ5Yz66XkmZOWDKUPtJML2Cj+A7LUFMV4T7jsBh7LJdXabyK72+YIjTKpu7KDLPnyVNRk6kuTuz2s2RfQIDAQAB",
   "permissions": [
@@ -18,7 +19,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "启用或停止当前标签页的独立音频控制",
+    "default_title": "__MSG_actionTitle__",
     "default_icon": {
       "16": "assets/icon-16.png",
       "32": "assets/icon-32.png",

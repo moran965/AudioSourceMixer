@@ -30,13 +30,13 @@ const PRESET_GAINS = Object.freeze({
 });
 
 export const EQUALIZER_PRESETS = Object.freeze([
-  Object.freeze({ id: 'off', name: '关闭', gainsDb: PRESET_GAINS.off }),
-  Object.freeze({ id: 'flat', name: '平直', gainsDb: PRESET_GAINS.flat }),
-  Object.freeze({ id: 'bass', name: '低频增强', gainsDb: PRESET_GAINS.bass }),
-  Object.freeze({ id: 'vocal', name: '人声清晰', gainsDb: PRESET_GAINS.vocal }),
-  Object.freeze({ id: 'treble', name: '高频增强', gainsDb: PRESET_GAINS.treble }),
-  Object.freeze({ id: 'warm', name: '温暖', gainsDb: PRESET_GAINS.warm }),
-  Object.freeze({ id: 'custom', name: '自定义', gainsDb: PRESET_GAINS.custom })
+  Object.freeze({ id: 'off', gainsDb: PRESET_GAINS.off }),
+  Object.freeze({ id: 'flat', gainsDb: PRESET_GAINS.flat }),
+  Object.freeze({ id: 'bass', gainsDb: PRESET_GAINS.bass }),
+  Object.freeze({ id: 'vocal', gainsDb: PRESET_GAINS.vocal }),
+  Object.freeze({ id: 'treble', gainsDb: PRESET_GAINS.treble }),
+  Object.freeze({ id: 'warm', gainsDb: PRESET_GAINS.warm }),
+  Object.freeze({ id: 'custom', gainsDb: PRESET_GAINS.custom })
 ]);
 
 function requireFiniteRange(value, minimum, maximum, name) {

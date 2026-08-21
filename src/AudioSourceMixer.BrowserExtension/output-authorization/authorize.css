@@ -2,6 +2,9 @@
 * { box-sizing: border-box; }
 body { margin: 0; padding: 32px 20px; }
 main { max-width: 940px; margin: 0 auto; }
+.language-picker { display: flex; justify-content: flex-end; align-items: center; gap: 8px; color: #475569; font-size: 13px; margin-bottom: 10px; }
+.language-picker label { margin: 0; }
+.language-picker select { width: auto; padding: 5px 8px; }
 header, section { background: white; border-radius: 16px; padding: 28px; box-shadow: 0 10px 28px #0f172a12; margin-bottom: 20px; }
 h1, h2, p { margin-top: 0; }
 h1 { margin-bottom: 10px; font-size: 28px; }

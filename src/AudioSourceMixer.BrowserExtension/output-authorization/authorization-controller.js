@@ -70,11 +70,11 @@ export function createAuthorizationController({ browser, loadMappingStore, local
 }
 
 export function createConfirmationSnapshot(browser, candidate, pendingRequest, operationToken) {
-  if (!candidate?.windowsEndpointId || !candidate.deviceId) throw new Error('没有可确认的候选设备。');
-  if (!pendingRequest?.windowsEndpointId) throw new Error('当前授权请求已不存在，请重新选择。');
+  if (!candidate?.windowsEndpointId || !candidate.deviceId) throw uiError('candidateMissing', 'No candidate device is available to confirm.');
+  if (!pendingRequest?.windowsEndpointId) throw uiError('requestExpired', 'The authorization request no longer exists.');
   if (candidate.windowsEndpointId !== pendingRequest.windowsEndpointId)
-    throw new Error('候选设备与当前授权请求不一致，请重新选择。');
-  if (!Number.isSafeInteger(operationToken) || operationToken <= 0) throw new Error('确认操作标识无效。');
+    throw uiError('candidateMismatch', 'The candidate does not match the current authorization request.');
+  if (!Number.isSafeInteger(operationToken) || operationToken <= 0) throw uiError('operationInvalid', 'The confirmation operation token is invalid.');
 
   const waiterEntries = Object.entries(pendingRequest.waiters || {})
     .map(([key, value]) => [key, Object.freeze({ ...(value || {}) })]);
@@ -101,4 +101,10 @@ export function createConfirmationSnapshot(browser, candidate, pendingRequest, o
 
 function normalizeError(error) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function uiError(code, message) {
+  const error = new Error(message);
+  error.uiMessageKey = code;
+  return error;
 }

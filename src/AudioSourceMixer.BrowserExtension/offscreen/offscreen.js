@@ -12,10 +12,10 @@ import { physicalOutputDevices, rebindOutputMapping } from '../output-authorizat
 const graphs = new Map();
 
 chrome.runtime.onMessage.addListener((message) => {
-  if (message.type === 'audio.start') return executeResponseTask('创建标签页音频图', () => startGraph(message));
-  if (message.type === 'audio.update') return executeResponseTask('更新标签页音频图', () => updateGraph(message));
+  if (message.type === 'audio.start') return executeResponseTask('create tab audio graph', () => startGraph(message));
+  if (message.type === 'audio.update') return executeResponseTask('update tab audio graph', () => updateGraph(message));
   if (message.type === 'audio.stop')
-    return executeResponseTask('停止标签页音频图', () => stopGraph(message.browser || 'chrome', message.tabId, false));
+    return executeResponseTask('stop tab audio graph', () => stopGraph(message.browser || 'chrome', message.tabId, false));
   if (message.type === 'audio.list') return listGraphs();
   return undefined;
 });
@@ -26,13 +26,13 @@ function runOffscreenTask(name, action) {
 
 async function executeOffscreenTask(name, action) {
   try { await action(); }
-  catch (error) { console.error(`[Audio Source Mixer] ${name}失败`, error); }
+  catch (error) { console.error(`[Audio Source Mixer] ${name} failed`, error); }
 }
 
 async function executeResponseTask(name, action) {
   try { return await action(); }
   catch (error) {
-    console.error(`[Audio Source Mixer] ${name}失败`, error);
+    console.error(`[Audio Source Mixer] ${name} failed`, error);
     return { ok: false, error: `${error?.name || 'Error'}: ${error?.message || String(error)}` };
   }
 }
@@ -72,7 +72,7 @@ async function startGraph(message) {
       equalizerFilters[index].connect(equalizerFilters[index + 1]);
     equalizerFilters.at(-1).connect(headroom).connect(gain).connect(panner).connect(analyser).connect(context.destination);
     const graph = {
-      browser, tabId: message.tabId, title: message.title || '未命名标签页', origin: message.origin || '',
+      browser, tabId: message.tabId, title: message.title || 'Untitled tab', origin: message.origin || '',
       stream, context, source, equalizerFilters, headroom, gain, panner, analyser,
       levelBuffer: new Float32Array(analyser.fftSize), smoothedPeak: 0,
       volume: 1, balance: 0, muted: false, generation: Number(message.generation) || 0,
@@ -81,9 +81,9 @@ async function startGraph(message) {
       requestedOutputDeviceId: '', requestedOutputDeviceName: '',
       browserOutputDeviceId: '', browserOutputDeviceLabel: '', browserGroupId: '',
       effectiveSinkId: '', effectiveSinkLabel: '', routingState: 'Default',
-      outputStatus: '系统默认', correlationId: '', setSinkDurationMs: 0,
+      outputStatus: 'systemDefault', outputStatusDetail: '', correlationId: '', setSinkDurationMs: 0,
       routeQueue: Promise.resolve(),
-      setSinkIdSupported: typeof context.setSinkId === 'function', error: null,
+      setSinkIdSupported: typeof context.setSinkId === 'function', error: null, errorDetail: null,
       mappingRebound: null, mappingStale: false,
       equalizer: createEqualizerPreset('off')
     };
@@ -91,7 +91,7 @@ async function startGraph(message) {
     applyEqualizer(graph, message.equalizer);
     for (const track of stream.getTracks()) {
       track.addEventListener('ended', () =>
-        runOffscreenTask('清理已结束媒体轨道', () => stopGraph(browser, message.tabId, true)), { once: true });
+        runOffscreenTask('clean up ended media track', () => stopGraph(browser, message.tabId, true)), { once: true });
     }
     const output = await enqueueOutputDevice(graph, message);
     return { ok: true, ...output };
@@ -164,31 +164,32 @@ async function applyOutputDevice(graph, message) {
   graph.correlationId = message.correlationId || graph.correlationId || crypto.randomUUID();
   graph.setSinkIdSupported = typeof graph.context.setSinkId === 'function';
   graph.error = null;
+  graph.errorDetail = null;
+  graph.outputStatusDetail = '';
   graph.setSinkDurationMs = 0;
   graph.mappingRebound = null;
   graph.mappingStale = false;
 
   if (!graph.setSinkIdSupported) {
     graph.routingState = graph.requestedOutputDeviceId ? 'Failed' : 'Default';
-    graph.outputStatus = graph.requestedOutputDeviceId
-      ? '路由失败：当前 Chromium 不支持 AudioContext.setSinkId()。'
-      : '系统默认（setSinkId 不可用）';
-    graph.error = graph.requestedOutputDeviceId ? 'AudioContext.setSinkId is unavailable.' : null;
+    graph.outputStatus = graph.requestedOutputDeviceId ? 'setSinkIdUnavailable' : 'systemDefaultSetSinkUnavailable';
+    graph.error = graph.requestedOutputDeviceId ? 'set-sink-id-unavailable' : null;
     return outputResult(graph);
   }
 
   if (!graph.requestedOutputDeviceId) {
-    if (!graph.followSystemDefault) return setAndVerifySink(graph, '', '系统默认', 'Default');
+    if (!graph.followSystemDefault) return setAndVerifySink(graph, '', '', 'Default');
     graph.routingState = 'PendingAuthorization';
-    graph.outputStatus = '无法解析当前 Windows 系统默认物理设备。';
-    graph.error = 'FollowSystemDefault requires a resolved physical Windows endpoint.';
+    graph.outputStatus = 'defaultEndpointUnresolved';
+    graph.error = 'default-endpoint-unresolved';
     return outputResult(graph);
   }
 
   if (!graph.browserOutputDeviceId) {
     graph.routingState = 'PendingAuthorization';
-    graph.outputStatus = `等待浏览器授权：${graph.requestedOutputDeviceName || graph.requestedOutputDeviceId}`;
-    graph.error = 'No authorized browser deviceId exists for the requested Windows endpoint.';
+    graph.outputStatus = 'authorizationRequired';
+    graph.outputStatusDetail = graph.requestedOutputDeviceName || graph.requestedOutputDeviceId;
+    graph.error = 'authorization-required';
     return outputResult(graph);
   }
 
@@ -214,8 +215,9 @@ async function applyOutputDevice(graph, message) {
   }
   if (!target) {
     graph.routingState = 'PendingAuthorization';
-    graph.outputStatus = `浏览器 deviceId 已失效，需要重新授权：${graph.requestedOutputDeviceName || graph.requestedOutputDeviceId}`;
-    graph.error = 'The authorized browser deviceId is no longer visible.';
+    graph.outputStatus = 'mappingStale';
+    graph.outputStatusDetail = graph.requestedOutputDeviceName || graph.requestedOutputDeviceId;
+    graph.error = 'mapping-stale';
     graph.mappingStale = true;
     return outputResult(graph);
   }
@@ -234,19 +236,23 @@ async function setAndVerifySink(graph, requestedSinkId, label, successState) {
     graph.effectiveSinkLabel = label || '';
     if (graph.effectiveSinkId !== requestedSinkId || (requestedSinkId && !graph.effectiveSinkId)) {
       graph.routingState = 'Failed';
-      graph.error = `AudioContext.sinkId mismatch: requested=${safeId(requestedSinkId)}, effective=${safeId(graph.effectiveSinkId)}`;
-      graph.outputStatus = `路由失败：实际 sink 与请求不一致（${graph.error}）。`;
+      graph.error = 'sink-mismatch';
+      graph.errorDetail = `requested=${safeId(requestedSinkId)}, effective=${safeId(graph.effectiveSinkId)}`;
+      graph.outputStatus = 'sinkMismatch';
     } else {
       graph.routingState = successState;
-      graph.outputStatus = successState === 'Default' ? '系统默认' : `已生效：${label || safeId(requestedSinkId)}`;
+      graph.outputStatus = successState === 'Default' ? 'systemDefault' : 'applied';
+      graph.outputStatusDetail = label || safeId(requestedSinkId);
       graph.error = null;
+      graph.errorDetail = null;
     }
   } catch (error) {
     graph.setSinkDurationMs = performance.now() - startedAt;
     graph.effectiveSinkId = typeof graph.context.sinkId === 'string' ? graph.context.sinkId : '';
     graph.routingState = 'Failed';
-    graph.error = `${error.name || 'Error'}: ${error.message}`;
-    graph.outputStatus = `输出设备切换失败：${graph.error}。当前 sink 保持不变，未静默回退默认设备。`;
+    graph.error = 'set-sink-failed';
+    graph.errorDetail = `${error.name || 'Error'}: ${error.message}`;
+    graph.outputStatus = 'setSinkFailed';
   }
   return outputResult(graph);
 }
@@ -271,7 +277,9 @@ function outputResult(graph) {
     setSinkDurationMs: graph.setSinkDurationMs,
     setSinkIdSupported: graph.setSinkIdSupported,
     outputStatus: graph.outputStatus,
+    outputStatusDetail: graph.outputStatusDetail,
     error: graph.error,
+    errorDetail: graph.errorDetail,
     mappingRebound: graph.mappingRebound,
     mappingStale: graph.mappingStale,
     equalizer: graph.equalizer
@@ -317,14 +325,14 @@ setInterval(() => {
     let peak = 0;
     for (const sample of graph.levelBuffer) peak = Math.max(peak, Math.abs(sample));
     graph.smoothedPeak = smoothPeak(graph.smoothedPeak, peak, 100);
-    runOffscreenTask('发送标签页电平', () => chrome.runtime.sendMessage({
+    runOffscreenTask('send tab level', () => chrome.runtime.sendMessage({
       type: 'offscreen.level', browser: graph.browser, tabId: graph.tabId, peak: graph.smoothedPeak
     }));
   }
 }, 100);
 
 navigator.mediaDevices.addEventListener('devicechange', () => {
-  runOffscreenTask('重新验证输出设备', async () => {
+  runOffscreenTask('revalidate output device', async () => {
     for (const graph of [...graphs.values()]) {
       try {
         const output = await enqueueOutputDevice(graph, {
@@ -346,7 +354,8 @@ navigator.mediaDevices.addEventListener('devicechange', () => {
         await chrome.runtime.sendMessage({
           type: 'offscreen.outputChanged', browser: graph.browser, tabId: graph.tabId,
           generation: graph.generation, correlationId: graph.correlationId,
-          routingState: 'Failed', error: `${error.name || 'Error'}: ${error.message}`
+          routingState: 'Failed', outputStatus: 'deviceRevalidationFailed', error: 'device-revalidation-failed',
+          errorDetail: `${error.name || 'Error'}: ${error.message}`
         });
       }
     }

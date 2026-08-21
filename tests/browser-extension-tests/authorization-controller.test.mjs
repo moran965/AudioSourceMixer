@@ -14,7 +14,7 @@ function candidate(endpointId = 'endpoint-a') {
   return {
     browser: 'edge', windowsEndpointId: endpointId, windowsEndpointName: '扬声器 A',
     browserLabel: 'Speakers A', browserGroupId: 'group-a', deviceId: 'device-a',
-    authorizedAt: '2026-08-14T00:00:00.000Z', compatibility: { level: 'likely', message: 'ok' }
+    authorizedAt: '2026-08-14T00:00:00.000Z', compatibility: { level: 'likely', messageCode: 'compatLikely' }
   };
 }
 
@@ -195,11 +195,15 @@ test('notification rejection keeps the mapping and supports an idempotent retry'
 });
 
 test('invalid or mismatched transient state is rejected before storage mutation', async () => {
-  assert.throws(() => createConfirmationSnapshot('edge', null, request(), 1), /候选/);
-  assert.throws(() => createConfirmationSnapshot('edge', candidate('a'), request('b'), 1), /不一致/);
-  assert.throws(() => createConfirmationSnapshot('edge', candidate(), request(), 0), /标识/);
+  assert.throws(() => createConfirmationSnapshot('edge', null, request(), 1),
+    (error) => error.uiMessageKey === 'candidateMissing');
+  assert.throws(() => createConfirmationSnapshot('edge', candidate('a'), request('b'), 1),
+    (error) => error.uiMessageKey === 'candidateMismatch');
+  assert.throws(() => createConfirmationSnapshot('edge', candidate(), request(), 0),
+    (error) => error.uiMessageKey === 'operationInvalid');
   const { controller, state } = harness();
-  await assert.rejects(controller.confirm(candidate('a'), request('b'), 8), /不一致/);
+  await assert.rejects(controller.confirm(candidate('a'), request('b'), 8),
+    (error) => error.uiMessageKey === 'candidateMismatch');
   assert.equal(state.localWrites, 0);
   assert.equal(state.sessionWrites, 0);
   assert.equal(state.notifications, 0);

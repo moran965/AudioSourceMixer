@@ -3,52 +3,53 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Audio Source Mixer 输出设备管理</title>
+  <title data-i18n="authorizePageTitle"></title>
   <link rel="stylesheet" href="authorize.css">
 </head>
 <body>
 <main>
+  <div class="language-picker"><label for="languageSelect" data-i18n="languageLabel"></label><select id="languageSelect" data-i18n-aria-label="languageLabel"><option value="zh-CN">简体中文</option><option value="en-US">English</option></select></div>
   <header>
     <p class="eyebrow">Audio Source Mixer</p>
-    <h1>浏览器输出设备管理</h1>
-    <p class="lead">浏览器需要你亲自确认 Windows 设备与系统选择器中的设备是同一台。这里不会录音，也不会保存测试声音。</p>
+    <h1 data-i18n="authorizeHeading"></h1>
+    <p class="lead" data-i18n="authorizeLead"></p>
   </header>
 
   <section class="wizard" aria-labelledby="wizardTitle">
-    <div class="step"><span>1</span><div><strong id="wizardTitle">正在连接</strong><p id="targetName">当前没有等待授权的设备</p></div></div>
-    <label for="pendingTargets">待设置的 Windows 设备</label>
-    <select id="pendingTargets" disabled><option value="">当前没有待设置设备</option></select>
-    <p id="instruction">从桌面程序为增强标签页选择非默认输出后，设备会出现在这里。</p>
+    <div class="step"><span>1</span><div><strong id="wizardTitle" data-i18n="authorizeConnecting"></strong><p id="targetName" data-i18n="authorizeNoPending"></p></div></div>
+    <label for="pendingTargets" data-i18n="authorizePendingLabel"></label>
+    <select id="pendingTargets" disabled><option value="" data-i18n="authorizeNoPendingOption"></option></select>
+    <p id="instruction" data-i18n="authorizeInstruction"></p>
 
-    <div class="step"><span>2</span><div><strong>选择同一台物理设备</strong><p>点击按钮后，浏览器会显示系统设备列表。请选择与上方名称对应的设备。</p></div></div>
+    <div class="step"><span>2</span><div><strong data-i18n="authorizeChoosePhysical"></strong><p data-i18n="authorizeChoosePhysicalBody"></p></div></div>
     <div class="actions">
-      <button id="chooseOutput" disabled>打开系统设备列表</button>
-      <button id="unlockDevices" class="secondary" disabled>显示兼容设备列表</button>
+      <button id="chooseOutput" disabled data-i18n="authorizeOpenDeviceList"></button>
+      <button id="unlockDevices" class="secondary" disabled data-i18n="authorizeShowCompatible"></button>
     </div>
     <div id="fallbackArea" class="fallback hidden">
-      <label for="fallbackDevices">浏览器输出设备</label>
-      <select id="fallbackDevices" disabled><option value="">没有可用输出设备</option></select>
-      <button id="useFallback" class="secondary" disabled>使用此设备作为候选</button>
+      <label for="fallbackDevices" data-i18n="authorizeBrowserOutputs"></label>
+      <select id="fallbackDevices" disabled><option value="" data-i18n="authorizeNoOutputs"></option></select>
+      <button id="useFallback" class="secondary" disabled data-i18n="authorizeUseCandidate"></button>
     </div>
 
     <div id="candidatePanel" class="candidate hidden">
-      <div class="step"><span>3</span><div><strong>试听并确认</strong><p>候选设备尚未保存。请先播放短测试声音，再确认声音来自正确设备。</p></div></div>
-      <dl><div><dt>Windows 设备</dt><dd id="candidateWindows">—</dd></div><div><dt>浏览器设备</dt><dd id="candidateBrowser">—</dd></div></dl>
+      <div class="step"><span>3</span><div><strong data-i18n="authorizeListenConfirm"></strong><p data-i18n="authorizeListenConfirmBody"></p></div></div>
+      <dl><div><dt data-i18n="authorizeWindowsDevice"></dt><dd id="candidateWindows">—</dd></div><div><dt data-i18n="authorizeBrowserDevice"></dt><dd id="candidateBrowser">—</dd></div></dl>
       <p id="compatibility" class="notice"></p>
       <div class="actions">
-        <button id="testCandidate">播放测试声音</button>
-        <button id="confirmCandidate" class="success">声音来自正确设备，确认保存</button>
-        <button id="reselectCandidate" class="secondary">选错了，重新选择</button>
-        <button id="cancelCandidate" class="quiet">取消</button>
+        <button id="testCandidate" data-i18n="authorizePlayTest"></button>
+        <button id="confirmCandidate" class="success" data-i18n="authorizeConfirm"></button>
+        <button id="reselectCandidate" class="secondary" data-i18n="authorizeReselect"></button>
+        <button id="cancelCandidate" class="quiet" data-i18n="authorizeCancel"></button>
       </div>
     </div>
-    <button id="retryNotification" class="secondary hidden">重新通知增强标签页</button>
-    <div id="status" role="status" aria-live="polite">正在读取授权请求。</div>
+    <button id="retryNotification" class="secondary hidden" data-i18n="authorizeRetryNotification"></button>
+    <div id="status" role="status" aria-live="polite" data-i18n="authorizeReading"></div>
   </section>
 
   <section aria-labelledby="mappingTitle">
-    <div class="section-title"><div><h2 id="mappingTitle">已知设备映射</h2><p>旧版本映射会保留，但需经过试听流程后才显示为“已验证”。</p></div><button id="clearAll" class="danger">清除本浏览器全部映射</button></div>
-    <div id="mappings" class="mapping-list"><p class="empty">当前没有设备映射。</p></div>
+    <div class="section-title"><div><h2 id="mappingTitle" data-i18n="mappingTitle"></h2><p data-i18n="mappingDescription"></p></div><button id="clearAll" class="danger" data-i18n="mappingClearAll"></button></div>
+    <div id="mappings" class="mapping-list"><p class="empty" data-i18n="mappingEmpty"></p></div>
   </section>
 </main>
 <script type="module" src="authorize.js"></script>

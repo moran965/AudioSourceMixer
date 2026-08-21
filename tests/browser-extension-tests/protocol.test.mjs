@@ -139,7 +139,9 @@ test('pending authorization acknowledgement retains the desktop correlation and 
   assert.equal(pending.routingState, 'PendingAuthorization');
   assert.equal(pending.correlationId, 'desktop-correlation');
   assert.equal(pending.commandGeneration, 91);
-  assert.match(pending.outputStatus, /Realtek/);
+  assert.equal(pending.outputStatus, 'authorizationRequired');
+  assert.equal(pending.outputStatusDetail, 'Realtek');
+  assert.equal(pending.error, 'authorization-required');
 });
 
 test('stale browser deviceId safely rebinds only on a unique group and label or unique label', () => {
@@ -242,7 +244,8 @@ test('offscreen graph verifies context.sinkId and does not set default on reques
   assert.match(code, /context\.setSinkId/);
   assert.match(code, /context\.sinkId/);
   assert.match(code, /routingState = 'Failed'/);
-  assert.match(code, /未静默回退默认设备/u);
+  assert.match(code, /error = 'set-sink-failed'/);
+  assert.doesNotMatch(code, /[\p{Script=Han}]/u);
   const chromeApis = [...code.matchAll(/chrome\.([A-Za-z]+)/g)].map((match) => match[1]);
   assert.deepEqual([...new Set(chromeApis)], ['runtime']);
 });

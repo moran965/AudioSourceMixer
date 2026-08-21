@@ -163,7 +163,8 @@ test('offscreen graph applies 200 percent gain, verifies the effective sink, nev
     assert.equal(mismatch.ok, false);
     assert.equal(mismatch.routingState, 'Failed');
     assert.equal(mismatch.effectiveSinkId, 'unexpected-sink');
-    assert.match(mismatch.error, /sinkId mismatch/);
+    assert.equal(mismatch.error, 'sink-mismatch');
+    assert.equal(mismatch.outputStatus, 'sinkMismatch');
 
     forcedSinkId = null;
     const secondStarted = await runtimeListener({ type: 'audio.start', browser: 'edge', tabId: 7, streamId: 'stream-edge' });

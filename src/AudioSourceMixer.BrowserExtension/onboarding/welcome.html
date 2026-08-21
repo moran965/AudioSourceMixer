@@ -3,43 +3,44 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>开始使用 Audio Source Mixer 标签页增强</title>
+  <title data-i18n="welcomePageTitle"></title>
   <link rel="stylesheet" href="welcome.css">
 </head>
 <body>
 <main>
+  <div class="language-picker"><label for="languageSelect" data-i18n="languageLabel"></label><select id="languageSelect" data-i18n-aria-label="languageLabel"><option value="zh-CN">简体中文</option><option value="en-US">English</option></select></div>
   <p class="eyebrow">Audio Source Mixer</p>
-  <h1>浏览器标签页也能独立控制</h1>
-  <p class="lead">扩展只会在你点击工具栏图标后增强当前标签页。它不会自动捕获标签页，也不会在浏览器空闲时连接桌面程序。</p>
-  <p class="return-note">如果本页由你第一次点击扩展图标时打开，请完成阅读后回到原标签页，再点击一次扩展图标。</p>
+  <h1 data-i18n="welcomeHeading"></h1>
+  <p class="lead" data-i18n="welcomeLead"></p>
+  <p class="return-note" data-i18n="welcomeReturn"></p>
 
   <ol>
-    <li><strong>先启动桌面程序</strong><span>保持 Audio Source Mixer 在运行或系统托盘中。</span></li>
-    <li><strong>播放标签页中的声音</strong><span>打开要控制的网站并开始播放。</span></li>
-    <li><strong>点击扩展图标</strong><span>浏览器会请求共享当前标签页的音频；再次点击即可停止。</span></li>
-    <li><strong>在桌面端调节</strong><span>随后可控制音量、平衡、输出设备与均衡器。</span></li>
+    <li><strong data-i18n="welcomeStep1Title"></strong><span data-i18n="welcomeStep1Body"></span></li>
+    <li><strong data-i18n="welcomeStep2Title"></strong><span data-i18n="welcomeStep2Body"></span></li>
+    <li><strong data-i18n="welcomeStep3Title"></strong><span data-i18n="welcomeStep3Body"></span></li>
+    <li><strong data-i18n="welcomeStep4Title"></strong><span data-i18n="welcomeStep4Body"></span></li>
   </ol>
 
   <section>
-    <h2>输出设备需要一次明确确认</h2>
-    <p>为标签页选择非默认输出时，浏览器会打开设备授权页。请选择同一台物理设备、试听测试音，再确认保存。扩展不会录音。</p>
+    <h2 data-i18n="welcomeOutputTitle"></h2>
+    <p data-i18n="welcomeOutputBody"></p>
   </section>
 
   <section id="detailed-guide" tabindex="-1" hidden>
-    <h2>详细使用指南</h2>
+    <h2 data-i18n="welcomeDetailsTitle"></h2>
     <ol>
-      <li><strong>桌面端保持运行</strong><span>可以关闭主窗口并让程序留在系统托盘。</span></li>
-      <li><strong>每个标签页分别启用</strong><span>回到正在播放声音的标签页，直接点击工具栏中的扩展图标。</span></li>
-      <li><strong>在混音器中识别来源</strong><span>带“浏览器增强”标签的卡片可使用 0–200% 音量、平衡、十段 EQ 和输出设备。</span></li>
-      <li><strong>授权非默认设备</strong><span>选择设备后按授权页说明试听；名称不一致时需要再次确认。</span></li>
-      <li><strong>停止或排查</strong><span>再次点击扩展图标即可停止。若桌面端未显示来源，请确认桌面程序正在运行后重新点击。</span></li>
+      <li><strong data-i18n="welcomeDetail1Title"></strong><span data-i18n="welcomeDetail1Body"></span></li>
+      <li><strong data-i18n="welcomeDetail2Title"></strong><span data-i18n="welcomeDetail2Body"></span></li>
+      <li><strong data-i18n="welcomeDetail3Title"></strong><span data-i18n="welcomeDetail3Body"></span></li>
+      <li><strong data-i18n="welcomeDetail4Title"></strong><span data-i18n="welcomeDetail4Body"></span></li>
+      <li><strong data-i18n="welcomeDetail5Title"></strong><span data-i18n="welcomeDetail5Body"></span></li>
     </ol>
   </section>
 
   <div class="actions">
-    <button id="complete">我知道了</button>
-    <button id="details" class="secondary" aria-controls="detailed-guide" aria-expanded="false">打开详细指南</button>
-    <button id="never" class="quiet">不再提示</button>
+    <button id="complete" data-i18n="welcomeComplete"></button>
+    <button id="details" class="secondary" aria-controls="detailed-guide" aria-expanded="false" data-i18n="welcomeOpenDetails"></button>
+    <button id="never" class="quiet" data-i18n="welcomeNever"></button>
   </div>
   <p id="status" role="status" aria-live="polite"></p>
 </main>
