@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][string] $Executable,
-    [string] $OutputDirectory
+    [string] $OutputDirectory,
+    [ValidateSet('zh-CN','en-US')][string] $Language = 'zh-CN'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -9,7 +10,7 @@ $root = Get-RepositoryRoot
 $Executable = [IO.Path]::GetFullPath($Executable)
 if (-not (Test-Path -LiteralPath $Executable -PathType Leaf)) { throw "Executable not found: $Executable" }
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
-    $OutputDirectory = Join-Path $root 'artifacts\ui-interaction-v0.2.2'
+    $OutputDirectory = Join-Path $root "artifacts\ui-interaction-v$(Get-ProductVersion)-$Language"
 }
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 Assert-PathInsideRepository $OutputDirectory
@@ -35,12 +36,13 @@ public static class AudioMixerInteractionInput {
 function Decode-UiName([string] $Value) {
     return [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Value))
 }
-$uiName = @{
-    drag = Decode-UiName '5ouW5Yqo5Lya6K+d5o6S5bqP'
-    hide = Decode-UiName '6ZqQ6JeP5q2k5Lya6K+d'
-    hidden = Decode-UiName '5p+l55yL6ZqQ6JeP5Lya6K+d'
-    restore = Decode-UiName '5oGi5aSN5pi+56S6'
-    restoreAll = Decode-UiName '5YWo6YOo5oGi5aSN5pi+56S6'
+$uiName = if ($Language -eq 'en-US') {
+    @{ drag = 'Drag session to reorder'; hide = 'Hide this session'; hidden = 'View hidden sessions';
+       restore = 'Restore this source'; restoreAll = 'Restore all' }
+} else {
+    @{ drag = Decode-UiName '5ouW5Yqo5Lya6K+d5o6S5bqP'; hide = Decode-UiName '6ZqQ6JeP5q2k5Lya6K+d';
+       hidden = Decode-UiName '5p+l55yL6ZqQ6JeP5Lya6K+d'; restore = Decode-UiName '5oGi5aSN5pi+56S6';
+       restoreAll = Decode-UiName '5YWo6YOo5oGi5aSN5pi+56S6' }
 }
 
 function Wait-Until([scriptblock] $Predicate, [string] $Message, [int] $TimeoutSeconds = 12) {
@@ -132,7 +134,7 @@ $process = $null
 $screenshots = [Collections.Generic.List[string]]::new()
 $checks = [Collections.Generic.List[string]]::new()
 try {
-    $process = Start-Process -FilePath $Executable -ArgumentList '--ui-interaction-test' -PassThru
+    $process = Start-Process -FilePath $Executable -ArgumentList @('--ui-interaction-test','--language',$Language) -PassThru
     $window = Wait-Until { Find-ProcessWindow $process.Id } "Interactive diagnostic window did not appear."
     $window.SetFocus()
     $diagnosticLog = Join-Path ([IO.Path]::GetTempPath()) "AudioSourceMixer\ui-smoke\$($process.Id)\logs\AudioSourceMixer.log"

@@ -60,11 +60,17 @@ internal static class UiScreenshotCapture
             files.Add(Save(window, outputDirectory, fileName, scale));
         }
 
+        window.WindowState = WindowState.Maximized;
+        window.SelectSettingsPage();
+        await SettleAsync(window, cancellationToken);
+        files.Add(Save(window, outputDirectory, "12-settings-maximized.png"));
+        window.WindowState = WindowState.Normal;
+
         window.Width = 880;
         window.Height = 600;
         window.SelectMixerPage();
         await ShowSourceAsync(window, browser, cancellationToken);
-        files.Add(Save(window, outputDirectory, "12-minimum-window.png"));
+        files.Add(Save(window, outputDirectory, "13-minimum-window.png"));
         return files;
     }
 

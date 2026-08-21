@@ -49,7 +49,8 @@ function Get-Inventory([string] $Path) {
     } | Sort-Object)
 }
 
-function Assert-Install([string] $Directory, [bool] $StartupExpected = $false) {
+function Assert-Install([string] $Directory, [bool] $StartupExpected = $false,
+    [ValidateSet('zh-CN','en-US')][string] $LanguageExpected = 'zh-CN') {
     $directory = [IO.Path]::GetFullPath($Directory).TrimEnd('\')
     $exe = Join-Path $directory 'AudioSourceMixer.exe'
     $uninstaller = Join-Path $directory 'AudioSourceMixer.Uninstall.exe'
@@ -59,6 +60,10 @@ function Assert-Install([string] $Directory, [bool] $StartupExpected = $false) {
     if (-not (Test-Path -LiteralPath $uninstallKey)) { throw 'Uninstall registry key is missing.' }
     $registration = Get-ItemProperty -LiteralPath $uninstallKey
     if ([string]$registration.DisplayVersion -ne $version) { throw "DisplayVersion is $($registration.DisplayVersion)." }
+    if ([string]$registration.Language -ne $LanguageExpected) { throw "Installed language is $($registration.Language), expected $LanguageExpected." }
+    if ([string]$registration.QuietUninstallString -notmatch "--language $([regex]::Escape($LanguageExpected))$") {
+        throw "QuietUninstallString does not preserve $LanguageExpected."
+    }
     if (-not ([IO.Path]::GetFullPath([string]$registration.InstallLocation).TrimEnd('\').Equals($directory, [StringComparison]::OrdinalIgnoreCase))) {
         throw "InstallLocation mismatch: $($registration.InstallLocation)"
     }
@@ -89,15 +94,16 @@ function Assert-Install([string] $Directory, [bool] $StartupExpected = $false) {
         if ($run -ne $expected) { throw "Startup command '$run' != '$expected'." }
     } elseif (-not [string]::IsNullOrEmpty($run)) { throw "Startup must default off, found: $run" }
     $null = Assert-RuntimePayload $directory 'Installed'
-    Invoke-UiSmokeTest $exe "Installed UI smoke ($directory)"
+    Invoke-UiSmokeTest $exe "Installed $LanguageExpected UI smoke ($directory)" 60000 $LanguageExpected
 }
 
-function Verify-UninstallerWindow([string] $Directory) {
+function Verify-UninstallerWindow([string] $Directory, [ValidateSet('zh-CN','en-US')][string] $Language) {
     $uninstaller = Join-Path $Directory 'AudioSourceMixer.Uninstall.exe'
     $process = Start-Process -FilePath $uninstaller -PassThru
     $deadline = [DateTimeOffset]::Now.AddSeconds(30)
     do { Start-Sleep -Milliseconds 200; $process.Refresh() } while (-not $process.HasExited -and $process.MainWindowHandle -eq 0 -and [DateTimeOffset]::Now -lt $deadline)
-    $expectedTitle = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5Y246L29IEF1ZGlvIFNvdXJjZSBNaXhlcg=='))
+    $expectedTitle = if ($Language -eq 'en-US') { 'Uninstall Audio Source Mixer' }
+        else { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5Y246L29IEF1ZGlvIFNvdXJjZSBNaXhlcg==')) }
     if ($process.HasExited -or $process.MainWindowHandle -eq 0 -or $process.MainWindowTitle -ne $expectedTitle) {
         if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
         throw "No-argument uninstaller did not show the dedicated uninstall window. Title='$($process.MainWindowTitle)'"
@@ -149,6 +155,21 @@ function Verify-NormalLaunch([string] $Directory) {
     }
 }
 
+function Invoke-InstalledSettingsMigration([string] $Directory) {
+    $process = Start-Process -FilePath (Join-Path $Directory 'AudioSourceMixer.exe') -ArgumentList '--background' -WindowStyle Hidden -PassThru
+    try {
+        Start-Sleep -Seconds 3
+        $process.Refresh()
+        if ($process.HasExited) { throw 'Installed app exited before settings migration completed.' }
+        $signal = [Threading.EventWaitHandle]::OpenExisting('Local\AudioSourceMixer.Exit')
+        try { $signal.Set() | Out-Null } finally { $signal.Dispose() }
+        if (-not $process.WaitForExit(30000) -or $process.ExitCode -ne 0) { throw 'Installed app did not exit cleanly after settings migration.' }
+    } finally {
+        if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
+        $process.Dispose()
+    }
+}
+
 function Wait-Removed([string] $Directory) {
     # A single-file installed uninstaller can remain locked briefly while Windows Defender
     # finishes scanning it. The helper logs completion and this bounded wait observes it.
@@ -160,7 +181,8 @@ function Wait-Removed([string] $Directory) {
     if ($null -ne $run) { throw "Uninstall left startup value: $run" }
 }
 
-function Uninstall-Checked([string] $Directory, [switch] $WithRunningApp) {
+function Uninstall-Checked([string] $Directory, [switch] $WithRunningApp, [switch] $RemoveUserData,
+    [ValidateSet('zh-CN','en-US')][string] $Language = 'zh-CN') {
     $process = $null
     if ($WithRunningApp) {
         $process = Start-Process -FilePath (Join-Path $Directory 'AudioSourceMixer.exe') -ArgumentList '--background' -WindowStyle Hidden -PassThru
@@ -168,9 +190,12 @@ function Uninstall-Checked([string] $Directory, [switch] $WithRunningApp) {
         $process.Refresh()
         if ($process.HasExited -or $process.MainWindowHandle -ne 0) { throw 'Background startup did not remain in tray-only mode.' }
     }
-    Start-Checked (Join-Path $Directory 'AudioSourceMixer.Uninstall.exe') @('--silent-uninstall') 'Silent uninstall'
+    $arguments = @('--silent-uninstall','--language',$Language)
+    if ($RemoveUserData) { $arguments += '--remove-user-data' }
+    Start-Checked (Join-Path $Directory 'AudioSourceMixer.Uninstall.exe') $arguments "Silent $Language uninstall"
     if ($null -ne $process -and -not $process.WaitForExit(15000)) { throw 'Running desktop did not exit gracefully for uninstall.' }
     Wait-Removed $Directory
+    if ($RemoveUserData -and (Test-Path -LiteralPath $dataDirectory)) { throw 'Remove-user-data uninstall left the application data directory.' }
 }
 
 function Wait-BrowserSetupLaunch([string] $Directory, [DateTimeOffset] $Started) {
@@ -238,20 +263,21 @@ New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
 $dataExisted = Test-Path -LiteralPath $dataDirectory
 $dataInventory = @(Get-Inventory $dataDirectory)
 if ($dataExisted) { Copy-Item -LiteralPath $dataDirectory -Destination $dataBackup -Recurse -Force }
+if ($dataExisted) { Remove-Item -LiteralPath $dataDirectory -Recurse -Force }
 if (Test-Path -LiteralPath $runKey) { $preexistingRun = (Get-ItemProperty -LiteralPath $runKey -Name AudioSourceMixer -ErrorAction SilentlyContinue).AudioSourceMixer }
 if (-not [string]::IsNullOrWhiteSpace($BaselineInstallerPath) -and (Test-Path -LiteralPath $BaselineInstallerPath)) {
     Copy-Item -LiteralPath ([IO.Path]::GetFullPath($BaselineInstallerPath)) -Destination $baselineCopy -Force
 }
 
 try {
-    Start-Checked $setup @('--silent-install','--install-dir',(Quote-Argument $defaultInstall)) 'Fresh default install'
+    Start-Checked $setup @('--silent-install','--language','zh-CN','--install-dir',(Quote-Argument $defaultInstall)) 'Fresh Chinese default install'
     if (Get-Process -Name AudioSourceMixer -ErrorAction SilentlyContinue) { throw 'Silent install unexpectedly launched the desktop program without --browser-setup.' }
-    Assert-Install $defaultInstall
-    Verify-UninstallerWindow $defaultInstall
+    Assert-Install $defaultInstall $false 'zh-CN'
+    Verify-UninstallerWindow $defaultInstall 'zh-CN'
     $firstHash = Get-Sha256 (Join-Path $defaultInstall 'AudioSourceMixer.exe')
     $sentinel = Join-Path $defaultInstall 'repair-sentinel.txt'; Set-Content -LiteralPath $sentinel -Value 'must be replaced'
-    Start-Checked $setup @('--silent-install') 'Same-version repair'
-    Assert-Install $defaultInstall
+    Start-Checked $setup @('--silent-install','--language','zh-CN') 'Same-version Chinese repair'
+    Assert-Install $defaultInstall $false 'zh-CN'
     if (Test-Path -LiteralPath $sentinel) { throw 'Repair did not atomically replace the previous directory.' }
     $rollbackSentinel = Join-Path $defaultInstall 'rollback-sentinel.txt'; Set-Content -LiteralPath $rollbackSentinel -Value 'must survive rollback'
     Start-Checked $setup @('--silent-install','--test-fail-after-backup') 'Injected rollback test' 1
@@ -259,36 +285,54 @@ try {
         throw 'Failed install did not restore the previous product directory.'
     }
     $results.defaultInstall = 'passed'; $results.sameVersionRepair = 'passed'; $results.rollback = 'passed'; $results.manualUninstallerMode = 'passed'
-    Uninstall-Checked $defaultInstall -WithRunningApp
+    Uninstall-Checked $defaultInstall -WithRunningApp -Language 'zh-CN'
+    if (-not (Test-Path -LiteralPath $dataDirectory)) { throw 'Default uninstall did not preserve user data.' }
+    Remove-Item -LiteralPath $dataDirectory -Recurse -Force
+    $results.freshChineseInstall = 'passed'; $results.chineseUninstaller = 'passed'; $results.defaultPreservesUserData = 'passed'
 
     $browserSetupStarted = [DateTimeOffset]::Now
-    Start-Checked $setup @('--silent-install','--install-dir',(Quote-Argument $customSpace),'--browser-setup') 'Custom path with explicit browser setup install'
+    Start-Checked $setup @('--silent-install','--language','en-US','--install-dir',(Quote-Argument $customSpace),'--browser-setup') 'Fresh English custom path with browser setup install'
     Wait-BrowserSetupLaunch $customSpace $browserSetupStarted
-    Assert-Install $customSpace
-    Uninstall-Checked $customSpace
+    Assert-Install $customSpace $false 'en-US'
+    Verify-UninstallerWindow $customSpace 'en-US'
+    Uninstall-Checked $customSpace -RemoveUserData -Language 'en-US'
+    $results.freshEnglishInstall = 'passed'; $results.englishUninstaller = 'passed'; $results.removeUserData = 'passed'
     $results.customPathWithSpaces = 'passed'; $results.browserSetupDefaultOff = 'passed'; $results.browserSetupExplicitLaunch = 'passed'
 
-    Start-Checked $setup @('--silent-install','--install-dir',(Quote-Argument $customChinese),'--startup-background') 'Chinese custom path and startup install'
-    Assert-Install $customChinese $true
-    Uninstall-Checked $customChinese -WithRunningApp
+    Start-Checked $setup @('--silent-install','--language','zh-CN','--install-dir',(Quote-Argument $customChinese),'--startup-background') 'Chinese custom path and startup install'
+    Assert-Install $customChinese $true 'zh-CN'
+    Uninstall-Checked $customChinese -WithRunningApp -Language 'zh-CN'
     $results.customChinesePath = 'passed'; $results.startupEnableDisableCleanup = 'passed'; $results.backgroundTrayStartup = 'passed'
 
     if (Test-Path -LiteralPath $baselineCopy) {
+        if (Test-Path -LiteralPath $dataDirectory) { Remove-Item -LiteralPath $dataDirectory -Recurse -Force }
         Start-Checked $baselineCopy @('--silent-install') 'Install 0.2.2 upgrade baseline'
         $baselineExe = Join-Path $defaultInstall 'AudioSourceMixer.exe'
         if ([string](Get-Item -LiteralPath $baselineExe).VersionInfo.FileVersion -ne '0.2.2.0') { throw 'Baseline installer is not 0.2.2.' }
         $upgradeSentinel = Join-Path $defaultInstall 'v0.2.2-upgrade-sentinel.txt'; Set-Content -LiteralPath $upgradeSentinel -Value 'old payload'
         $baselineHash = Get-Sha256 $baselineExe
-        Start-Checked $setup @('--silent-install') 'In-place 0.2.2 to 1.0.0 upgrade'
-        Assert-Install $defaultInstall
+        New-Item -ItemType Directory -Path $dataDirectory -Force | Out-Null
+        $upgradeSettings = Join-Path $dataDirectory 'settings.json'
+        Set-Content -LiteralPath $upgradeSettings -Encoding UTF8 -Value '{"CloseToTray":false,"RememberProfiles":false,"ManualSourceOrder":["win:upgrade-preserved"],"SchemaVersion":7}'
+        $settingsHash = Get-Sha256 $upgradeSettings
+        Start-Checked $setup @('--silent-install','--language','en-US') 'In-place 0.2.2 to 1.0.0 upgrade'
+        if ((Get-Sha256 $upgradeSettings) -ne $settingsHash) { throw 'Upgrade installer overwrote the existing 0.2.2 settings file.' }
+        Assert-Install $defaultInstall $false 'en-US'
+        Invoke-InstalledSettingsMigration $defaultInstall
+        $migratedSettings = Get-Content -LiteralPath $upgradeSettings -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($migratedSettings.Language -ne 'zh-CN' -or [bool]$migratedSettings.CloseToTray -or [bool]$migratedSettings.RememberProfiles -or
+            @($migratedSettings.ManualSourceOrder) -notcontains 'win:upgrade-preserved' -or [int]$migratedSettings.SchemaVersion -ne 8) {
+            throw '0.2.2 settings were not preserved and migrated to schema 8 with the existing-user Chinese default.'
+        }
         if (Test-Path -LiteralPath $upgradeSentinel) { throw 'Upgrade retained an old payload sentinel.' }
         if ((Get-Sha256 (Join-Path $defaultInstall 'AudioSourceMixer.exe')) -eq $baselineHash) { throw 'Upgrade executable hash did not change.' }
         $results.inPlaceUpgradeFrom022 = 'passed'
-        Uninstall-Checked $defaultInstall
+        Uninstall-Checked $defaultInstall -Language 'en-US'
     } else { $results.inPlaceUpgradeFrom022 = 'not executed: baseline artifact unavailable' }
 
-    Start-Checked $setup @('--silent-install','--install-dir',(Quote-Argument $defaultInstall)) 'Final hash verification install'
-    Assert-Install $defaultInstall
+    if (Test-Path -LiteralPath $dataDirectory) { Remove-Item -LiteralPath $dataDirectory -Recurse -Force }
+    Start-Checked $setup @('--silent-install','--language','zh-CN','--install-dir',(Quote-Argument $defaultInstall)) 'Final hash verification install'
+    Assert-Install $defaultInstall $false 'zh-CN'
     Verify-NormalLaunch $defaultInstall
     Invoke-LiveMeterUiTest (Join-Path $defaultInstall 'AudioSourceMixer.exe') 'Release' (Join-Path $artifacts 'live-meter-installed.json') 'Installed live WPF meter test'
     $publishHash = Get-Sha256 $publishExe; $payloadHash = Get-Sha256 $payloadExe; $installedHash = Get-Sha256 (Join-Path $defaultInstall 'AudioSourceMixer.exe')
@@ -306,7 +350,7 @@ try {
         }
     }
     $installedInventory = @(Get-PayloadInventory $defaultInstall)
-    Uninstall-Checked $defaultInstall
+    Uninstall-Checked $defaultInstall -Language 'zh-CN'
     $results.publishPayloadInstalledHash = 'passed'; $results.runtimeAllowlist = 'passed'; $results.installedExtensionInventory = 'passed'; $results.silentUninstall = 'passed'; $results.runningAppGracefulUninstall = 'passed'; $results.normalVisibleLaunch = 'passed'; $results.installedLiveMeter = 'passed'
 
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json

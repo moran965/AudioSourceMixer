@@ -33,9 +33,12 @@ function Get-Sha256([string] $Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
 }
 
-function Invoke-UiSmokeTest([string] $Executable, [string] $Description, [int] $TimeoutMilliseconds = 60000) {
+function Invoke-UiSmokeTest([string] $Executable, [string] $Description, [int] $TimeoutMilliseconds = 60000,
+    [ValidateSet('','zh-CN','en-US')][string] $Language = '') {
     if (-not (Test-Path -LiteralPath $Executable)) { throw "$Description executable is missing: $Executable" }
-    $process = Start-Process -FilePath $Executable -ArgumentList '--ui-smoke-test' -WindowStyle Hidden -PassThru
+    $arguments = @('--ui-smoke-test')
+    if (-not [string]::IsNullOrWhiteSpace($Language)) { $arguments += @('--language',$Language) }
+    $process = Start-Process -FilePath $Executable -ArgumentList $arguments -WindowStyle Hidden -PassThru
     if (-not $process.WaitForExit($TimeoutMilliseconds)) {
         Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
         throw "$Description timed out after $TimeoutMilliseconds ms."
