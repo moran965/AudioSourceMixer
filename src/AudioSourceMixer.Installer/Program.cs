@@ -18,7 +18,7 @@ internal static class Program
     internal static readonly string DefaultInstallDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "AudioSourceMixer");
     internal static readonly string ProductVersion = Assembly.GetExecutingAssembly()
-        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.2.2";
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "1.0.0";
     private static readonly string LogPath = Path.Combine(Path.GetTempPath(), "AudioSourceMixer-Installer.log");
 
     [STAThread]

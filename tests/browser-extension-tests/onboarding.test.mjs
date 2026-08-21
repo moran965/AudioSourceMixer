@@ -9,7 +9,7 @@ import {
 } from '../../src/AudioSourceMixer.BrowserExtension/onboarding/onboarding-policy.js';
 
 test('fresh install opens the extension-owned welcome page once', () => {
-  const plan = installationPlan({ reason: 'install' }, null, '0.2.2');
+  const plan = installationPlan({ reason: 'install' }, null, '1.0.0');
   assert.equal(plan.openWelcome, true);
   assert.equal(plan.state.status, 'pending');
   assert.equal(needsOnboarding(plan.state), true);
@@ -17,20 +17,20 @@ test('fresh install opens the extension-owned welcome page once', () => {
 
 test('browser update and development reload never force onboarding open', () => {
   for (const reason of ['update', 'chrome_update', 'shared_module_update']) {
-    const plan = installationPlan({ reason }, { status: 'pending' }, '0.2.2');
+    const plan = installationPlan({ reason }, { status: 'pending' }, '1.0.0');
     assert.equal(plan.openWelcome, false);
   }
-  assert.equal(installationPlan(undefined, undefined, '0.2.2').openWelcome, false);
+  assert.equal(installationPlan(undefined, undefined, '1.0.0').openWelcome, false);
 });
 
 test('completed and never states survive installs and schema normalization', () => {
-  const completed = completeOnboarding({}, '0.2.2');
+  const completed = completeOnboarding({}, '1.0.0');
   assert.deepEqual(normalizeOnboardingState(completed), completed);
-  assert.equal(installationPlan({ reason: 'install' }, completed, '0.2.2').openWelcome, false);
-  const never = completeOnboarding(completed, '0.2.2', true);
+  assert.equal(installationPlan({ reason: 'install' }, completed, '1.0.0').openWelcome, false);
+  const never = completeOnboarding(completed, '1.0.0', true);
   assert.equal(never.status, 'never');
   assert.equal(needsOnboarding(never), false);
-  assert.equal(installationPlan({ reason: 'install' }, never, '0.2.2').openWelcome, false);
+  assert.equal(installationPlan({ reason: 'install' }, never, '1.0.0').openWelcome, false);
 });
 
 test('legacy or malformed state migrates to a safe pending schema', () => {

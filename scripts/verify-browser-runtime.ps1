@@ -72,7 +72,7 @@ foreach ($key in $nativeHostKeys) {
 
 try {
     New-Item -ItemType Directory -Path $dataDirectory -Force | Out-Null
-    $settings = '{"CloseToTray":false,"AutoApplyProfiles":true,"RememberProfiles":true,"ShowInactiveSessions":true,"BrowserOnboardingChoice":"runtime-test","OnboardingCompletedVersion":"0.2.2","BrowserGuideDismissed":true,"SchemaVersion":4}'
+    $settings = '{"CloseToTray":false,"AutoApplyProfiles":true,"RememberProfiles":true,"ShowInactiveSessions":true,"BrowserOnboardingChoice":"runtime-test","OnboardingCompletedVersion":"1.0.0","BrowserGuideDismissed":true,"Language":"en-US","SchemaVersion":8}'
     [System.IO.File]::WriteAllText((Join-Path $dataDirectory 'settings.json'), $settings, [System.Text.UTF8Encoding]::new($false))
 
     Register-TestNativeHost

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.0 - 2026-08-22
+
+- Added complete Simplified Chinese and English localization for WPF views, dynamic status text, accessibility names, tray UI, installer, uninstaller, onboarding, and the Manifest V3 extension. Language changes apply immediately without rebuilding audio services or changing active source state.
+- Added settings schema 8 with persistent `zh-CN` / `en-US` selection. Existing users without a language setting remain on Simplified Chinese; fresh installs inherit the installer language only when no settings file exists.
+- Localized the installer and uninstaller, including a bilingual first page, saved uninstall language, and `--language zh-CN|en-US` for silent workflows.
+- Internationalized the extension with matching `_locales/zh_CN` and `_locales/en` resources, visible per-profile language selection, stable protocol status/error codes, and no new permissions or remote code.
+- Removed the standalone portable distribution, portable registration scripts, and user-facing portable instructions. Installer payloads now come directly from fresh self-contained Release publishes and a strict allowlist.
+- Removed obsolete agent-only assets and the unused ProcessLoopbackProbe experiment while retaining active regression tests, audio fixtures, CapabilityProbe live-meter coverage, browser runtime probes, and architecture records.
+- Unified product, file, extension, installer, uninstall registration, documentation, and artifact versions at 1.0.0 / 1.0.0.0.
+- Expanded release gates for bilingual resource parity, hard-coded UI text audits, runtime language switching, localized extension pages, bilingual install/uninstall, 0.2.2 settings-preserving upgrade, maximum-window screenshots, and publish → installer payload → installed hash equality.
+
 ## 0.2.2 - 2026-08-21
 
 - 拖拽改为一次捕获的完整卡片 `Adorner`，由渲染帧驱动位置、平滑边缘滚动和中线滞回；预览顺序实时执行 `ObservableCollection.Move`，相邻已物化卡片使用 150ms FLIP 让位，Drop 仅保存一次，Esc/失焦/异常恢复原顺序并清理全部临时视觉。

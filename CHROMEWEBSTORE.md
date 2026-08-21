@@ -1,94 +1,73 @@
-# Chrome Web Store Listing — Audio Source Mixer 标签页增强
+# Audio Source Mixer Tab Enhancement — Store Draft / 商店资料草案
 
-> Last Updated: 2026-08-21 · Draft only; v0.2.2 is not published in Chrome Web Store or Edge Add-ons.
+Last updated / 最后更新：2026-08-22 · Version 1.0.0 · Not yet published / 尚未发布
 
-## Store Listing
+## English listing
 
-**Extension Name**  
-Audio Source Mixer 标签页增强
+**Name:** Audio Source Mixer Tab Enhancement
 
-**Short Description**  
-在你点击工具栏图标后，将当前标签页加入 Audio Source Mixer，分别控制音量、声道、均衡器和输出设备。
+**Short description:** Give user-selected Chrome or Edge tabs independent volume, balance, EQ, live level, and output-device control through the local Audio Source Mixer app.
 
-**Detailed Description**
+**Detailed description:**
 
-Audio Source Mixer 标签页增强让正在播放声音的 Chrome 或 Edge 标签页出现在桌面混音器中。
+Audio Source Mixer Tab Enhancement works with the installed Windows desktop app. After you click the toolbar action, it captures only that current tab's audio and exposes independent 0–200% gain, stereo balance, a ten-band equalizer, live level, and output-device selection in the desktop mixer. Non-default outputs use a visible authorization page with a local test tone and explicit confirmation. Click the action again to stop.
 
-功能包括标签页独立音量（最高 200%）、左右声道平衡、十段均衡器、静音和输出设备选择。扩展只在你点击工具栏图标后处理当前标签页，再次点击即可停止增强。
+The extension does not record, save, analyze, or upload audio or page content. It contains no ads, analytics, remote code, or broad host access. Output mappings and language choice stay in the current browser profile.
 
-使用方法：先运行 Audio Source Mixer；打开正在播放声音的网页；点击扩展图标；返回桌面混音器调节。首次选择非默认输出设备时，请在浏览器授权页选择对应设备、试听并确认。
+## 中文商店文案
 
-音频始终留在本机，不会录制、保存或上传。扩展不包含广告、分析、远程代码或第三方服务。标签页标题、站点来源和控制状态只在当前设备的扩展与 Audio Source Mixer 桌面程序之间处理。
+**名称：** Audio Source Mixer 标签页增强
 
-v0.2.2：增加首次使用指南，修复输出设备确认与存储更新并发错误，并将各增强标签页的独立实时电平提升到 10Hz。选择“系统默认”时，桌面端会解析当前 Windows 默认物理端点；扩展只在该端点已有用户确认的映射时应用具体 sink，缺少映射时明确等待授权，不会静默回退。
+**简短说明：** 通过本机 Audio Source Mixer，为用户主动选择的 Chrome/Edge 标签页提供独立音量、平衡、EQ、实时电平和输出设备控制。
 
-**Category**  
-Productivity
+**详细说明：**
 
-**Single Purpose**  
-把用户明确启用的浏览器标签页音频加入本机 Audio Source Mixer，以便独立控制声音。
+Audio Source Mixer 标签页增强与已安装的 Windows 桌面程序配合使用。只有点击工具栏图标后，扩展才捕获当前标签页音频，并在桌面混音器中提供独立 0–200% 增益、左右平衡、十段均衡器、实时电平和输出设备选择。非默认输出会打开可见授权页，由用户在本机试听并明确确认。再次点击图标即可停止。
 
-**Primary Language**  
-Chinese (Simplified)
+扩展不录制、不保存、不分析或上传音频与网页内容；不包含广告、分析、远程代码或宽泛网站访问权限。输出映射和语言选择只保存在当前浏览器 profile。
 
-## Graphics & Assets
+## Permission justifications / 权限理由
 
-| Asset | Dimensions | Status | Filename |
-|---|---:|---|---|
-| Store Icon | 128×128 PNG | Ready | `assets/icon-128.png` |
-| Screenshot 1 | 1280×800 or 640×400 | Needed before submission | 浏览器标签页来源 |
-| Screenshot 2 | 1280×800 or 640×400 | Needed before submission | 输出设备授权页 |
-| Screenshot 3 | 1280×800 or 640×400 | Needed before submission | 扩展欢迎页 |
-| Small Promo Tile | 440×280 | Optional / not created | — |
+| Permission | Justification |
+| --- | --- |
+| `activeTab` | Limits user-triggered work to the tab the user clicked. / 将用户触发的操作限制在当前标签页。 |
+| `tabs` | Reads tab identity/title and tracks lifecycle for active enhanced sources. No page body is read. / 读取标签页身份、标题和生命周期，不读取页面正文。 |
+| `tabCapture` | Captures the current tab only after the toolbar action. / 仅在点击图标后捕获当前标签页音频。 |
+| `offscreen` | Runs the local Web Audio graph while the service worker sleeps. / 在 service worker 休眠时维持本地 Web Audio 图。 |
+| `nativeMessaging` | Exchanges control state with the installed local desktop host. / 与已安装的本机桌面 Host 交换控制状态。 |
+| `storage` | Stores onboarding, language, verified device mappings, and recoverable lifecycle state. / 保存引导、语言、已验证设备映射及可恢复生命周期状态。 |
 
-当前仓库内的桌面 UI 验收截图不是商店素材，不会被扩展包携带。
+No `host_permissions`, `audioCapture`, remote scripts, inline scripts, `eval`, cookies, analytics, or `storage.sync` are used.
 
-## Permissions Justification
+## Privacy disclosure / 隐私披露
 
-| Permission | Type | Justification |
-|---|---|---|
-| `activeTab` | permissions | 仅在用户点击工具栏图标时访问当前标签页以启动该标签页的音频增强。 |
-| `tabs` | permissions | 读取被用户启用标签页的标题/来源、跟踪关闭事件，并复用已打开的扩展内引导或授权页。 |
-| `tabCapture` | permissions | 在用户直接点击扩展图标后取得当前标签页音频流；不进行后台自动捕获。 |
-| `offscreen` | permissions | 在 MV3 后台休眠期间维持用户已启用的本机音频处理链。 |
-| `nativeMessaging` | permissions | 与本机 Audio Source Mixer 桌面桥交换控制状态；只允许清单中的明确受信扩展 ID。 |
-| `storage` | permissions | 在本机保存输出设备映射、首次使用完成状态和短期运行状态。未使用 sync。 |
+Privacy policies: [English](docs/privacy.md) · [简体中文](docs/privacy.zh-CN.md). Before store submission these files must be hosted at a stable public HTTPS URL and a public support/contact address must be supplied.
 
-不声明 `host_permissions`，也不请求 `<all_urls>`、cookies、history、webRequest、identity 或远程脚本权限。
+Data stays local. The tab title and origin without path/query are sent only to the Native Messaging Host on the same machine. Audio remains in memory and is never uploaded. Device mappings and the extension language remain in the current browser profile.
 
-## Privacy & Data Use
+## Screenshot checklist / 截图清单
 
-扩展处理当前被用户启用标签页的标题、站点 origin、音量/声道/EQ/输出选择与实时电平。这些信息仅保留在浏览器本地存储、会话存储或传给同一台电脑上的 Audio Source Mixer Native Host；不会发送到互联网、开发者服务器或第三方。
+Create fresh screenshots at store-required dimensions in both languages:
 
-- [x] 数据不出售给第三方。
-- [x] 数据不用于扩展单一目的以外的用途。
-- [x] 数据不用于信用或借贷用途。
-- [x] 不使用分析、广告、遥测或第三方服务。
+1. Welcome page / 欢迎页。
+2. Enhanced browser source card with live level / 带实时电平的浏览器增强来源。
+3. Expanded ten-band EQ / 展开的十段 EQ。
+4. Output authorization device selection / 输出授权设备选择。
+5. Test-tone confirmation and mismatch warning / 试听确认与名称不匹配警告。
+6. Verified mapping list and reauthorization controls / 已验证映射与重新授权。
 
-**Privacy Policy URL**  
-发布前必须为 [docs/privacy.md](docs/privacy.md) 配置稳定的公开 HTTPS 地址；目前尚未提交商店，因此没有伪造 URL。
+Avoid personal tabs, account names, machine paths, device serials, notifications, and unrelated browser UI.
 
-## Distribution
+## Version history / 版本历史
 
-**Visibility:** Unlisted（计划；尚未发布）  
-**Regions:** All regions（计划）
+| Version | Date | Summary | Status |
+| --- | --- | --- | --- |
+| 1.0.0 | 2026-08-22 | Full zh-CN/en-US localization, stable status/error codes, visible profile-local language switch, unchanged MV3 permissions / 完整中英本地化、稳定状态码、当前 profile 语言切换、权限不变 | Draft |
+| 0.2.2 | 2026-08-21 | Authorization race fixes, output revalidation, independent 10 Hz tab levels / 授权竞态修复、输出重验证、独立 10 Hz 电平 | Local distribution only |
 
-## Developer Info
+## Submission gates
 
-**Publisher Name:** Audio Source Mixer contributors  
-**Contact Email:** 发布前填写并验证  
-**Support URL:** 发布前填写
-
-## Version History
-
-| Version | Date | Changes | Status |
-|---|---|---|---|
-| 0.2.2 | 2026-08-21 | 手动排序配套展示、物理默认端点跟随、授权竞态修复、输出映射运行验证、每标签页独立 10Hz 实时电平 | Draft |
-
-## Review Notes
-
-- v0.2.2 只提供随桌面安装包分发的本地加载流程；没有声称商店版已发布。
-- 捕获必须由工具栏图标的用户手势触发。
-- service worker 空闲恢复不会连接 Native Host，单独启动浏览器不会启动桌面程序。
-- 所有脚本随扩展打包；无 `eval`、远程代码或 CDN。
-- 发布阻塞项：公开隐私政策 URL、有效联系邮箱、商店尺寸截图和实际商店 ID。
+- Zip only `src/AudioSourceMixer.BrowserExtension` contents; do not include repository files, tests, or desktop binaries.
+- Validate all manifest `__MSG_*__` keys, icon dimensions, CSP behavior, and absence of remote code.
+- Run Node tests plus isolated-profile Chrome and Edge onboarding, authorization, offscreen, service-worker, idle, update, and reload checks.
+- Publish only after the privacy/support URLs and bilingual screenshots are public and final.

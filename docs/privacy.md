@@ -1,13 +1,13 @@
-# Audio Source Mixer 标签页增强隐私说明
+# Audio Source Mixer Privacy Notice
 
-最后更新：2026-08-14
+[简体中文](privacy.zh-CN.md) · Last updated: 2026-08-22
 
-Audio Source Mixer 标签页增强不向开发者、广告平台或任何第三方服务器收集或传输个人数据、浏览记录、网页内容或音频。
+Audio Source Mixer does not send personal data, browsing history, page content, or audio to the developers, advertisers, analytics providers, or any third-party server.
 
-扩展只在用户点击工具栏图标后处理当前标签页音频。为在同一台电脑上的桌面混音器中显示和控制该来源，扩展会在本机处理标签页标题、站点来源（不含路径和查询参数）、音量、声道平衡、静音、均衡器、输出设备选择和实时电平。音频不会被录制、写入文件或上传。
+The extension processes a tab only after the user clicks its toolbar action. On the same computer it handles the tab title, site origin without path/query, control state, output selection, and live level so the desktop mixer can display and control that source. Audio is processed in memory and is not recorded, saved, or uploaded.
 
-输出设备映射和首次使用完成状态保存在浏览器本地存储中；活动标签页的短期状态保存在浏览器会话存储中。扩展通过受限的 Native Messaging 连接把控制状态发送给同一台电脑上的 Audio Source Mixer，`allowed_origins` 仅列出明确配置的受信扩展 ID。
+Output mappings, onboarding state, and the extension language are stored in `chrome.storage.local` for the current browser profile. Active short-lived tab state is stored in `chrome.storage.session`. Native Messaging is restricted to explicitly configured extension IDs and communicates only with the installed local host.
 
-扩展不使用 cookies、分析、遥测、广告或第三方服务，也不使用 `chrome.storage.sync`。用户可在浏览器输出设备管理页清除映射，或卸载扩展以删除扩展存储。
+The desktop app stores settings, source profiles, rollback recovery state, and logs under `%LocalAppData%\AudioSourceMixer`. Uninstall retains this data unless the user explicitly requests deletion.
 
-如果以后数据实践发生变化，本说明会随版本更新。商店发布前将补充可公开访问的支持地址与隐私联系邮箱。
+The project uses no cookies, analytics, telemetry, advertising, remote scripts, `eval`, or `chrome.storage.sync`. Users can clear mappings from the extension authorization page, remove browser extension data, or select user-data removal during desktop uninstall.
