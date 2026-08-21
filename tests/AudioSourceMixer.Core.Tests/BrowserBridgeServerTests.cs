@@ -143,6 +143,39 @@ public sealed class BrowserBridgeServerTests
     }
 
     [Fact]
+    public async Task FollowSystemDefaultSendsResolvedPhysicalEndpointAndKeepsUiSelectionSemantic()
+    {
+        var pipeName = TestPipeName();
+        await using var server = new BrowserBridgeServer(pipeName);
+        server.Start();
+        await using var client = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        await client.ConnectAsync(5000);
+        await using var writer = new StreamWriter(client, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true };
+        using var reader = new StreamReader(client, Encoding.UTF8, leaveOpen: true);
+        await writer.WriteLineAsync("""{"protocolVersion":3,"type":"tab.register","browser":"edge","tabId":31,"title":"Default","generation":1}""");
+        await WaitUntilAsync(() => server.GetTabs().Count == 1);
+
+        var source = AudioSourceId.ForBrowserTab("edge", 31);
+        var pending = server.SetAudioAsync(source, 1, 0, false, "", null,
+            [new OutputDeviceInfo("windows-headphones", "Bluetooth Headphones", IsDefaultMultimedia: true)],
+            followSystemDefault: true, resolvedOutputDeviceId: "windows-headphones",
+            resolvedOutputDeviceName: "Bluetooth Headphones");
+        var command = BrowserProtocol.Parse(Encoding.UTF8.GetBytes(
+            (await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5)))!));
+        Assert.Equal(string.Empty, command.OutputDeviceId);
+        Assert.True(command.FollowSystemDefault);
+        Assert.Equal("windows-headphones", command.ResolvedOutputDeviceId);
+
+        await writer.WriteLineAsync($$"""{"protocolVersion":3,"type":"tab.update","browser":"edge","tabId":31,"outputDeviceId":"","followSystemDefault":true,"resolvedOutputDeviceId":"windows-headphones","resolvedOutputDeviceName":"Bluetooth Headphones","routingState":"PendingAuthorization","correlationId":"{{command.CorrelationId}}","generation":{{command.Generation}}} """);
+        await pending;
+        var tab = Assert.Single(server.GetTabs());
+        Assert.True(tab.FollowSystemDefault);
+        Assert.Equal(string.Empty, tab.OutputDeviceId);
+        Assert.Equal("windows-headphones", tab.ResolvedOutputDeviceId);
+        Assert.Equal(AudioRoutingState.PendingAuthorization, tab.RoutingState);
+    }
+
+    [Fact]
     public async Task SetAudioIgnoresStaleAcknowledgementsAcceptsPendingAndTimesOutWithoutAck()
     {
         var pipeName = TestPipeName();

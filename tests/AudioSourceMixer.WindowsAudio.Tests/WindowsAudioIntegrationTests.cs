@@ -7,6 +7,19 @@ namespace AudioSourceMixer.WindowsAudio.Tests;
 
 public sealed class WindowsAudioIntegrationTests
 {
+    [Theory]
+    [InlineData("Microsoft Edge", "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe", 42, "msedge", "Microsoft Edge", "msedge.exe")]
+    [InlineData("", null, 0, null, "系统声音", "系统")]
+    [InlineData("{84D8B2CF-3E32-4C22-933B-4A8094FB2301}", null, 123, "spotify", "Spotify", "spotify.exe")]
+    [InlineData("chrome.exe", null, 124, "chrome", "Google Chrome", "chrome.exe")]
+    public void SessionPresentationUsesReadableNamesAndStableProcessDetails(string displayName, string? executablePath,
+        uint processId, string? processName, string expectedName, string expectedFile)
+    {
+        var result = SessionPresentationResolver.Resolve(displayName, executablePath, processId, processName);
+        Assert.Equal(expectedName, result.DisplayName);
+        Assert.Equal(expectedFile, result.ProcessFileName);
+    }
+
     [Fact]
     public void RealtimeMeterSmoothingAttacksImmediatelyAndDecaysToZero()
     {

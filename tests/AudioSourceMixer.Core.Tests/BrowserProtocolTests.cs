@@ -76,6 +76,17 @@ public sealed class BrowserProtocolTests
     }
 
     [Fact]
+    public void Version3CarriesSystemDefaultSelectionAndResolvedPhysicalEndpointSeparately()
+    {
+        var json = """{"protocolVersion":3,"type":"tab.setAudio","browser":"edge","tabId":7,"outputDeviceId":"","followSystemDefault":true,"resolvedOutputDeviceId":"windows-headphones","resolvedOutputDeviceName":"Bluetooth Headphones"}""";
+        var message = BrowserProtocol.Parse(Encoding.UTF8.GetBytes(json));
+        Assert.Equal(string.Empty, message.OutputDeviceId);
+        Assert.True(message.FollowSystemDefault);
+        Assert.Equal("windows-headphones", message.ResolvedOutputDeviceId);
+        Assert.Equal("Bluetooth Headphones", message.ResolvedOutputDeviceName);
+    }
+
+    [Fact]
     public void InvalidSinkStateAndOversizedEndpointCatalogAreRejected()
     {
         Assert.Throws<InvalidDataException>(() => BrowserProtocol.Parse(Encoding.UTF8.GetBytes(

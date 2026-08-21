@@ -103,6 +103,26 @@ test('offscreen graph applies 200 percent gain, verifies the effective sink, nev
     assert.equal(updated.browserDeviceId, 'browser-usb');
     assert.equal(updated.setSinkIdSupported, true);
 
+    const pendingDefault = await runtimeListener({
+      type: 'audio.update', browser: 'chrome', tabId: 7, generation: 10, volume: 2, balance: -0.5,
+      muted: false, outputDeviceId: '', followSystemDefault: true,
+      resolvedOutputDeviceId: 'windows-headphones', resolvedOutputDeviceName: 'Bluetooth Headphones'
+    });
+    assert.equal(pendingDefault.routingState, 'PendingAuthorization');
+    assert.equal(firstContext.sinkId, 'browser-usb');
+
+    const followedDefault = await runtimeListener({
+      type: 'audio.update', browser: 'chrome', tabId: 7, generation: 10, volume: 2, balance: -0.5,
+      muted: false, outputDeviceId: '', followSystemDefault: true,
+      resolvedOutputDeviceId: 'windows-headphones', resolvedOutputDeviceName: 'Bluetooth Headphones',
+      browserOutputDeviceId: 'browser-usb', browserOutputDeviceLabel: 'USB DAC', browserGroupId: 'usb-group'
+    });
+    assert.equal(followedDefault.outputDeviceId, '');
+    assert.equal(followedDefault.followSystemDefault, true);
+    assert.equal(followedDefault.resolvedOutputDeviceId, 'windows-headphones');
+    assert.equal(followedDefault.effectiveSinkId, 'browser-usb');
+    assert.equal(followedDefault.routingState, 'Applied');
+
     const virtualMapping = await runtimeListener({
       type: 'audio.update', browser: 'chrome', tabId: 7, generation: 11, volume: 2, balance: -0.5,
       muted: false, outputDeviceId: 'windows-usb', outputDeviceName: 'Windows USB Name', correlationId: 'corr-virtual',

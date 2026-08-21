@@ -16,20 +16,26 @@ public sealed class SourcePresentationTests
         var chrome = Source("chrome-session", "chrome", "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe");
         var electron = Source("electron-session", "Chrome Helper Notes", "C:\\Apps\\Notes\\notes.exe");
         var edgeTab = Browser("edge", 1);
+        var chromeTab = Browser("chrome", 2);
 
-        var edgeOnly = SourcePresentationPolicy.Apply([edge, chrome, electron, edgeTab], new ApplicationSettings(), EmptySequence());
+        var edgeOnly = SourcePresentationPolicy.Apply([edge, chrome, electron, edgeTab], new ApplicationSettings());
         Assert.DoesNotContain(edgeOnly.Visible, item => item.Id == edge.Id);
         Assert.Contains(edgeOnly.Visible, item => item.Id == chrome.Id);
         Assert.Contains(edgeOnly.Visible, item => item.Id == electron.Id);
         Assert.Contains(edgeOnly.Hidden, item => item.Source.Id == edge.Id && !item.IsManual);
 
-        var noEnhancedTab = SourcePresentationPolicy.Apply([edge, chrome, electron], new ApplicationSettings(), EmptySequence());
+        var noEnhancedTab = SourcePresentationPolicy.Apply([edge, chrome, electron], new ApplicationSettings());
         Assert.Contains(noEnhancedTab.Visible, item => item.Id == edge.Id);
         Assert.Contains(noEnhancedTab.Visible, item => item.Id == chrome.Id);
 
         var disabled = SourcePresentationPolicy.Apply([edge, chrome, edgeTab],
-            new ApplicationSettings(HideBrowserAggregateSessions: false), EmptySequence());
+            new ApplicationSettings(HideBrowserAggregateSessions: false));
         Assert.Contains(disabled.Visible, item => item.Id == edge.Id);
+
+        var forcedEdge = SourcePresentationPolicy.Apply([edge, chrome, edgeTab, chromeTab],
+            new ApplicationSettings(VisibleBrowserAggregates: ["edge"]));
+        Assert.Contains(forcedEdge.Visible, item => item.Id == edge.Id);
+        Assert.DoesNotContain(forcedEdge.Visible, item => item.Id == chrome.Id && item.Kind == AudioSourceKind.WindowsSession);
     }
 
     [Fact]
@@ -40,7 +46,7 @@ public sealed class SourcePresentationTests
         var settings = new ApplicationSettings(ManuallyHiddenSources:
             [new HiddenSourceSetting(first.Id.Value, AudioSourceKind.WindowsSession, DateTimeOffset.UtcNow)]);
 
-        var result = SourcePresentationPolicy.Apply([first, second], settings, EmptySequence());
+        var result = SourcePresentationPolicy.Apply([first, second], settings);
 
         Assert.DoesNotContain(result.Visible, item => item.Id == first.Id);
         Assert.Contains(result.Visible, item => item.Id == second.Id);
@@ -48,19 +54,14 @@ public sealed class SourcePresentationTests
     }
 
     [Fact]
-    public void RecentAndManualOrderingHaveIndependentRules()
+    public void OrderingIsAlwaysManualAndIgnoresActivityOrProfileTimestamps()
     {
         var a = Source("a", "A", "C:\\A.exe");
         var b = Source("b", "B", "C:\\B.exe");
         var c = Source("c", "C", "C:\\C.exe") with { Peak = 0.4f };
-        var recent = SourcePresentationPolicy.Apply([a, b, c], new ApplicationSettings(),
-            new Dictionary<AudioSourceId, long> { [a.Id] = 1, [b.Id] = 2 });
-        Assert.Equal([b.Id, a.Id, c.Id], recent.Visible.Select(item => item.Id).ToArray());
-
         var manual = SourcePresentationPolicy.Apply([a, b, c],
-            new ApplicationSettings(SourceSortMode: SourceSortModes.Manual,
-                ManualSourceOrder: [c.Id.Value, a.Id.Value, b.Id.Value]),
-            new Dictionary<AudioSourceId, long> { [b.Id] = 99 });
+            new ApplicationSettings(SourceSortMode: SourceSortModes.Recent,
+                ManualSourceOrder: [c.Id.Value, a.Id.Value, b.Id.Value]));
         Assert.Equal([c.Id, a.Id, b.Id], manual.Visible.Select(item => item.Id).ToArray());
     }
 
@@ -115,9 +116,6 @@ public sealed class SourcePresentationTests
 
     private static int ReadBigEndianInt32(byte[] value, int offset)
         => (value[offset] << 24) | (value[offset + 1] << 16) | (value[offset + 2] << 8) | value[offset + 3];
-
-    private static IReadOnlyDictionary<AudioSourceId, long> EmptySequence()
-        => new Dictionary<AudioSourceId, long>();
 
     private static AudioSourceSnapshot Source(string instance, string name, string path)
         => new(AudioSourceId.ForWindowsSession("device", instance), AudioSourceKind.WindowsSession, name,

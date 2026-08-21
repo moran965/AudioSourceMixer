@@ -231,13 +231,13 @@ internal static class WpfUiStyleAssertions
         Assert.Equal(viewModel.StartupEnabled,
             checkBoxes.Single(checkBox => Equals(checkBox.Content, "启动后留在系统托盘")).IsEnabled);
 
-        window.Width = 1180;
-        window.Height = 760;
+        window.Width = 1240;
+        window.Height = 820;
         window.SelectMixerPage();
         await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.Render);
-        var sourceList = Assert.IsType<ListBox>(window.SourceItems);
+        var sourceList = window.SourceItems;
         sourceList.InvalidateMeasure();
-        Descendants(sourceList).OfType<ScrollViewer>().First().InvalidateScrollInfo();
+        window.SourceScroller.InvalidateScrollInfo();
         await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.ApplicationIdle);
 
         var equalizerSource = Assert.Single(viewModel.Sources.Where(source => source.SupportsEqualizer));

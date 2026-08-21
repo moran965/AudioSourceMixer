@@ -45,9 +45,21 @@ test('native audio command carries endpoint catalog and correlation ID', () => {
     outputDeviceId: 'windows-endpoint', outputDeviceName: 'USB DAC', correlationId: 'corr-1',
     outputDevices: [{ endpointId: 'windows-endpoint', friendlyName: 'USB DAC' }], equalizer }),
   { volume: 1.5, balance: -1, muted: true, outputDeviceId: 'windows-endpoint', outputDeviceName: 'USB DAC',
+    followSystemDefault: false, resolvedOutputDeviceId: '', resolvedOutputDeviceName: '',
     outputDevices: [{ endpointId: 'windows-endpoint', friendlyName: 'USB DAC' }], correlationId: 'corr-1',
     generation: 0, requestSource: 'ProfileRestore', forceAuthorization: false, equalizer });
   assert.throws(() => validateAudioCommand({ protocolVersion: 2, type: 'tab.setAudio' }));
+});
+
+test('system default command retains semantic selection and carries resolved Windows endpoint', () => {
+  const command = validateAudioCommand({
+    protocolVersion: 3, type: 'tab.setAudio', outputDeviceId: '', followSystemDefault: true,
+    resolvedOutputDeviceId: 'windows-headphones', resolvedOutputDeviceName: 'Bluetooth Headphones'
+  });
+  assert.equal(command.outputDeviceId, '');
+  assert.equal(command.followSystemDefault, true);
+  assert.equal(command.resolvedOutputDeviceId, 'windows-headphones');
+  assert.equal(command.resolvedOutputDeviceName, 'Bluetooth Headphones');
 });
 
 test('name matching remains a controlled compatibility helper only', () => {

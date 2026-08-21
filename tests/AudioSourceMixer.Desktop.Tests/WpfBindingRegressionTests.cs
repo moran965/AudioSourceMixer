@@ -130,7 +130,7 @@ public sealed class WpfBindingRegressionTests
 
                 Assert.True(window.IsVisible);
                 Assert.True(result.ItemCount >= 1);
-                Assert.Equal("ListBoxItem", result.ContainerType);
+                Assert.Equal("ContentPresenter", result.ContainerType);
                 Assert.Equal(UiSmokeVerifier.UpdatedPeak * 100d, result.PeakValue, 3);
                 Assert.True(result.PeakTrackWidth > 0);
                 Assert.InRange(result.PeakIndicatorWidth / result.PeakTrackWidth, 0.67, 0.79);
@@ -160,13 +160,19 @@ public sealed class WpfBindingRegressionTests
                      nameof(AudioSourceViewModel.VolumePercent)],
                     twoWay.Select(entry => entry.SourceProperty).OrderBy(value => value).ToArray());
                 Assert.All(twoWay, entry => Assert.True(entry.HasPublicSetter));
-                var sourceList = Assert.IsType<ListBox>(window.SourceItems);
+                var sourceList = window.SourceItems;
                 Assert.True(VirtualizingPanel.GetIsVirtualizing(sourceList));
                 Assert.Equal(VirtualizationMode.Recycling, VirtualizingPanel.GetVirtualizationMode(sourceList));
                 Assert.Equal(ScrollUnit.Pixel, VirtualizingPanel.GetScrollUnit(sourceList));
-                Assert.False(ScrollViewer.GetIsDeferredScrollingEnabled(sourceList));
-                Assert.Equal(PanningMode.VerticalOnly, ScrollViewer.GetPanningMode(sourceList));
-                Assert.Equal(ScrollBarVisibility.Disabled, ScrollViewer.GetHorizontalScrollBarVisibility(sourceList));
+                Assert.False(ScrollViewer.GetIsDeferredScrollingEnabled(window.SourceScroller));
+                Assert.Equal(PanningMode.VerticalOnly, ScrollViewer.GetPanningMode(window.SourceScroller));
+                Assert.Equal(ScrollBarVisibility.Disabled, window.SourceScroller.HorizontalScrollBarVisibility);
+                Assert.Empty(Descendants(sourceList).OfType<ListBoxItem>());
+                var firstContainer = Assert.IsType<ContentPresenter>(sourceList.ItemContainerGenerator.ContainerFromIndex(0));
+                var firstCard = Assert.Single(Descendants(firstContainer).OfType<AudioSourceCard>());
+                var gapPoint = firstCard.TranslatePoint(new Point(firstCard.ActualWidth / 2, firstCard.ActualHeight - 3), sourceList);
+                var gapHit = sourceList.InputHitTest(gapPoint);
+                Assert.IsNotType<Button>(gapHit);
 
                 var sliders = Descendants(window).OfType<Slider>().ToArray();
                 var volume = Assert.Single(sliders.Where(slider => slider.Minimum == 0 && slider.Maximum == 100));
@@ -211,24 +217,30 @@ public sealed class WpfBindingRegressionTests
                 Assert.All(viewModel.Sources, item => Assert.Same(identitiesBeforeLevels[item.Id], item));
                 var adjusted = viewModel.Sources[^1];
                 var originalIndex = viewModel.Sources.IndexOf(adjusted);
+                var stableOrder = viewModel.Sources.Select(item => item.Id).ToArray();
                 adjusted.VolumePercent = Math.Max(0, adjusted.VolumePercent - 1);
                 Assert.Equal(originalIndex, viewModel.Sources.IndexOf(adjusted));
-                await Task.Delay(100);
+                await Task.Delay(450);
                 Assert.Equal(originalIndex, viewModel.Sources.IndexOf(adjusted));
                 viewModel.FlushPendingPresentationForDiagnostics();
-                Assert.Same(adjusted, viewModel.Sources[0]);
+                Assert.Equal(stableOrder, viewModel.Sources.Select(item => item.Id).ToArray());
 
                 var nextAdjusted = viewModel.Sources[^1];
                 nextAdjusted.BalancePercent = nextAdjusted.BalancePercent > 0 ? -10 : 10;
                 viewModel.FlushPendingPresentationForDiagnostics();
-                Assert.Same(nextAdjusted, viewModel.Sources[0]);
-                Assert.Same(adjusted, viewModel.Sources[1]);
+                Assert.Equal(stableOrder, viewModel.Sources.Select(item => item.Id).ToArray());
                 adjusted.UpdatePeak(0.99f, DateTimeOffset.UtcNow);
                 viewModel.FlushPendingPresentationForDiagnostics();
-                Assert.Same(nextAdjusted, viewModel.Sources[0]);
-                Assert.Same(adjusted, viewModel.Sources[1]);
+                Assert.Equal(stableOrder, viewModel.Sources.Select(item => item.Id).ToArray());
+                nextAdjusted.ToggleMuteCommand.Execute(null);
+                var routableSource = viewModel.Sources.First(item => item.Snapshot.Kind == AudioSourceKind.WindowsSession && item.SupportsOutputRouting);
+                await routableSource.UserSelectOutputDeviceAsync(new OutputDeviceInfo("realtek-speakers", "Realtek Speakers"));
+                var equalizedSource = viewModel.Sources.First(item => item.SupportsEqualizer);
+                equalizedSource.SelectedEqualizerPresetId = "vocal";
+                await Task.Delay(450);
+                viewModel.FlushPendingPresentationForDiagnostics();
+                Assert.Equal(stableOrder, viewModel.Sources.Select(item => item.Id).ToArray());
 
-                viewModel.UseManualSortCommand.Execute(null);
                 var dragged = viewModel.Sources[^1];
                 viewModel.MoveSourceBefore(dragged, viewModel.Sources[0]);
                 var manualOrder = viewModel.Sources.Select(item => item.Id).ToArray();
@@ -248,7 +260,8 @@ public sealed class WpfBindingRegressionTests
                 Assert.Contains(viewModel.Sources, item => item.Id == hiddenId);
                 Assert.Equal(restoreCallsBeforeHide, fakeAudio.RestoreCalls);
                 viewModel.ResetSourceOrderCommand.Execute(null);
-                Assert.True(viewModel.IsRecentSortMode);
+                Assert.True(viewModel.IsManualSortMode);
+                Assert.False(viewModel.IsRecentSortMode);
 
                 viewModel.Sources.First(item => item.SupportsEqualizer).IsEqualizerExpanded = true;
                 await AssertResponsiveLayoutsAsync(app, window, viewModel);
@@ -537,13 +550,22 @@ public sealed class WpfBindingRegressionTests
             await writer.WriteLineAsync($$"""{"protocolVersion":2,"type":"tab.register","browser":"chrome","tabId":12,"title":"B","origin":"{{origin}}","generation":1}""");
             await WaitUntilAsync(() => viewModel.Sources.Count(item => item.Snapshot.Kind == AudioSourceKind.ChromeTab) == 2);
 
+            for (var index = 0; index < 2; index++)
+            {
+                var initialDefault = BrowserProtocol.Parse(Encoding.UTF8.GetBytes(
+                    (await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5)))!));
+                Assert.True(initialDefault.FollowSystemDefault);
+                Assert.Equal(string.Empty, initialDefault.OutputDeviceId);
+                await writer.WriteLineAsync($$"""{"protocolVersion":2,"type":"tab.update","browser":"chrome","tabId":{{initialDefault.TabId}},"routingState":"PendingAuthorization","outputDeviceId":"","followSystemDefault":true,"resolvedOutputDeviceId":"test-device","resolvedOutputDeviceName":"Test Device","correlationId":"{{initialDefault.CorrelationId}}","generation":{{initialDefault.Generation}}} """);
+            }
+
             var tabA = viewModel.Sources.Single(item => item.Id == AudioSourceId.ForBrowserTab("chrome", 11));
             var tabB = viewModel.Sources.Single(item => item.Id == AudioSourceId.ForBrowserTab("chrome", 12));
             var route = tabA.UserSelectOutputDeviceAsync(new OutputDeviceInfo("realtek-speakers", "Realtek Speakers"));
             var command = BrowserProtocol.Parse(Encoding.UTF8.GetBytes(
                 (await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5)))!));
             Assert.Equal(11, command.TabId);
-            Assert.Equal(2, command.Generation);
+            Assert.True(command.Generation >= 2);
             await writer.WriteLineAsync($$"""{"protocolVersion":2,"type":"tab.update","browser":"chrome","tabId":11,"routingState":"PendingAuthorization","outputDeviceId":"realtek-speakers","outputDeviceName":"Realtek Speakers","correlationId":"{{command.CorrelationId}}","generation":{{command.Generation}}}""");
             await route;
             Assert.Equal("realtek-speakers", store.Find(tabA.StableProfileKey)?.OutputDeviceId);
@@ -587,20 +609,33 @@ public sealed class WpfBindingRegressionTests
 
     private static async Task AssertResponsiveLayoutsAsync(App app, MainWindow window, MainViewModel viewModel)
     {
-        foreach (var (width, height) in new[] { (880d, 600d), (1180d, 760d), (1600d, 900d) })
+        var viewportHeights = new Dictionary<(double Width, double Height), double>();
+        foreach (var (width, height) in new[] { (880d, 600d), (1240d, 820d), (1600d, 900d), (1920d, 1080d) })
         {
             window.Width = width;
             window.Height = height;
             await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.Render);
-            var sourceList = Assert.IsType<ListBox>(window.SourceItems);
+            var sourceList = window.SourceItems;
             sourceList.InvalidateMeasure();
             await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.ApplicationIdle);
-            var scrollViewer = Descendants(sourceList).OfType<ScrollViewer>().First();
+            var scrollViewer = window.SourceScroller;
+            viewportHeights[(width, height)] = scrollViewer.ViewportHeight;
             Assert.Equal(ScrollBarVisibility.Disabled, scrollViewer.HorizontalScrollBarVisibility);
-            var realizedWidths = viewModel.Sources.Select(source => sourceList.ItemContainerGenerator.ContainerFromItem(source))
+            var realizedContainers = viewModel.Sources.Select(source => sourceList.ItemContainerGenerator.ContainerFromItem(source))
                 .OfType<FrameworkElement>()
+                .ToArray();
+            var realizedWidths = realizedContainers
                 .Select(container => $"{container.ActualWidth:F1}/{container.DesiredSize.Width:F1}")
                 .ToArray();
+            var visibleCards = realizedContainers.Count(container =>
+            {
+                var bounds = container.TransformToAncestor(scrollViewer)
+                    .TransformBounds(new Rect(0, 0, container.ActualWidth, container.ActualHeight));
+                return bounds.Bottom > 0 && bounds.Top < scrollViewer.ViewportHeight;
+            });
+            Console.WriteLine($"LAYOUT {width:F0}x{height:F0}: ItemsActualHeight={sourceList.ActualHeight:F1}; " +
+                              $"ViewportHeight={scrollViewer.ViewportHeight:F1}; VisibleCards={visibleCards}; " +
+                              $"FontSize={window.FontSize:F1}; ScaleTransform=False");
             Assert.True(scrollViewer.ExtentWidth <= sourceList.ActualWidth + 2.5,
                 $"Source cards overflow horizontally at {width}x{height}: extent={scrollViewer.ExtentWidth}, viewport={scrollViewer.ViewportWidth}, " +
                 $"list={sourceList.ActualWidth:F1}, items=[{string.Join(", ", realizedWidths)}].");
@@ -611,9 +646,9 @@ public sealed class WpfBindingRegressionTests
 
             foreach (var source in viewModel.Sources)
             {
-                sourceList.ScrollIntoView(source);
+                (sourceList.ItemContainerGenerator.ContainerFromItem(source) as FrameworkElement)?.BringIntoView();
                 await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.Render);
-                var container = Assert.IsType<ListBoxItem>(sourceList.ItemContainerGenerator.ContainerFromItem(source));
+                var container = Assert.IsType<ContentPresenter>(sourceList.ItemContainerGenerator.ContainerFromItem(source));
                 var card = Assert.Single(Descendants(container).OfType<AudioSourceCard>());
                 Assert.True(card.ActualWidth <= sourceList.ActualWidth + 1);
                 var output = Assert.Single(Descendants(card).OfType<ComboBox>()
@@ -629,7 +664,10 @@ public sealed class WpfBindingRegressionTests
                 Assert.False(Bounds(volumeLabel, card).IntersectsWith(Bounds(volumeValue, card)),
                     $"Volume label/value overlap at {width}x{height}.");
             }
+            Assert.DoesNotContain(Descendants(window), element => element is ScaleTransform);
         }
+        Assert.True(viewportHeights[(1920, 1080)] > viewportHeights[(1240, 820)],
+            $"Maximized viewport must show more content: default={viewportHeights[(1240, 820)]}, large={viewportHeights[(1920, 1080)]}.");
     }
 
     private static void AssertInside(FrameworkElement ancestor, FrameworkElement child, double width, double height)
@@ -738,12 +776,12 @@ public sealed class WpfBindingRegressionTests
         public event EventHandler<IReadOnlyList<OutputDeviceInfo>>? OutputDevicesChanged;
         public event EventHandler<AudioRouteResult>? RoutingStateChanged { add { } remove { } }
         public Task<OutputDeviceInfo> InitializeAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new OutputDeviceInfo("test-device", "Test Device", ChannelCount: 2));
+            => Task.FromResult(new OutputDeviceInfo("test-device", "Test Device", IsDefaultMultimedia: true, ChannelCount: 2));
         public Task<IReadOnlyList<AudioSourceSnapshot>> GetSourcesAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<AudioSourceSnapshot>>(_sources);
         public Task<IReadOnlyList<OutputDeviceInfo>> GetOutputDevicesAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<OutputDeviceInfo>>([OutputDeviceInfo.SystemDefault,
-                new OutputDeviceInfo("test-device", "Test Device", ChannelCount: 2, SampleRate: 48000),
+                new OutputDeviceInfo("test-device", "Test Device", IsDefaultMultimedia: true, ChannelCount: 2, SampleRate: 48000),
                 new OutputDeviceInfo("realtek-speakers", "Realtek Speakers", ChannelCount: 2, SampleRate: 48000)]);
         public Task RefreshAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public void PublishLevels(params AudioSourceLevel[] levels) => SourceLevelsChanged?.Invoke(this, levels);
