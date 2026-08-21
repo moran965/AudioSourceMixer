@@ -18,6 +18,7 @@ using AudioSourceMixer.Core.Models;
 using AudioSourceMixer.Core.Persistence;
 using AudioSourceMixer.Desktop.Diagnostics;
 using AudioSourceMixer.Desktop.Controls;
+using AudioSourceMixer.Desktop.Localization;
 using AudioSourceMixer.Desktop.ViewModels;
 using AudioSourceMixer.Desktop.Views;
 
@@ -139,6 +140,26 @@ public sealed class WpfBindingRegressionTests
 
                 await WpfUiStyleAssertions.AssertAsync(app, window, viewModel);
 
+                var localizedSources = viewModel.Sources.ToArray();
+                var routeCallsBeforeLanguageChange = fakeAudio.RouteCalls;
+                var restoreCallsBeforeLanguageChange = fakeAudio.RestoreCalls;
+                var volumesBeforeLanguageChange = localizedSources.Select(item => item.VolumePercent).ToArray();
+                viewModel.SelectedLanguage = LocalizationService.EnglishLanguage;
+                await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.ApplicationIdle);
+                window.SelectSettingsPage();
+                await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.Render);
+                Assert.Equal("en-US", window.Language.IetfLanguageTag, ignoreCase: true);
+                Assert.Contains(Descendants(window.SettingsPage).OfType<TextBlock>(),
+                    text => text.Text == LocalizationService.Current["Settings.LanguageSection"]);
+                Assert.Equal(localizedSources.Length, viewModel.Sources.Count);
+                Assert.All(viewModel.Sources.Select((item, index) => (item, index)), pair => Assert.Same(localizedSources[pair.index], pair.item));
+                Assert.Equal(volumesBeforeLanguageChange, viewModel.Sources.Select(item => item.VolumePercent).ToArray());
+                Assert.Equal(routeCallsBeforeLanguageChange, fakeAudio.RouteCalls);
+                Assert.Equal(restoreCallsBeforeLanguageChange, fakeAudio.RestoreCalls);
+                viewModel.SelectedLanguage = LocalizationService.ChineseLanguage;
+                await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.ApplicationIdle);
+                window.SelectMixerPage();
+
                 AssertEveryBindingDeclaresMode();
                 var sourceBindings = AuditSourceXaml();
                 Assert.True(sourceBindings.Count >= 30);
@@ -157,6 +178,7 @@ public sealed class WpfBindingRegressionTests
                      nameof(AudioSourceViewModel.IsEqualizerEnabled), nameof(AudioSourceViewModel.IsEqualizerExpanded),
                      nameof(MainViewModel.IsHiddenSourcesPopupOpen),
                      nameof(MainViewModel.RememberProfiles), nameof(AudioSourceViewModel.SelectedEqualizerPresetId),
+                     nameof(MainViewModel.SelectedLanguage),
                      nameof(MainViewModel.ShowInactiveSessions), nameof(MainViewModel.ShowOperationTips),
                      nameof(MainViewModel.StartMinimizedToTray), nameof(MainViewModel.StartupEnabled),
                      nameof(AudioSourceViewModel.VolumePercent)],
@@ -185,7 +207,7 @@ public sealed class WpfBindingRegressionTests
                 Assert.All(viewModel.Sources.Where(item => item.Snapshot.Kind == AudioSourceKind.WindowsSession),
                     item => Assert.Equal(100, item.VolumeMaximum));
                 var outputSelector = Assert.Single(Descendants(window).OfType<ComboBox>()
-                    .Where(comboBox => System.Windows.Automation.AutomationProperties.GetName(comboBox) == "输出设备"));
+                    .Where(comboBox => System.Windows.Automation.AutomationProperties.GetName(comboBox) == LocalizationService.Current["Card.OutputDevice"]));
                 outputSelector.Focus();
                 var stableDeviceCollection = viewModel.Sources.Single().OutputDevices;
                 for (var refresh = 0; refresh < 100; refresh++)
@@ -304,7 +326,7 @@ public sealed class WpfBindingRegressionTests
                 Assert.Equal(200, browserViewModel.VolumeMaximum);
                 Assert.Equal(150, browserViewModel.VolumePercent);
                 Assert.False(browserViewModel.SelectedOutputDevice!.IsAvailable);
-                Assert.Contains("已生效", browserViewModel.OutputStatus);
+                Assert.Equal(LocalizationService.Current.Format("Source.RouteApplied", "USB DAC"), browserViewModel.OutputStatus);
                 Assert.Contains("USB DAC", browserViewModel.OutputStatus);
                 browserViewModel.UpdateOutputDevices([OutputDeviceInfo.SystemDefault,
                     new OutputDeviceInfo("usb-endpoint", "USB DAC", ChannelCount: 2, SampleRate: 48000)]);
@@ -343,7 +365,7 @@ public sealed class WpfBindingRegressionTests
                 Assert.False(windowsViewModel.SupportsExtendedGain);
                 Assert.True(windowsViewModel.SupportsOutputRouting);
                 Assert.Contains("Test Device", windowsViewModel.OutputStatus);
-                Assert.Contains("已生效", windowsViewModel.OutputStatus);
+                Assert.Equal(LocalizationService.Current.Format("Source.RouteApplied", "Test Device"), windowsViewModel.OutputStatus);
             }
 
             var processStart = DateTimeOffset.UnixEpoch.AddDays(1);
@@ -656,14 +678,14 @@ public sealed class WpfBindingRegressionTests
                 var card = Assert.Single(Descendants(container).OfType<AudioSourceCard>());
                 Assert.True(card.ActualWidth <= sourceList.ActualWidth + 1);
                 var output = Assert.Single(Descendants(card).OfType<ComboBox>()
-                    .Where(comboBox => System.Windows.Automation.AutomationProperties.GetName(comboBox) == "输出设备"));
+                    .Where(comboBox => System.Windows.Automation.AutomationProperties.GetName(comboBox) == LocalizationService.Current["Card.OutputDevice"]));
                 Assert.True(output.ActualWidth >= 180, $"Output selector is too narrow at {width}x{height}.");
                 AssertInside(card, output, width, height);
                 foreach (var button in Descendants(card).OfType<Button>().Where(button => button.IsVisible))
                     AssertInside(card, button, width, height);
 
                 var labels = Descendants(card).OfType<TextBlock>().ToArray();
-                var volumeLabel = labels.First(text => text.Text == "音量");
+                var volumeLabel = labels.First(text => text.Text == LocalizationService.Current["Card.Volume"]);
                 var volumeValue = labels.First(text => BindingOperations.GetBinding(text, TextBlock.TextProperty)?.Path?.Path == nameof(AudioSourceViewModel.VolumePercent));
                 Assert.False(Bounds(volumeLabel, card).IntersectsWith(Bounds(volumeValue, card)),
                     $"Volume label/value overlap at {width}x{height}.");

@@ -2,6 +2,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:AudioSourceMixer.Desktop.Controls"
+             xmlns:l="clr-namespace:AudioSourceMixer.Desktop.Localization"
              Focusable="False" AutomationProperties.Name="{Binding DisplayName, Mode=OneWay}"
              Unloaded="AudioSourceCardUnloaded" LayoutUpdated="AudioSourceCardLayoutUpdated"
              IsVisibleChanged="AudioSourceCardIsVisibleChanged">
@@ -35,13 +36,13 @@
                                Style="{DynamicResource CaptionTextStyle}" TextTrimming="CharacterEllipsis"/>
                 </StackPanel>
                 <StackPanel Grid.Column="3" Margin="16,0,0,0" VerticalAlignment="Center">
-                    <TextBlock Text="实时电平" Style="{DynamicResource CaptionTextStyle}" HorizontalAlignment="Right"/>
-                    <ProgressBar Value="{Binding PeakPercent, Mode=OneWay}" Maximum="100" Height="8" Margin="0,5,0,0"
-                                 AutomationProperties.Name="实时音量"/>
+                    <TextBlock Text="{l:Loc Key=Card.LiveLevel}" Style="{DynamicResource CaptionTextStyle}" HorizontalAlignment="Right"/>
+                    <controls:DeterminateProgressBar Value="{Binding PeakPercent, Mode=OneWay}" Maximum="100" Height="8" Margin="0,5,0,0"
+                                                     AutomationProperties.Name="{l:Loc Key=Card.LiveVolumeAutomation}"/>
                 </StackPanel>
                 <Button x:Name="DragHandle" Grid.Column="4" Style="{DynamicResource IconButtonStyle}" Margin="8,0,0,0"
-                        ToolTip="拖动以手动排序" Cursor="SizeAll"
-                        AutomationProperties.Name="拖动会话排序"
+                        ToolTip="{l:Loc Key=Card.DragTip}" Cursor="SizeAll"
+                        AutomationProperties.Name="{l:Loc Key=Card.DragAutomation}"
                         PreviewMouseLeftButtonDown="DragHandleMouseDown" PreviewMouseMove="DragHandleMouseMove"
                         PreviewMouseLeftButtonUp="DragHandleMouseUp" LostMouseCapture="DragHandleLostMouseCapture"
                         QueryContinueDrag="DragHandleQueryContinueDrag">
@@ -55,7 +56,7 @@
                     </Canvas>
                 </Button>
                 <Button x:Name="SourceMenuButton" Grid.Column="5" Style="{DynamicResource IconButtonStyle}" Margin="2,0,0,0"
-                        ToolTip="会话显示与排序" AutomationProperties.Name="打开会话菜单" Click="OpenSourceMenu">
+                        ToolTip="{l:Loc Key=Card.MenuTip}" AutomationProperties.Name="{l:Loc Key=Card.MenuAutomation}" Click="OpenSourceMenu">
                     <Path Data="M 3,8 L 3.01,8 M 8,8 L 8.01,8 M 13,8 L 13.01,8"
                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}, Mode=OneWay}"
                           StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
@@ -66,17 +67,17 @@
                     <Border Style="{DynamicResource CardBorderStyle}" Padding="7" Width="168" Margin="0,5,0,0">
                         <Border.Effect><DropShadowEffect Color="#330F172A" BlurRadius="14" ShadowDepth="3" Opacity="0.28"/></Border.Effect>
                         <StackPanel KeyboardNavigation.DirectionalNavigation="Cycle">
-                            <Button Content="移至顶部" Command="{Binding MoveToTopCommand, Mode=OneWay}"
-                                    Style="{DynamicResource FlyoutMenuButtonStyle}" AutomationProperties.Name="将会话移至顶部"/>
-                            <Button Content="上移一项" Command="{Binding MoveUpCommand, Mode=OneWay}"
-                                    Style="{DynamicResource FlyoutMenuButtonStyle}" AutomationProperties.Name="将会话上移一项"/>
-                            <Button Content="下移一项" Command="{Binding MoveDownCommand, Mode=OneWay}"
-                                    Style="{DynamicResource FlyoutMenuButtonStyle}" AutomationProperties.Name="将会话下移一项"/>
-                            <Button Content="移至底部" Command="{Binding MoveToBottomCommand, Mode=OneWay}"
-                                    Style="{DynamicResource FlyoutMenuButtonStyle}" AutomationProperties.Name="将会话移至底部"/>
+                            <Button Content="{l:Loc Key=Card.MoveTop}" Command="{Binding MoveToTopCommand, Mode=OneWay}"
+                                    Style="{DynamicResource FlyoutMenuButtonStyle}" AutomationProperties.Name="{l:Loc Key=Card.MoveTopAutomation}"/>
+                            <Button Content="{l:Loc Key=Card.MoveUp}" Command="{Binding MoveUpCommand, Mode=OneWay}"
+                                    Style="{DynamicResource FlyoutMenuButtonStyle}" AutomationProperties.Name="{l:Loc Key=Card.MoveUpAutomation}"/>
+                            <Button Content="{l:Loc Key=Card.MoveDown}" Command="{Binding MoveDownCommand, Mode=OneWay}"
+                                    Style="{DynamicResource FlyoutMenuButtonStyle}" AutomationProperties.Name="{l:Loc Key=Card.MoveDownAutomation}"/>
+                            <Button Content="{l:Loc Key=Card.MoveBottom}" Command="{Binding MoveToBottomCommand, Mode=OneWay}"
+                                    Style="{DynamicResource FlyoutMenuButtonStyle}" AutomationProperties.Name="{l:Loc Key=Card.MoveBottomAutomation}"/>
                             <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="6,5"/>
-                            <Button Content="隐藏此会话" Command="{Binding HideCommand, Mode=OneWay}"
-                                    Style="{DynamicResource FlyoutMenuButtonStyle}" AutomationProperties.Name="隐藏此会话"/>
+                            <Button Content="{l:Loc Key=Card.Hide}" Command="{Binding HideCommand, Mode=OneWay}"
+                                    Style="{DynamicResource FlyoutMenuButtonStyle}" AutomationProperties.Name="{l:Loc Key=Card.Hide}"/>
                         </StackPanel>
                     </Border>
                 </Popup>
@@ -97,42 +98,42 @@
                 <StackPanel Grid.Column="0" Margin="0,0,18,0">
                     <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <TextBlock Text="音量" FontWeight="Bold"/>
+                        <TextBlock Text="{l:Loc Key=Card.Volume}" FontWeight="Bold"/>
                         <TextBlock Grid.Column="1" Margin="8,0,0,0" Text="{Binding VolumePercent, Mode=OneWay, StringFormat={}{0:F0}%}"/>
                     </Grid>
                     <controls:WheelSafeSlider Minimum="0" Maximum="{Binding VolumeMaximum, Mode=OneWay}" TickFrequency="10"
                                                Value="{Binding VolumePercent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                               AutomationProperties.Name="音量" Margin="0,7,0,0"/>
+                                               AutomationProperties.Name="{l:Loc Key=Card.Volume}" Margin="0,7,0,0"/>
                     <TextBlock Text="{Binding GainWarning, Mode=OneWay}" Visibility="{Binding GainWarningVisibility, Mode=OneWay}"
                                Style="{DynamicResource CaptionTextStyle}" Foreground="{DynamicResource WarningBrush}" TextWrapping="Wrap"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Margin="0,0,18,0">
                     <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <TextBlock Text="声道平衡" FontWeight="Bold"/>
+                        <TextBlock Text="{l:Loc Key=Card.Balance}" FontWeight="Bold"/>
                         <TextBlock Grid.Column="1" Margin="8,0,0,0" Text="{Binding BalanceText, Mode=OneWay}" Style="{DynamicResource CaptionTextStyle}"/>
                     </Grid>
                     <controls:CenterDetentSlider Minimum="-100" Maximum="100" TickFrequency="1"
                                                   Value="{Binding BalancePercent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                   IsEnabled="{Binding SupportsBalance, Mode=OneWay}"
-                                                  AutomationProperties.Name="声道平衡" Margin="0,7,0,0"/>
+                                                  AutomationProperties.Name="{l:Loc Key=Card.Balance}" Margin="0,7,0,0"/>
                     <Grid Margin="0,2,0,0">
-                        <TextBlock Text="左" Style="{DynamicResource CaptionTextStyle}" HorizontalAlignment="Left"/>
-                        <TextBlock Text="居中" Style="{DynamicResource CaptionTextStyle}" HorizontalAlignment="Center"/>
-                        <TextBlock Text="右" Style="{DynamicResource CaptionTextStyle}" HorizontalAlignment="Right"/>
+                        <TextBlock Text="{l:Loc Key=Card.Left}" Style="{DynamicResource CaptionTextStyle}" HorizontalAlignment="Left"/>
+                        <TextBlock Text="{l:Loc Key=Card.Center}" Style="{DynamicResource CaptionTextStyle}" HorizontalAlignment="Center"/>
+                        <TextBlock Text="{l:Loc Key=Card.Right}" Style="{DynamicResource CaptionTextStyle}" HorizontalAlignment="Right"/>
                     </Grid>
                 </StackPanel>
                 <StackPanel Grid.Column="2">
-                    <TextBlock Text="输出设备" FontWeight="Bold" Margin="0,0,0,7"/>
+                    <TextBlock Text="{l:Loc Key=Card.OutputDevice}" FontWeight="Bold" Margin="0,0,0,7"/>
                     <ComboBox ItemsSource="{Binding OutputDevices, Mode=OneWay}" SelectedValuePath="Id"
                               SelectedValue="{Binding SelectedOutputDeviceId, Mode=OneWay}"
                               IsEnabled="{Binding SupportsOutputRouting, Mode=OneWay}"
                               PreviewMouseLeftButtonUp="OutputDeviceItemClicked" PreviewKeyDown="OutputDeviceKeyDown"
                               DisplayMemberPath="Name" ToolTip="{Binding SelectedOutputDevice.Name, Mode=OneWay}"
-                              AutomationProperties.Name="输出设备"/>
-                    <Button Content="打开授权页" Command="{Binding ReauthorizeOutputCommand, Mode=OneWay}"
+                              AutomationProperties.Name="{l:Loc Key=Card.OutputDevice}"/>
+                    <Button Content="{l:Loc Key=Card.OpenAuthorization}" Command="{Binding ReauthorizeOutputCommand, Mode=OneWay}"
                             Visibility="{Binding ReauthorizeOutputVisibility, Mode=OneWay}" HorizontalAlignment="Left" Margin="0,7,0,0"
-                            AutomationProperties.Name="打开输出设备授权页"/>
+                            AutomationProperties.Name="{l:Loc Key=Card.OpenAuthorizationAutomation}"/>
                 </StackPanel>
             </Grid>
 
@@ -141,12 +142,12 @@
                            Style="{DynamicResource CaptionTextStyle}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                 <WrapPanel HorizontalAlignment="Right">
                     <Button Content="{Binding MuteLabel, Mode=OneWay}" Command="{Binding ToggleMuteCommand, Mode=OneWay}"
-                            AutomationProperties.Name="切换静音" Margin="6,0,0,0"/>
-                    <Button Content="恢复" Command="{Binding RestoreCommand, Mode=OneWay}" ToolTip="只恢复此来源"
-                            AutomationProperties.Name="恢复此来源" Margin="6,0,0,0"/>
-                    <Button Content="停止增强" Command="{Binding StopCommand, Mode=OneWay}"
+                            AutomationProperties.Name="{l:Loc Key=Card.ToggleMuteAutomation}" Margin="6,0,0,0"/>
+                    <Button Content="{l:Loc Key=Card.Restore}" Command="{Binding RestoreCommand, Mode=OneWay}" ToolTip="{l:Loc Key=Card.RestoreTip}"
+                            AutomationProperties.Name="{l:Loc Key=Card.RestoreAutomation}" Margin="6,0,0,0"/>
+                    <Button Content="{l:Loc Key=Card.StopEnhancement}" Command="{Binding StopCommand, Mode=OneWay}"
                             Visibility="{Binding StopVisibility, Mode=OneWay}" Style="{DynamicResource DangerButtonStyle}"
-                            AutomationProperties.Name="停止浏览器增强" Margin="6,0,0,0"/>
+                            AutomationProperties.Name="{l:Loc Key=Card.StopEnhancementAutomation}" Margin="6,0,0,0"/>
                 </WrapPanel>
             </Grid>
 

@@ -2,6 +2,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:AudioSourceMixer.Desktop.Controls"
+             xmlns:l="clr-namespace:AudioSourceMixer.Desktop.Localization"
              Focusable="False" Loaded="MixerViewLoaded" Unloaded="MixerViewUnloaded"
              IsVisibleChanged="MixerViewIsVisibleChanged">
     <Grid>
@@ -15,33 +16,33 @@
                     <ColumnDefinition Width="104"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel>
-                    <TextBlock Text="当前默认输出" Style="{DynamicResource CaptionTextStyle}"/>
+                    <TextBlock Text="{l:Loc Key=Mixer.DefaultOutput}" Style="{DynamicResource CaptionTextStyle}"/>
                     <TextBlock Text="{Binding DeviceName, Mode=OneWay}" FontSize="15" FontWeight="Bold" Margin="0,3,0,0"
                                TextTrimming="CharacterEllipsis" ToolTip="{Binding DeviceName, Mode=OneWay}"/>
                 </StackPanel>
                 <Button x:Name="SortMenuButton" Grid.Column="3" Style="{DynamicResource QuietButtonStyle}" Width="96" MinWidth="0" MinHeight="30" Padding="8,4"
                             HorizontalAlignment="Right" VerticalAlignment="Center"
-                            Content="调整顺序" ToolTip="拖动卡片右上角把手可调整顺序"
-                            AutomationProperties.Name="调整会话顺序" Click="OpenHeaderMenu"/>
+                            Content="{l:Loc Key=Mixer.AdjustOrder}" ToolTip="{l:Loc Key=Mixer.DragOrderTip}"
+                            AutomationProperties.Name="{l:Loc Key=Mixer.AdjustOrderAutomation}" Click="OpenHeaderMenu"/>
                 <Popup x:Name="OrderMenuPopup" Grid.Column="3" PlacementTarget="{x:Reference SortMenuButton}" Placement="Bottom"
                            StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade" Closed="OrderMenuPopupClosed">
                         <Border Style="{DynamicResource CardBorderStyle}" Padding="8" Width="250" Margin="0,6,0,0">
                             <StackPanel KeyboardNavigation.DirectionalNavigation="Cycle">
-                                <TextBlock Text="拖动卡片右上角把手可调整顺序" Style="{DynamicResource CaptionTextStyle}"
+                                <TextBlock Text="{l:Loc Key=Mixer.DragOrderTip}" Style="{DynamicResource CaptionTextStyle}"
                                            TextWrapping="Wrap" Margin="7,4,7,7"/>
-                                <Button Content="恢复默认顺序" Command="{Binding ResetSourceOrderCommand, Mode=OneWay}"
-                                        Style="{DynamicResource FlyoutMenuButtonStyle}" AutomationProperties.Name="恢复默认会话顺序"/>
+                                <Button Content="{l:Loc Key=Mixer.ResetOrder}" Command="{Binding ResetSourceOrderCommand, Mode=OneWay}"
+                                        Style="{DynamicResource FlyoutMenuButtonStyle}" AutomationProperties.Name="{l:Loc Key=Mixer.ResetOrderAutomation}"/>
                             </StackPanel>
                         </Border>
                     </Popup>
                 <Button x:Name="HiddenSourcesButton" Grid.Column="2" Style="{DynamicResource QuietButtonStyle}" Width="108" MinWidth="0" MinHeight="30" Padding="8,4"
                             HorizontalAlignment="Right" VerticalAlignment="Center"
                             Content="{Binding HiddenSourcesLabel, Mode=OneWay}" Visibility="{Binding HiddenSourcesVisibility, Mode=OneWay}"
-                            ToolTip="查看由你手动隐藏的会话" AutomationProperties.Name="查看隐藏会话"
+                            ToolTip="{l:Loc Key=Mixer.HiddenTip}" AutomationProperties.Name="{l:Loc Key=Mixer.HiddenAutomation}"
                             Click="ToggleHiddenSourcesPopup" IsVisibleChanged="HiddenSourcesButtonIsVisibleChanged"/>
                 <StackPanel x:Name="BrowserStatusPanel" Grid.Column="1" Width="204" HorizontalAlignment="Right" VerticalAlignment="Center"
                             Visibility="{Binding BrowserStatusVisibility, Mode=OneWay}" Margin="16,0,0,0">
-                        <TextBlock Text="浏览器增强" Style="{DynamicResource CaptionTextStyle}" HorizontalAlignment="Right"/>
+                        <TextBlock Text="{l:Loc Key=Mixer.BrowserStatusCaption}" Style="{DynamicResource CaptionTextStyle}" HorizontalAlignment="Right"/>
                         <TextBlock Text="{Binding BrowserStatus, Mode=OneWay}" FontWeight="Bold"
                                    Foreground="{DynamicResource PrimaryDarkBrush}" Margin="0,3,0,0"
                                    HorizontalAlignment="Right" TextTrimming="CharacterEllipsis"
@@ -56,10 +57,10 @@
                         <DockPanel>
                             <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <TextBlock Text="隐藏的会话" FontWeight="Bold" VerticalAlignment="Center"/>
-                                <Button Grid.Column="1" Content="全部恢复显示" Command="{Binding RestoreAllHiddenCommand, Mode=OneWay}"
+                                <TextBlock Text="{l:Loc Key=Mixer.HiddenSessions}" FontWeight="Bold" VerticalAlignment="Center"/>
+                                <Button Grid.Column="1" Content="{l:Loc Key=Mixer.RestoreAllHidden}" Command="{Binding RestoreAllHiddenCommand, Mode=OneWay}"
                                         Style="{DynamicResource QuietButtonStyle}" MinHeight="28" MinWidth="0" Padding="7,3"
-                                        ToolTip="恢复所有由你手动隐藏的会话"/>
+                                        ToolTip="{l:Loc Key=Mixer.RestoreAllHiddenTip}"/>
                             </Grid>
                             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                 <ItemsControl ItemsSource="{Binding HiddenSources, Mode=OneWay}">

@@ -160,11 +160,41 @@ internal static class UiSmokeVerifier
         await AssertIndicatorRatioAsync(1, 1, 0.02);
 
         diagnosticSource.IsEqualizerExpanded = true;
-        await window.Dispatcher.InvokeAsync(() => window.UpdateLayout(), DispatcherPriority.Render, cancellationToken);
-        var equalizerSliders = Descendants(container).OfType<Slider>()
-            .Where(slider => slider.DataContext is EqualizerBandViewModel).ToArray();
+        (container as FrameworkElement)?.BringIntoView();
+        window.SourceItems.UpdateLayout();
+        var equalizerPanel = Descendants(container).OfType<AudioSourceMixer.Desktop.Controls.EqualizerPanel>().SingleOrDefault()
+                             ?? throw new InvalidOperationException("Expanded source did not retain its EqualizerPanel.");
+        var equalizerExpander = Descendants(equalizerPanel).OfType<Expander>().SingleOrDefault()
+                                ?? throw new InvalidOperationException("EqualizerPanel did not instantiate its Expander.");
+        var equalizerContent = equalizerExpander.Content as FrameworkElement;
+        if (equalizerContent is not null)
+        {
+            var availableWidth = Math.Max(720, equalizerExpander.ActualWidth);
+            equalizerContent.Measure(new System.Windows.Size(availableWidth, double.PositiveInfinity));
+            equalizerContent.Arrange(new System.Windows.Rect(0, 0, availableWidth, equalizerContent.DesiredSize.Height));
+            equalizerContent.UpdateLayout();
+        }
+        Slider[] equalizerSliders = [];
+        var equalizerDeadline = DateTime.UtcNow.AddSeconds(2);
+        while (equalizerSliders.Length != EqualizerCatalog.Bands.Count && DateTime.UtcNow < equalizerDeadline)
+        {
+            await window.Dispatcher.InvokeAsync(() => window.UpdateLayout(), DispatcherPriority.ApplicationIdle, cancellationToken);
+            equalizerSliders = (equalizerContent is null ? Descendants(container) : Descendants(equalizerContent))
+                .OfType<Slider>()
+                .Where(slider => slider.DataContext is EqualizerBandViewModel).ToArray();
+            if (equalizerSliders.Length != EqualizerCatalog.Bands.Count) await Task.Delay(20, cancellationToken);
+        }
         if (equalizerSliders.Length != EqualizerCatalog.Bands.Count)
-            throw new InvalidOperationException($"Equalizer DataTemplate created {equalizerSliders.Length} band controls; expected {EqualizerCatalog.Bands.Count}.");
+        {
+            var presenters = string.Join(",", Descendants(equalizerExpander).OfType<ContentPresenter>()
+                .Select(item => $"{item.Name}:{item.Visibility}:{item.Content?.GetType().Name ?? "null"}"));
+            var items = Descendants(equalizerExpander).OfType<ItemsControl>().SingleOrDefault();
+            throw new InvalidOperationException($"Equalizer DataTemplate created {equalizerSliders.Length} band controls; expected {EqualizerCatalog.Bands.Count}. " +
+                                                $"Supports={diagnosticSource.SupportsEqualizer}; requested expanded={diagnosticSource.IsEqualizerExpanded}; " +
+                                                $"panel={equalizerPanel.Visibility}/{equalizerPanel.ActualHeight:F1}; " +
+                                                $"expander={equalizerExpander.IsExpanded}/{equalizerExpander.ActualHeight:F1}; presenters={presenters}; " +
+                                                $"items={items?.Items.Count}/{items?.ActualHeight:F1}/{items?.Visibility}.");
+        }
 
         var peakNotificationObserved = false;
         diagnosticSource.PropertyChanged += OnPropertyChanged;
@@ -226,10 +256,24 @@ internal static class UiSmokeVerifier
         async Task AssertIndicatorRatioAsync(float peak, double expected, double tolerance)
         {
             diagnosticSource.UpdatePeak(peak, DateTimeOffset.UtcNow);
+            await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.DataBind, cancellationToken);
+            if (Math.Abs(peakBar.Value - peak * 100d) > 0.001)
+                throw new InvalidOperationException($"Peak ProgressBar binding did not reach Value={peak * 100:F0}; actual {peakBar.Value:F3}.");
+            peakBar.InvalidateMeasure();
             await window.Dispatcher.InvokeAsync(() => window.UpdateLayout(), DispatcherPriority.Render, cancellationToken);
+            var deadline = DateTime.UtcNow.AddSeconds(2);
             var actual = peakIndicator.ActualWidth / peakTrack.ActualWidth;
+            while (Math.Abs(actual - expected) > tolerance && DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(20, cancellationToken);
+                await window.Dispatcher.InvokeAsync(() => window.UpdateLayout(), DispatcherPriority.Render, cancellationToken);
+                actual = peakIndicator.ActualWidth / peakTrack.ActualWidth;
+            }
             if (Math.Abs(actual - expected) > tolerance)
-                throw new InvalidOperationException($"ProgressBar visual ratio for Value={peak * 100:F0} was {actual:F3}; expected {expected:F3}±{tolerance:F3}.");
+                throw new InvalidOperationException($"{peakBar.GetType().Name} visual ratio for requested Value={peak * 100:F0} was {actual:F3}; " +
+                                                    $"bound Value is {peakBar.Value:F3}, indicator/track is {peakIndicator.ActualWidth:F3}/{peakTrack.ActualWidth:F3}, " +
+                                                    $"indicator constraints are {peakIndicator.MinWidth:F3}/{peakIndicator.Width:F3}/{peakIndicator.MaxWidth:F3}; " +
+                                                    $"expected {expected:F3}±{tolerance:F3}.");
         }
 
         void OnPropertyChanged(object? _, System.ComponentModel.PropertyChangedEventArgs args)

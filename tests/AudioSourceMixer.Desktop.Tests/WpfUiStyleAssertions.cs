@@ -9,6 +9,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using AudioSourceMixer.Desktop.Localization;
 using AudioSourceMixer.Desktop.ViewModels;
 using IOPath = System.IO.Path;
 
@@ -17,11 +18,13 @@ namespace AudioSourceMixer.Desktop.Tests;
 internal static class WpfUiStyleAssertions
 {
     private const string ExpectedFont = "Microsoft YaHei UI, Microsoft YaHei, Segoe UI, Global User Interface";
-    private static readonly string[] SettingLabels =
+    private static readonly string[] SettingLabelKeys =
     [
-        "登录 Windows 后启动", "启动后留在系统托盘", "关闭窗口时留在托盘", "显示当前无声会话",
-        "浏览器增强时隐藏浏览器聚合会话", "记住应用设置", "自动应用已保存设置", "显示操作提示"
+        "Settings.StartWithWindows", "Settings.StartInTray", "Settings.CloseToTray", "Settings.ShowInactive",
+        "Settings.HideBrowserAggregate", "Settings.RememberProfiles", "Settings.AutoApply", "Settings.ShowTips"
     ];
+
+    private static string[] SettingLabels => SettingLabelKeys.Select(key => LocalizationService.Current[key]).ToArray();
 
     public static async Task AssertAsync(App app, MainWindow window, MainViewModel viewModel)
     {
@@ -111,11 +114,9 @@ internal static class WpfUiStyleAssertions
         }
 
         var settings = strictUtf8.GetString(File.ReadAllBytes(IOPath.Combine(AppContext.BaseDirectory, "SourceXaml", "SettingsView.xaml")));
-        foreach (var label in SettingLabels) Assert.Contains(label, settings, StringComparison.Ordinal);
-        Assert.Contains("启动与托盘", settings, StringComparison.Ordinal);
-        Assert.Contains("会话显示与设置记忆", settings, StringComparison.Ordinal);
-        Assert.Contains("外观与交互", settings, StringComparison.Ordinal);
-        Assert.Contains("诊断与关于", settings, StringComparison.Ordinal);
+        foreach (var key in SettingLabelKeys) Assert.Contains($"Key={key}", settings, StringComparison.Ordinal);
+        foreach (var key in new[] { "Settings.StartupSection", "Settings.SessionSection", "Settings.AppearanceSection", "Settings.DiagnosticsSection" })
+            Assert.Contains($"Key={key}", settings, StringComparison.Ordinal);
     }
 
     private static async Task AssertCheckBoxTemplateAndHitRangeAsync(App app, MainWindow window, MainViewModel viewModel)
@@ -156,12 +157,13 @@ internal static class WpfUiStyleAssertions
             Assert.False(IsSelfOrDescendant(blankHit, checkBox), $"Right-side blank area belongs to '{checkBox.Content}'.");
         }
 
-        var shortLabel = checkBoxes.Single(checkBox => Equals(checkBox.Content, "记住应用设置"));
-        var longLabel = checkBoxes.Single(checkBox => Equals(checkBox.Content, "自动应用已保存设置"));
+        var shortLabel = checkBoxes.Single(checkBox => Equals(checkBox.Content, LocalizationService.Current["Settings.RememberProfiles"]));
+        var longLabel = checkBoxes.Single(checkBox => Equals(checkBox.Content, LocalizationService.Current["Settings.AutoApply"]));
         Assert.True(longLabel.ActualWidth > shortLabel.ActualWidth + 20);
 
-        foreach (var label in new[] { "关闭窗口时留在托盘", "显示当前无声会话", "浏览器增强时隐藏浏览器聚合会话",
-                     "记住应用设置", "自动应用已保存设置", "显示操作提示" })
+        foreach (var label in new[] { "Settings.CloseToTray", "Settings.ShowInactive", "Settings.HideBrowserAggregate",
+                     "Settings.RememberProfiles", "Settings.AutoApply", "Settings.ShowTips" }
+                     .Select(key => LocalizationService.Current[key]))
         {
             var checkBox = checkBoxes.Single(candidate => Equals(candidate.Content, label));
             Assert.True(checkBox.IsEnabled, $"'{label}' should be enabled for the interaction regression.");
@@ -174,7 +176,7 @@ internal static class WpfUiStyleAssertions
             Assert.Equal(original, checkBox.IsChecked);
         }
 
-        var target = checkBoxes.Single(checkBox => Equals(checkBox.Content, "显示当前无声会话"));
+        var target = checkBoxes.Single(checkBox => Equals(checkBox.Content, LocalizationService.Current["Settings.ShowInactive"]));
         var box = Assert.IsType<Border>(target.Template.FindName("Box", target));
         var root = Assert.IsType<Grid>(target.Template.FindName("Root", target));
         var focusTemplateSetter = Assert.Single(target.FocusVisualStyle!.Setters.OfType<Setter>()
@@ -225,11 +227,11 @@ internal static class WpfUiStyleAssertions
 
         viewModel.RememberProfiles = false;
         await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.Render);
-        Assert.False(checkBoxes.Single(checkBox => Equals(checkBox.Content, "自动应用已保存设置")).IsEnabled);
+        Assert.False(checkBoxes.Single(checkBox => Equals(checkBox.Content, LocalizationService.Current["Settings.AutoApply"])).IsEnabled);
         viewModel.RememberProfiles = true;
         await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.Render);
         Assert.Equal(viewModel.StartupEnabled,
-            checkBoxes.Single(checkBox => Equals(checkBox.Content, "启动后留在系统托盘")).IsEnabled);
+            checkBoxes.Single(checkBox => Equals(checkBox.Content, LocalizationService.Current["Settings.StartInTray"])).IsEnabled);
 
         window.Width = 1240;
         window.Height = 820;
@@ -247,7 +249,7 @@ internal static class WpfUiStyleAssertions
             equalizerSource.IsEqualizerExpanded = true;
             await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.Render);
             var equalizerToggle = Assert.Single(Descendants(window).OfType<CheckBox>()
-                .Where(checkBox => Equals(checkBox.Content, "启用均衡器")));
+                .Where(checkBox => Equals(checkBox.Content, LocalizationService.Current["Equalizer.Enable"])));
             equalizerToggle.ApplyTemplate();
             equalizerToggle.UpdateLayout();
             Assert.Equal(HorizontalAlignment.Left, equalizerToggle.HorizontalAlignment);

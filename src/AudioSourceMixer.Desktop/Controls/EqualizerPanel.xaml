@@ -2,16 +2,17 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:AudioSourceMixer.Desktop.Controls"
+             xmlns:l="clr-namespace:AudioSourceMixer.Desktop.Localization"
              Visibility="{Binding EqualizerVisibility, Mode=OneWay}"
              Focusable="False">
     <Expander x:Name="EqualizerExpander" IsExpanded="{Binding IsEqualizerExpanded, Mode=TwoWay}" Expanded="EqualizerExpanded"
-              AutomationProperties.Name="音效均衡器">
+              AutomationProperties.Name="{l:Loc Key=Equalizer.Automation}">
         <Expander.Header>
             <Grid Background="Transparent" Margin="0,4">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <TextBlock Text="{Binding EqualizerSummary, Mode=OneWay}" FontWeight="Bold"
                            Foreground="{DynamicResource PrimaryDarkBrush}"/>
-                <TextBlock Grid.Column="1" Text="展开或收起" Style="{DynamicResource CaptionTextStyle}" Margin="12,0,0,0"/>
+                <TextBlock Grid.Column="1" Text="{l:Loc Key=Equalizer.ExpandCollapse}" Style="{DynamicResource CaptionTextStyle}" Margin="12,0,0,0"/>
             </Grid>
         </Expander.Header>
         <Border Background="{DynamicResource SurfaceSecondaryBrush}" BorderBrush="{DynamicResource BorderBrush}"
@@ -19,17 +20,17 @@
             <StackPanel>
                 <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <CheckBox Content="启用均衡器" IsChecked="{Binding IsEqualizerEnabled, Mode=TwoWay}"
-                              AutomationProperties.Name="启用均衡器" VerticalAlignment="Center"/>
+                    <CheckBox Content="{l:Loc Key=Equalizer.Enable}" IsChecked="{Binding IsEqualizerEnabled, Mode=TwoWay}"
+                              AutomationProperties.Name="{l:Loc Key=Equalizer.Enable}" VerticalAlignment="Center"/>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0">
-                        <TextBlock Text="预设" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Text="{l:Loc Key=Equalizer.Preset}" VerticalAlignment="Center" Margin="0,0,8,0"/>
                         <ComboBox Width="148" ItemsSource="{Binding EqualizerPresets, Mode=OneWay}"
                                   DisplayMemberPath="Name" SelectedValuePath="Id"
                                   SelectedValue="{Binding SelectedEqualizerPresetId, Mode=TwoWay}"
-                                  AutomationProperties.Name="均衡器预设"/>
+                                  AutomationProperties.Name="{l:Loc Key=Equalizer.PresetAutomation}"/>
                     </StackPanel>
-                    <Button Grid.Column="2" Content="重置均衡器" Command="{Binding ResetEqualizerCommand, Mode=OneWay}"
-                            AutomationProperties.Name="重置均衡器" ToolTip="关闭均衡器并将全部频段恢复为 0 dB"/>
+                    <Button Grid.Column="2" Content="{l:Loc Key=Equalizer.Reset}" Command="{Binding ResetEqualizerCommand, Mode=OneWay}"
+                            AutomationProperties.Name="{l:Loc Key=Equalizer.Reset}" ToolTip="{l:Loc Key=Equalizer.ResetTip}"/>
                 </Grid>
 
                 <ItemsControl ItemsSource="{Binding EqualizerBands, Mode=OneWay}" Margin="0,14,0,0">
@@ -53,10 +54,10 @@
 
                 <Grid Margin="0,10,0,0">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="220"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                    <TextBlock Text="前级" VerticalAlignment="Center" Margin="0,0,10,0" FontWeight="Bold"/>
+                    <TextBlock Text="{l:Loc Key=Equalizer.Preamp}" VerticalAlignment="Center" Margin="0,0,10,0" FontWeight="Bold"/>
                     <controls:WheelSafeSlider Grid.Column="1" Minimum="-12" Maximum="0" TickFrequency="1"
                                                Value="{Binding EqualizerPreampDb, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                               AutomationProperties.Name="均衡器前级"/>
+                                               AutomationProperties.Name="{l:Loc Key=Equalizer.PreampAutomation}"/>
                     <TextBlock Grid.Column="2" Text="{Binding EqualizerHeadroomText, Mode=OneWay}"
                                VerticalAlignment="Center" Margin="14,0,0,0" Style="{DynamicResource BodySecondaryTextStyle}"
                                TextWrapping="Wrap"/>

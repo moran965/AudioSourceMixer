@@ -1,6 +1,7 @@
 <UserControl x:Class="AudioSourceMixer.Desktop.Views.BrowserSetupView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:l="clr-namespace:AudioSourceMixer.Desktop.Localization"
              Focusable="False">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
@@ -13,39 +14,39 @@
                 <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <StackPanel>
-                        <TextBlock Text="欢迎使用 Audio Source Mixer" Style="{DynamicResource SectionTitleTextStyle}"/>
-                        <TextBlock Text="普通 Windows 应用控制已经可以直接使用。浏览器增强是可选功能，用于分别控制 Chrome 和 Edge 标签页。"
+                        <TextBlock Text="{l:Loc Key=Browser.WelcomeTitle}" Style="{DynamicResource SectionTitleTextStyle}"/>
+                        <TextBlock Text="{l:Loc Key=Browser.WelcomeDescription}"
                                    TextWrapping="Wrap" Margin="0,5,20,0"/>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button Content="现在设置" Command="{Binding BeginBrowserSetupCommand, Mode=OneWay}"
-                                Style="{DynamicResource PrimaryButtonStyle}" AutomationProperties.Name="现在设置浏览器增强" Margin="0,0,8,0"/>
-                        <Button Content="以后再说" Command="{Binding DeferBrowserSetupCommand, Mode=OneWay}"
-                                AutomationProperties.Name="以后再设置浏览器增强"/>
+                        <Button Content="{l:Loc Key=Browser.SetupNow}" Command="{Binding BeginBrowserSetupCommand, Mode=OneWay}"
+                                Style="{DynamicResource PrimaryButtonStyle}" AutomationProperties.Name="{l:Loc Key=Browser.SetupNowAutomation}" Margin="0,0,8,0"/>
+                        <Button Content="{l:Loc Key=Browser.SetupLater}" Command="{Binding DeferBrowserSetupCommand, Mode=OneWay}"
+                                AutomationProperties.Name="{l:Loc Key=Browser.SetupLaterAutomation}"/>
                     </StackPanel>
                 </Grid>
             </Border>
 
             <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
                 <StackPanel>
-                    <TextBlock Text="连接状态" Style="{DynamicResource SectionTitleTextStyle}"/>
-                    <TextBlock Text="只有桌面程序收到扩展连接消息后，才会显示“已连接”。" Style="{DynamicResource BodySecondaryTextStyle}" Margin="0,4,0,10"/>
+                    <TextBlock Text="{l:Loc Key=Browser.ConnectionSection}" Style="{DynamicResource SectionTitleTextStyle}"/>
+                    <TextBlock Text="{l:Loc Key=Browser.ConnectionDescription}" Style="{DynamicResource BodySecondaryTextStyle}" Margin="0,4,0,10"/>
                     <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                         <Border Grid.Column="0" Background="{DynamicResource SurfaceSecondaryBrush}" CornerRadius="9" Padding="12" Margin="0,0,6,0">
                             <StackPanel>
                                 <TextBlock Text="Microsoft Edge" FontWeight="Bold"/>
                                 <TextBlock Text="{Binding EdgeGuideStatus, Mode=OneWay}" Style="{DynamicResource BodySecondaryTextStyle}" TextWrapping="Wrap" Margin="0,4,0,8"/>
-                                <Button Content="打开 Edge 扩展页" Command="{Binding OpenEdgeExtensionsCommand, Mode=OneWay}"
-                                        HorizontalAlignment="Left" AutomationProperties.Name="打开 Edge 扩展管理页"/>
+                                <Button Content="{l:Loc Key=Browser.OpenEdge}" Command="{Binding OpenEdgeExtensionsCommand, Mode=OneWay}"
+                                        HorizontalAlignment="Left" AutomationProperties.Name="{l:Loc Key=Browser.OpenEdgeAutomation}"/>
                             </StackPanel>
                         </Border>
                         <Border Grid.Column="1" Background="{DynamicResource SurfaceSecondaryBrush}" CornerRadius="9" Padding="12" Margin="6,0,0,0">
                             <StackPanel>
                                 <TextBlock Text="Google Chrome" FontWeight="Bold"/>
                                 <TextBlock Text="{Binding ChromeGuideStatus, Mode=OneWay}" Style="{DynamicResource BodySecondaryTextStyle}" TextWrapping="Wrap" Margin="0,4,0,8"/>
-                                <Button Content="打开 Chrome 扩展页" Command="{Binding OpenChromeExtensionsCommand, Mode=OneWay}"
-                                        HorizontalAlignment="Left" AutomationProperties.Name="打开 Chrome 扩展管理页"/>
+                                <Button Content="{l:Loc Key=Browser.OpenChrome}" Command="{Binding OpenChromeExtensionsCommand, Mode=OneWay}"
+                                        HorizontalAlignment="Left" AutomationProperties.Name="{l:Loc Key=Browser.OpenChromeAutomation}"/>
                             </StackPanel>
                         </Border>
                     </Grid>
@@ -56,8 +57,8 @@
 
             <Border Style="{DynamicResource CardBorderStyle}" Margin="0,0,0,10">
                 <StackPanel>
-                    <TextBlock Text="本地加载扩展" Style="{DynamicResource SectionTitleTextStyle}"/>
-                    <TextBlock Text="扩展尚未发布到浏览器商店，因此需要你亲自加载一次。程序不会修改浏览器配置，也不会模拟点击安全确认。"
+                    <TextBlock Text="{l:Loc Key=Browser.LocalInstallSection}" Style="{DynamicResource SectionTitleTextStyle}"/>
+                    <TextBlock Text="{l:Loc Key=Browser.LocalInstallDescription}"
                                Style="{DynamicResource BodySecondaryTextStyle}" TextWrapping="Wrap" Margin="0,4,0,12"/>
                     <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="34"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
@@ -65,24 +66,24 @@
                             <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Text="1" Foreground="{DynamicResource PrimaryDarkBrush}" FontWeight="Bold"/><TextBlock Grid.Row="0" Grid.Column="1" Text="点击上方按钮打开对应浏览器的扩展管理页。" TextWrapping="Wrap"/>
-                        <TextBlock Grid.Row="1" Text="2" Foreground="{DynamicResource PrimaryDarkBrush}" FontWeight="Bold" Margin="0,8,0,0"/><TextBlock Grid.Row="1" Grid.Column="1" Text="开启“开发者模式”，再点击“加载已解压的扩展程序”。" TextWrapping="Wrap" Margin="0,8,0,0"/>
-                        <TextBlock Grid.Row="2" Text="3" Foreground="{DynamicResource PrimaryDarkBrush}" FontWeight="Bold" Margin="0,8,0,0"/><TextBlock Grid.Row="2" Grid.Column="1" Text="选择下方插件目录，并将扩展固定到工具栏。" TextWrapping="Wrap" Margin="0,8,0,0"/>
-                        <TextBlock Grid.Row="3" Text="4" Foreground="{DynamicResource PrimaryDarkBrush}" FontWeight="Bold" Margin="0,8,0,0"/><TextBlock Grid.Row="3" Grid.Column="1" Text="打开正在播放声音的网页，点击扩展图标启用当前标签页。" TextWrapping="Wrap" Margin="0,8,0,0"/>
-                        <TextBlock Grid.Row="4" Text="5" Foreground="{DynamicResource PrimaryDarkBrush}" FontWeight="Bold" Margin="0,8,0,0"/><TextBlock Grid.Row="4" Grid.Column="1" Text="回到混音器调整音量、声道、EQ 和输出设备。" TextWrapping="Wrap" Margin="0,8,0,0"/>
-                        <TextBlock Grid.Row="5" Text="6" Foreground="{DynamicResource PrimaryDarkBrush}" FontWeight="Bold" Margin="0,8,0,0"/><TextBlock Grid.Row="5" Grid.Column="1" Text="首次选择非默认输出设备时，在浏览器授权页试听并确认。" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                        <TextBlock Grid.Row="0" Text="1" Foreground="{DynamicResource PrimaryDarkBrush}" FontWeight="Bold"/><TextBlock Grid.Row="0" Grid.Column="1" Text="{l:Loc Key=Browser.Step1}" TextWrapping="Wrap"/>
+                        <TextBlock Grid.Row="1" Text="2" Foreground="{DynamicResource PrimaryDarkBrush}" FontWeight="Bold" Margin="0,8,0,0"/><TextBlock Grid.Row="1" Grid.Column="1" Text="{l:Loc Key=Browser.Step2}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                        <TextBlock Grid.Row="2" Text="3" Foreground="{DynamicResource PrimaryDarkBrush}" FontWeight="Bold" Margin="0,8,0,0"/><TextBlock Grid.Row="2" Grid.Column="1" Text="{l:Loc Key=Browser.Step3}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                        <TextBlock Grid.Row="3" Text="4" Foreground="{DynamicResource PrimaryDarkBrush}" FontWeight="Bold" Margin="0,8,0,0"/><TextBlock Grid.Row="3" Grid.Column="1" Text="{l:Loc Key=Browser.Step4}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                        <TextBlock Grid.Row="4" Text="5" Foreground="{DynamicResource PrimaryDarkBrush}" FontWeight="Bold" Margin="0,8,0,0"/><TextBlock Grid.Row="4" Grid.Column="1" Text="{l:Loc Key=Browser.Step5}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                        <TextBlock Grid.Row="5" Text="6" Foreground="{DynamicResource PrimaryDarkBrush}" FontWeight="Bold" Margin="0,8,0,0"/><TextBlock Grid.Row="5" Grid.Column="1" Text="{l:Loc Key=Browser.Step6}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                     </Grid>
                     <Border Background="{DynamicResource SurfaceSecondaryBrush}" CornerRadius="7" Padding="10" Margin="0,12,0,0">
                         <TextBlock Text="{Binding ExtensionDirectoryText, Mode=OneWay}" ToolTip="{Binding ExtensionDirectoryText, Mode=OneWay}"
-                                   TextTrimming="CharacterEllipsis" AutomationProperties.Name="浏览器扩展目录"/>
+                                   TextTrimming="CharacterEllipsis" AutomationProperties.Name="{l:Loc Key=Browser.ExtensionDirectoryAutomation}"/>
                     </Border>
                     <WrapPanel Margin="0,10,0,0">
-                        <Button Content="打开插件目录" Command="{Binding OpenExtensionDirectoryCommand, Mode=OneWay}"
-                                AutomationProperties.Name="打开插件目录" Margin="0,0,8,8"/>
-                        <Button Content="复制插件目录" Command="{Binding CopyExtensionDirectoryCommand, Mode=OneWay}"
-                                AutomationProperties.Name="复制插件目录" Margin="0,0,8,8"/>
-                        <Button Content="重新检测" Command="{Binding RecheckBrowserSetupCommand, Mode=OneWay}"
-                                AutomationProperties.Name="重新检测浏览器增强" Margin="0,0,8,8"/>
+                        <Button Content="{l:Loc Key=Browser.OpenFolder}" Command="{Binding OpenExtensionDirectoryCommand, Mode=OneWay}"
+                                AutomationProperties.Name="{l:Loc Key=Browser.OpenFolder}" Margin="0,0,8,8"/>
+                        <Button Content="{l:Loc Key=Browser.CopyFolder}" Command="{Binding CopyExtensionDirectoryCommand, Mode=OneWay}"
+                                AutomationProperties.Name="{l:Loc Key=Browser.CopyFolder}" Margin="0,0,8,8"/>
+                        <Button Content="{l:Loc Key=Browser.Recheck}" Command="{Binding RecheckBrowserSetupCommand, Mode=OneWay}"
+                                AutomationProperties.Name="{l:Loc Key=Browser.RecheckAutomation}" Margin="0,0,8,8"/>
                     </WrapPanel>
                 </StackPanel>
             </Border>
@@ -91,12 +92,12 @@
                 <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <StackPanel>
-                        <TextBlock Text="隐私与启动行为" Style="{DynamicResource SectionTitleTextStyle}"/>
-                        <TextBlock Text="扩展不录制、不保存、不上传音频或网页内容。仅打开浏览器不会启动桌面程序；只有你点击扩展图标时才会处理当前标签页。"
+                        <TextBlock Text="{l:Loc Key=Browser.PrivacySection}" Style="{DynamicResource SectionTitleTextStyle}"/>
+                        <TextBlock Text="{l:Loc Key=Browser.PrivacyDescription}"
                                    Style="{DynamicResource BodySecondaryTextStyle}" TextWrapping="Wrap" Margin="0,5,20,0"/>
                     </StackPanel>
-                    <Button Grid.Column="1" Content="不再自动提示" Command="{Binding DisableBrowserGuidePromptCommand, Mode=OneWay}"
-                            Style="{DynamicResource QuietButtonStyle}" AutomationProperties.Name="不再自动提示浏览器设置" VerticalAlignment="Center"/>
+                    <Button Grid.Column="1" Content="{l:Loc Key=Browser.NeverPrompt}" Command="{Binding DisableBrowserGuidePromptCommand, Mode=OneWay}"
+                            Style="{DynamicResource QuietButtonStyle}" AutomationProperties.Name="{l:Loc Key=Browser.NeverPromptAutomation}" VerticalAlignment="Center"/>
                 </Grid>
             </Border>
         </StackPanel>

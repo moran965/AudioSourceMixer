@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Windows.Automation;
 using System.Windows.Forms;
 using Microsoft.Win32;
+using AudioSourceMixer.Desktop.Localization;
 
 namespace AudioSourceMixer.Desktop.Services;
 
@@ -40,13 +41,13 @@ internal sealed class BrowserProcessLauncher : IBrowserProcessLauncher
         {
             using var startedProcess = Process.Start(start);
             if (startedProcess is null)
-                throw new InvalidOperationException($"浏览器进程未启动：{executablePath}");
+                throw new InvalidOperationException(LocalizationService.Current.Format("BrowserProcess.NotStarted", executablePath));
             EnsureInternalPageOpened(executablePath, address, startedProcess);
         }
         catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or InvalidOperationException
                                           or ElementNotAvailableException)
         {
-            throw new InvalidOperationException($"无法启动浏览器并打开 {address}。可复制该地址到对应浏览器的地址栏。", exception);
+            throw new InvalidOperationException(LocalizationService.Current.Format("BrowserProcess.LaunchFailed", address), exception);
         }
     }
 
@@ -76,7 +77,7 @@ internal sealed class BrowserProcessLauncher : IBrowserProcessLauncher
         }
 
         if (windowHandle == 0 || addressBar is null || valuePattern is null)
-            throw new InvalidOperationException("浏览器窗口已启动，但没有找到可验证的地址栏。");
+            throw new InvalidOperationException(LocalizationService.Current["BrowserProcess.AddressBarMissing"]);
 
         // Chromium 151 may discard chrome:// or edge:// arguments during a cold start. The explicit
         // user action authorizes bringing that browser's real omnibox forward and completing navigation.
@@ -92,7 +93,7 @@ internal sealed class BrowserProcessLauncher : IBrowserProcessLauncher
             if (AddressMatches(valuePattern.Current.Value, address)) return;
             Thread.Sleep(100);
         }
-        throw new InvalidOperationException($"浏览器已启动，但管理页未能打开：{address}");
+        throw new InvalidOperationException(LocalizationService.Current.Format("BrowserProcess.ManagementPageFailed", address));
     }
 
     private static nint FindBrowserWindow(string processName, Process startedProcess)
@@ -177,11 +178,11 @@ internal sealed class BrowserOnboardingService : IBrowserOnboardingService
         {
             var chrome = ReadRegisteredManifest(@$"Software\Google\Chrome\NativeMessagingHosts\{HostName}");
             var edge = ReadRegisteredManifest(@$"Software\Microsoft\Edge\NativeMessagingHosts\{HostName}");
-            if (chrome is null && edge is null) return "桌面桥尚未注册；请重新运行安装程序。";
-            if (!PathEquals(chrome, edge)) return "Chrome 与 Edge 的桌面桥注册不一致，建议重新安装。";
+            if (chrome is null && edge is null) return LocalizationService.Current["BrowserBridge.NotRegistered"];
+            if (!PathEquals(chrome, edge)) return LocalizationService.Current["BrowserBridge.RegistryMismatch"];
             return chrome is not null && File.Exists(chrome)
-                ? "桌面桥注册正常。"
-                : "桌面桥清单不存在，建议重新安装。";
+                ? LocalizationService.Current["BrowserBridge.Registered"]
+                : LocalizationService.Current["BrowserBridge.ManifestMissing"];
         }
     }
 
@@ -195,19 +196,19 @@ internal sealed class BrowserOnboardingService : IBrowserOnboardingService
             _ => throw new ArgumentOutOfRangeException(nameof(browser))
         };
         if (!installation.IsInstalled)
-            throw new FileNotFoundException($"未检测到 {installation.DisplayName}。请安装后重试，或在对应浏览器地址栏输入 {address}。");
+            throw new FileNotFoundException(LocalizationService.Current.Format("BrowserProcess.NotDetected", installation.DisplayName, address));
         _processLauncher.Launch(installation.ExecutablePath!, address);
     }
 
     public void OpenExtensionDirectory()
     {
-        if (!Directory.Exists(ExtensionDirectory)) throw new DirectoryNotFoundException("安装目录中没有浏览器扩展文件。请修复安装。 ");
+        if (!Directory.Exists(ExtensionDirectory)) throw new DirectoryNotFoundException(LocalizationService.Current["BrowserProcess.ExtensionMissing"]);
         Process.Start(new ProcessStartInfo(ExtensionDirectory) { UseShellExecute = true });
     }
 
     public void CopyExtensionDirectory()
     {
-        if (!Directory.Exists(ExtensionDirectory)) throw new DirectoryNotFoundException("安装目录中没有浏览器扩展文件。请修复安装。 ");
+        if (!Directory.Exists(ExtensionDirectory)) throw new DirectoryNotFoundException(LocalizationService.Current["BrowserProcess.ExtensionMissing"]);
         System.Windows.Clipboard.SetText(ExtensionDirectory);
     }
 
@@ -231,13 +232,13 @@ internal sealed class BrowserOnboardingService : IBrowserOnboardingService
         var extensionId = browser == "edge" ? configuration?.EdgeStoreExtensionId : configuration?.ChromeStoreExtensionId;
         if (string.IsNullOrWhiteSpace(rawUrl) && string.IsNullOrWhiteSpace(extensionId)) return null;
         if (string.IsNullOrWhiteSpace(rawUrl) || extensionId is null || !System.Text.RegularExpressions.Regex.IsMatch(extensionId, "^[a-p]{32}$"))
-            throw new InvalidDataException($"{browser} 商店 URL 与受信任扩展 ID 必须同时配置。");
+            throw new InvalidDataException(LocalizationService.Current.Format("BrowserProcess.StoreConfigPair", browser));
         if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
-            throw new InvalidDataException($"{browser} 商店 URL 必须使用 HTTPS。");
+            throw new InvalidDataException(LocalizationService.Current.Format("BrowserProcess.StoreHttps", browser));
         var expectedHost = browser == "edge" ? "microsoftedge.microsoft.com" : "chromewebstore.google.com";
         if (!uri.Host.Equals(expectedHost, StringComparison.OrdinalIgnoreCase) ||
             !uri.AbsolutePath.TrimEnd('/').EndsWith('/' + extensionId, StringComparison.Ordinal))
-            throw new InvalidDataException($"{browser} 商店 URL 必须是与受信任扩展 ID 匹配的官方商店页面。");
+            throw new InvalidDataException(LocalizationService.Current.Format("BrowserProcess.StoreMismatch", browser));
         return uri;
     }
 

@@ -52,7 +52,7 @@ public sealed class SourcePresentationTests
 
         Assert.DoesNotContain(result.Visible, item => item.Id == first.Id);
         Assert.Contains(result.Visible, item => item.Id == second.Id);
-        Assert.Contains(result.Hidden, item => item.Source.Id == first.Id && item.Reason == "由你手动隐藏");
+        Assert.Contains(result.Hidden, item => item.Source.Id == first.Id && item.Reason == "Source.HiddenReason");
     }
 
     [Fact]

@@ -6,6 +6,7 @@ using AudioSourceMixer.Core.Browser;
 using AudioSourceMixer.Core.Infrastructure;
 using AudioSourceMixer.Core.Models;
 using AudioSourceMixer.Core.Persistence;
+using AudioSourceMixer.Desktop.Localization;
 using AudioSourceMixer.Desktop.Services;
 using System.Windows.Media;
 
@@ -29,6 +30,7 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     private readonly Action<AudioSourceViewModel>? _moveToBottom;
     private readonly Func<OutputDeviceInfo?> _systemDefaultOutputDevice;
     private readonly RollingFileLogger _logger;
+    private readonly LocalizationService _localization = LocalizationService.Current;
     private readonly AsyncDebouncer _volumeDebouncer = new(TimeSpan.FromMilliseconds(60));
     private readonly AsyncDebouncer _balanceDebouncer = new(TimeSpan.FromMilliseconds(60));
     private readonly AsyncDebouncer _equalizerDebouncer = new(TimeSpan.FromMilliseconds(60));
@@ -111,13 +113,16 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     public string DisplayName => _snapshot.DisplayName;
     public string SourceDescription => _snapshot.SourceDescription;
     public ImageSource IconSource => _iconSource;
-    public string? Limitation => _snapshot.Capabilities.Limitation;
+    public string? Limitation => _snapshot.Kind is AudioSourceKind.ChromeTab or AudioSourceKind.EdgeTab
+        ? !SupportsExtendedGain ? _localization["Dynamic.BrowserProtocolOld"]
+            : !SupportsEqualizer ? _localization["Dynamic.BrowserEqUnavailable"] : _snapshot.Capabilities.Limitation
+        : _snapshot.Capabilities.Limitation;
     public bool SupportsBalance => _snapshot.Capabilities.SupportsStereoBalance;
     public bool SupportsExtendedGain => _snapshot.Capabilities.SupportsExtendedGain;
     public bool SupportsOutputRouting => _snapshot.Capabilities.SupportsOutputRouting;
     public bool SupportsEqualizer => _snapshot.Capabilities.SupportsEqualizer;
-    public string SourceTypeLabel => _snapshot.Kind is AudioSourceKind.ChromeTab or AudioSourceKind.EdgeTab
-        ? "浏览器增强" : "Windows 应用";
+    public string SourceTypeLabel => _localization[_snapshot.Kind is AudioSourceKind.ChromeTab or AudioSourceKind.EdgeTab
+        ? "Common.BrowserEnhanced" : "Common.WindowsApplication"];
     public double VolumeMaximum => SupportsExtendedGain ? 200 : 100;
     public double PeakPercent => Math.Clamp(_snapshot.Peak, 0, 1) * 100;
     public double DragPlaceholderOpacity => _isDragPlaceholder ? 0.28 : 1;
@@ -125,42 +130,43 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     public Visibility EnhancedStatusVisibility => _snapshot.Kind == AudioSourceKind.WindowsSession ? Visibility.Collapsed : Visibility.Visible;
     public Visibility ReauthorizeOutputVisibility => _snapshot.Kind != AudioSourceKind.WindowsSession &&
         _snapshot.RoutingState == AudioRoutingState.PendingAuthorization ? Visibility.Visible : Visibility.Collapsed;
-    public string MuteLabel => _muted ? "取消静音" : "静音";
-    public string BalanceText => _balancePercent switch { <= -99 => "仅左", < -5 => "偏左", >= 99 => "仅右", > 5 => "偏右", _ => "居中" };
-    public string GainWarning => SupportsExtendedGain && _volumePercent > 100 ? "超过 100% 可能造成失真" : string.Empty;
+    public string MuteLabel => _localization[_muted ? "Source.Unmute" : "Source.Mute"];
+    public string BalanceText => _localization[_balancePercent switch
+        { <= -99 => "Source.BalanceOnlyLeft", < -5 => "Source.BalanceLeft", >= 99 => "Source.BalanceOnlyRight", > 5 => "Source.BalanceRight", _ => "Source.BalanceCenter" }];
+    public string GainWarning => SupportsExtendedGain && _volumePercent > 100 ? _localization["Source.GainWarning"] : string.Empty;
     public string OutputStatus => SupportsOutputRouting
         ? _snapshot.RoutingState switch
         {
             AudioRoutingState.PendingAuthorization => _snapshot.FollowSystemDefault
-                ? $"需要授权当前系统默认设备：{_snapshot.ResolvedOutputDeviceName ?? "未知设备"}"
-                : $"等待浏览器授权：{_preferredOutputDeviceName ?? _preferredOutputDeviceId}",
-            AudioRoutingState.PendingStreamRestart => $"策略已设置；暂停/恢复播放或重开应用：{_preferredOutputDeviceName ?? "系统默认"}",
-            AudioRoutingState.Partial => $"部分音频流已迁移：{_snapshot.RoutingError}",
+                ? _localization.Format("Source.PendingDefaultAuthorization", _snapshot.ResolvedOutputDeviceName ?? _localization["Common.UnknownDevice"])
+                : _localization.Format("Source.PendingAuthorization", _preferredOutputDeviceName ?? _preferredOutputDeviceId),
+            AudioRoutingState.PendingStreamRestart => _localization.Format("Source.PendingRestart", _preferredOutputDeviceName ?? _localization["Common.SystemDefault"]),
+            AudioRoutingState.Partial => _localization.Format("Source.PartialRoute", _snapshot.RoutingError),
             AudioRoutingState.Applied when _snapshot.FollowSystemDefault =>
-                $"选择：系统默认；当前解析：{_snapshot.ResolvedOutputDeviceName ?? "未知"}；实际生效：{_snapshot.EffectiveOutputDeviceName ?? "未知"}",
-            AudioRoutingState.Applied => $"已生效：{_snapshot.EffectiveOutputDeviceName ?? _snapshot.EffectiveOutputDeviceId}",
-            AudioRoutingState.SystemDefault => $"系统默认；实际：{_snapshot.EffectiveOutputDeviceName ?? _snapshot.OutputDeviceName ?? "未知"}",
-            AudioRoutingState.Disconnected => $"目标设备已断开，策略保留：{_preferredOutputDeviceName ?? _preferredOutputDeviceId}",
-            AudioRoutingState.Failed => $"路由失败：{_snapshot.RoutingError}",
-            _ => $"请求：{_preferredOutputDeviceName ?? "系统默认"}；实际：{_snapshot.EffectiveOutputDeviceName ?? "未知"}"
+                _localization.Format("Source.DefaultRouteDetails", _snapshot.ResolvedOutputDeviceName ?? _localization["Common.Unknown"], _snapshot.EffectiveOutputDeviceName ?? _localization["Common.Unknown"]),
+            AudioRoutingState.Applied => _localization.Format("Source.RouteApplied", _snapshot.EffectiveOutputDeviceName ?? _snapshot.EffectiveOutputDeviceId),
+            AudioRoutingState.SystemDefault => _localization.Format("Source.RouteSystemDefault", _snapshot.EffectiveOutputDeviceName ?? _snapshot.OutputDeviceName ?? _localization["Common.Unknown"]),
+            AudioRoutingState.Disconnected => _localization.Format("Source.RouteDisconnected", _preferredOutputDeviceName ?? _preferredOutputDeviceId),
+            AudioRoutingState.Failed => _localization.Format("Source.RouteFailed", _snapshot.RoutingError),
+            _ => _localization.Format("Source.RouteRequested", _preferredOutputDeviceName ?? _localization["Common.SystemDefault"], _snapshot.EffectiveOutputDeviceName ?? _localization["Common.Unknown"])
         }
         : _snapshot.Kind == AudioSourceKind.WindowsSession
-            ? $"当前端点：{_snapshot.OutputDeviceName ?? "未知"}；按应用路由不可用"
-            : "输出设备映射不可用";
+            ? _localization.Format("Source.CurrentEndpointUnavailable", _snapshot.OutputDeviceName ?? _localization["Common.Unknown"])
+            : _localization["Source.MappingUnavailable"];
     public string UserStatusMessage
     {
         get
         {
             if (!string.IsNullOrWhiteSpace(Limitation)) return Limitation!;
             if (_snapshot.State is AudioPlaybackState.Expired or AudioPlaybackState.Unavailable)
-                return "该来源已失效，声音不可控制；请重新开始播放。";
+                return _localization["Source.Expired"];
             return _snapshot.RoutingState switch
             {
-                AudioRoutingState.PendingAuthorization => $"需要授权“{_preferredOutputDeviceName ?? "所选设备"}”；当前声音仍使用原输出，请打开授权页试听并确认。",
-                AudioRoutingState.PendingStreamRestart => "输出偏好已保存，但当前声音可能仍在原设备；请暂停后继续播放，或重开应用。",
-                AudioRoutingState.Partial => "只有部分声音流切换成功；当前仍有声音，请暂停后继续播放或重开应用。",
-                AudioRoutingState.Disconnected => $"“{_preferredOutputDeviceName ?? "所选设备"}”已断开；当前声音可能继续使用原设备，重新连接后会再次检查。",
-                AudioRoutingState.Failed => $"输出设备切换失败；当前声音保持原路径。请重试或选择系统默认。{(string.IsNullOrWhiteSpace(_snapshot.RoutingError) ? "" : $" {_snapshot.RoutingError}")}",
+                AudioRoutingState.PendingAuthorization => _localization.Format("Source.AuthorizationHelp", _preferredOutputDeviceName ?? _localization["Common.SelectedDevice"]),
+                AudioRoutingState.PendingStreamRestart => _localization["Source.RestartHelp"],
+                AudioRoutingState.Partial => _localization["Source.PartialHelp"],
+                AudioRoutingState.Disconnected => _localization.Format("Source.DisconnectedHelp", _preferredOutputDeviceName ?? _localization["Common.SelectedDevice"]),
+                AudioRoutingState.Failed => _localization.Format("Source.FailedHelp", string.IsNullOrWhiteSpace(_snapshot.RoutingError) ? "" : $" {_snapshot.RoutingError}"),
                 _ => string.Empty
             };
         }
@@ -176,11 +182,11 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     public Visibility GainWarningVisibility => string.IsNullOrWhiteSpace(GainWarning) ? Visibility.Collapsed : Visibility.Visible;
     public Visibility EqualizerVisibility => SupportsEqualizer ? Visibility.Visible : Visibility.Collapsed;
     public ObservableCollection<EqualizerBandViewModel> EqualizerBands { get; } = [];
-    public IReadOnlyList<EqualizerPresetOption> EqualizerPresets { get; } = EqualizerCatalog.Presets
-        .Select(preset => new EqualizerPresetOption(preset.Id, preset.Name)).ToArray();
-    public string EqualizerSummary => !_effects.Enabled ? "音效 · 关闭" : $"音效 · {PresetName(_effects.PresetId)}";
-    public string EqualizerHeadroomText => !_effects.Enabled ? "音效已旁路，不改变声音" :
-        $"防削波余量：{EqualizerCatalog.EffectiveHeadroomDb(_effects):F1} dB（自动保护，不改变主音量数值）";
+    public IReadOnlyList<EqualizerPresetOption> EqualizerPresets => EqualizerCatalog.Presets
+        .Select(preset => new EqualizerPresetOption(preset.Id, PresetName(preset.Id))).ToArray();
+    public string EqualizerSummary => !_effects.Enabled ? _localization["Source.EffectsOff"] : _localization.Format("Source.EffectsPreset", PresetName(_effects.PresetId));
+    public string EqualizerHeadroomText => !_effects.Enabled ? _localization["Source.EffectsBypassed"] :
+        _localization.Format("Source.Headroom", EqualizerCatalog.EffectiveHeadroomDb(_effects));
     public bool IsEqualizerExpanded { get => _equalizerExpanded; set => Set(ref _equalizerExpanded, value); }
     public bool IsEqualizerEnabled
     {
@@ -507,11 +513,16 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
 
     public void UpdateOutputDevices(IEnumerable<OutputDeviceInfo> devices)
     {
-        var available = devices.ToList();
-        if (available.All(device => !device.IsSystemDefault)) available.Insert(0, OutputDeviceInfo.SystemDefault);
+        var available = devices.Select(device => device.IsSystemDefault
+            ? device with { Name = _localization["Common.SystemDefault"] }
+            : !device.IsAvailable && device.Id == _preferredOutputDeviceId
+                ? device with { Name = _localization.Format("Source.DeviceUnavailable", _preferredOutputDeviceName ?? _localization["Common.SelectedDevice"]) }
+                : device).ToList();
+        if (available.All(device => !device.IsSystemDefault))
+            available.Insert(0, OutputDeviceInfo.SystemDefault with { Name = _localization["Common.SystemDefault"] });
         if (!string.IsNullOrEmpty(_preferredOutputDeviceId) && available.All(device => device.Id != _preferredOutputDeviceId))
             available.Add(new OutputDeviceInfo(_preferredOutputDeviceId,
-                $"{_preferredOutputDeviceName ?? "所选设备"} (不可用)", IsAvailable: false));
+                _localization.Format("Source.DeviceUnavailable", _preferredOutputDeviceName ?? _localization["Common.SelectedDevice"]), IsAvailable: false));
         _updating = true;
         try
         {
@@ -530,7 +541,7 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         if (selected is null)
         {
             selected = new OutputDeviceInfo(_preferredOutputDeviceId,
-                $"{_preferredOutputDeviceName ?? "Selected device"} (unavailable)", IsAvailable: false);
+                _localization.Format("Source.DeviceUnavailable", _preferredOutputDeviceName ?? _localization["Common.SelectedDevice"]), IsAvailable: false);
             OutputDevices.Add(selected);
         }
         _selectedOutputDevice = selected;
@@ -573,6 +584,14 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         RaiseEqualizerProperties();
     }
 
+    internal void RefreshLocalization()
+    {
+        UpdateOutputDevices(OutputDevices.ToArray());
+        Raise(nameof(SourceTypeLabel));
+        Raise(nameof(EqualizerPresets));
+        RaiseAllDisplayProperties();
+    }
+
     private void EqualizerBandChanged(EqualizerBandViewModel band)
     {
         if (_updating || _isRestoring() || !SupportsEqualizer) return;
@@ -612,8 +631,8 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         Raise(nameof(EqualizerPreampDb)); Raise(nameof(EqualizerSummary)); Raise(nameof(EqualizerHeadroomText));
     }
 
-    private static string PresetName(string presetId)
-        => EqualizerCatalog.Presets.FirstOrDefault(preset => preset.Id == presetId)?.Name ?? "自定义";
+    private string PresetName(string presetId)
+        => _localization[$"Equalizer.Preset.{(EqualizerCatalog.Presets.Any(preset => preset.Id == presetId) ? presetId : EqualizerCatalog.CustomPresetId)}"];
 
     private void Error(Exception exception) => _logger.Error($"Audio source command failed for {Id}.", exception);
 
@@ -651,7 +670,7 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         var followSystemDefault = forceSystemDefault || string.IsNullOrEmpty(_preferredOutputDeviceId);
         resolvedDefault ??= followSystemDefault ? _systemDefaultOutputDevice() : null;
         if (followSystemDefault && (resolvedDefault is null || string.IsNullOrWhiteSpace(resolvedDefault.Id)))
-            return Task.FromException(new InvalidOperationException("无法解析当前 Windows 默认多媒体输出设备。"));
+            return Task.FromException(new InvalidOperationException(_localization["Dynamic.ResolveDefaultFailed"]));
         return _bridge.SetAudioAsync(Id, volume, balance, muted,
             followSystemDefault ? string.Empty : _preferredOutputDeviceId,
             followSystemDefault ? null : _preferredOutputDeviceName,

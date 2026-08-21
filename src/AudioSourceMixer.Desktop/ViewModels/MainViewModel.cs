@@ -9,6 +9,7 @@ using AudioSourceMixer.Core.Browser;
 using AudioSourceMixer.Core.Infrastructure;
 using AudioSourceMixer.Core.Models;
 using AudioSourceMixer.Core.Persistence;
+using AudioSourceMixer.Desktop.Localization;
 using AudioSourceMixer.Desktop.Services;
 using AudioSourceMixer.WindowsAudio;
 
@@ -25,6 +26,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly RollingFileLogger _logger;
     private readonly IStartupRegistrationService _startup;
     private readonly IBrowserOnboardingService _browserOnboarding;
+    private readonly LocalizationService _localization = LocalizationService.Current;
     private readonly Dictionary<AudioSourceId, AudioSourceViewModel> _byId = [];
     private readonly HashSet<string> _runtimeHiddenSourceIds = new(StringComparer.Ordinal);
     private readonly List<string> _runtimeManualSourceOrder = [];
@@ -40,8 +42,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private Task _settingsSaveTask = Task.CompletedTask;
     private bool _restoring;
     private bool _settingsLoaded;
-    private string _deviceName = "正在初始化…";
-    private string _browserStatus = "等待扩展连接";
+    private string _deviceName = LocalizationService.Current["Dynamic.Initializing"];
+    private string _browserStatus = LocalizationService.Current["Dynamic.WaitingExtension"];
+    private bool _browserStatusSignificant;
     private string _selectedPage = "mixer";
     private bool _browserSetupRequested;
     private ApplicationSettings _settings = new();
@@ -58,6 +61,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _bridge = bridge; _profiles = profiles; _settingsStore = settingsStore; _logger = logger;
         _startup = startup ?? new StartupRegistrationService();
         _browserOnboarding = new BrowserOnboardingService();
+        _localization.CultureChanged += LocalizationChanged;
         RefreshCommand = new AsyncRelayCommand(() => _discovery.RefreshAsync(), Error);
         RestoreAllCommand = new AsyncRelayCommand(RestoreAllAsync, Error);
         ClearProfilesCommand = new AsyncRelayCommand(ConfirmClearProfilesAsync, Error);
@@ -86,10 +90,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public ObservableCollection<AudioSourceViewModel> Sources { get; } = [];
     public ObservableCollection<HiddenSourceViewModel> HiddenSources { get; } = [];
     public ObservableCollection<OutputDeviceInfo> OutputDevices { get; } = [];
+    public IReadOnlyList<LanguageOption> LanguageOptions { get; } =
+        [new(LocalizationService.ChineseLanguage, "简体中文"), new(LocalizationService.EnglishLanguage, "English")];
     public string DeviceName { get => _deviceName; private set => Set(ref _deviceName, value); }
     public string BrowserStatus { get => _browserStatus; private set { if (Set(ref _browserStatus, value)) Raise(nameof(BrowserStatusVisibility)); } }
-    public Visibility BrowserStatusVisibility => _bridge.IsConnected || _browserTabs.Count > 0 ||
-        (!_browserStatus.Equals("等待扩展连接", StringComparison.Ordinal) && !_browserStatus.StartsWith("已连接", StringComparison.Ordinal))
+    public Visibility BrowserStatusVisibility => _bridge.IsConnected || _browserTabs.Count > 0 || _browserStatusSignificant
         ? Visibility.Visible : Visibility.Collapsed;
     public ICommand RefreshCommand { get; }
     public ICommand RestoreAllCommand { get; }
@@ -114,10 +119,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public ICommand RecheckBrowserSetupCommand { get; }
     public ICommand ResetSourceOrderCommand { get; }
     public ICommand RestoreAllHiddenCommand { get; }
-    public string SourceSortModeLabel => "手动排序";
+    public string SourceSortModeLabel => _localization["Dynamic.ManualOrder"];
     public bool IsRecentSortMode => false;
     public bool IsManualSortMode => true;
-    public string HiddenSourcesLabel => $"已隐藏 {HiddenSources.Count}";
+    public string HiddenSourcesLabel => _localization.Format("Dynamic.HiddenCount", HiddenSources.Count);
     public Visibility HiddenSourcesVisibility => HiddenSources.Count == 0 ? Visibility.Hidden : Visibility.Visible;
     public bool IsHiddenSourcesPopupOpen
     {
@@ -146,7 +151,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         set
         {
             try { _startup.SetEnabled(value, StartMinimizedToTray); }
-            catch (Exception exception) { BrowserStatus = exception.Message; Error(exception); }
+            catch (Exception exception) { SetBrowserStatus(exception.Message, true); Error(exception); }
             Raise();
         }
     }
@@ -163,8 +168,21 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public bool AutoApplyProfilesEnabled => RememberProfiles;
     public string ChromeConnectionStatus => BrowserConnectionText("chrome");
     public string EdgeConnectionStatus => BrowserConnectionText("edge");
-    public string VersionText => $"版本 {typeof(MainViewModel).Assembly.GetName().Version?.ToString(3)}";
-    public string DeploymentText => StartupAvailable ? "安装版" : "开发运行";
+    public string VersionText => _localization.Format("Dynamic.Version", typeof(MainViewModel).Assembly.GetName().Version?.ToString(3));
+    public string DeploymentText => _localization[StartupAvailable ? "Dynamic.Installed" : "Dynamic.DevelopmentRun"];
+    public string SelectedLanguage
+    {
+        get => _settings.Language;
+        set
+        {
+            var normalized = LocalizationService.NormalizeLanguage(value);
+            if (string.Equals(_settings.Language, normalized, StringComparison.OrdinalIgnoreCase)) return;
+            _settings = _settings with { Language = normalized, SchemaVersion = 8 };
+            _localization.SetLanguage(normalized);
+            Raise();
+            SaveSettings();
+        }
+    }
     public bool CloseToTray { get => _settings.CloseToTray; set { _settings = _settings with { CloseToTray = value }; Raise(); SaveSettings(); } }
     public bool ShowOperationTips { get => _settings.ShowOperationTips; set { _settings = _settings with { ShowOperationTips = value }; Raise(); SaveSettings(); } }
     public bool AutoApplyProfiles { get => _settings.AutoApplyProfiles; set { _settings = _settings with { AutoApplyProfiles = value }; Raise(); SaveSettings(); Reconcile(); } }
@@ -221,7 +239,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             // Diagnostic UI must be deterministic and must not expose the user's real session names in screenshots.
             _windowsSources = diagnosticSources.ToArray();
-            DeviceName = "诊断默认输出设备";
+            DeviceName = _localization["Dynamic.DiagnosticDefaultDevice"];
             SelectPage("mixer");
         }
         Reconcile();
@@ -231,9 +249,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         if (_settingsLoaded) return;
         _settings = await _settingsStore.LoadAsync(cancellationToken);
+        _localization.SetLanguage(_settings.Language);
         _runtimeManualSourceOrder.Clear();
         _runtimeManualSourceOrder.AddRange(_settings.ManualSourceOrder ?? []);
-        _settings = _settings with { SourceSortMode = SourceSortModes.Manual, VisibleBrowserAggregates = [], SchemaVersion = 7 };
+        _settings = _settings with { SourceSortMode = SourceSortModes.Manual, VisibleBrowserAggregates = [], SchemaVersion = 8 };
         _manualOrderInitialized = false;
         _settingsLoaded = true;
         Raise(nameof(CloseToTray));
@@ -249,6 +268,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Raise(nameof(StartupEnabled));
         Raise(nameof(StartupAvailable));
         Raise(nameof(IsFirstRunBrowserWelcome));
+        Raise(nameof(SelectedLanguage));
         if (_browserSetupRequested || IsFirstRunBrowserWelcome) SelectPage("browser");
     }
 
@@ -300,7 +320,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private void BrowserTabsChanged(object? sender, IReadOnlyList<BrowserTabSource> tabs)
     {
         if (_diagnosticSourcesActive) return;
-        Dispatch(() => { _browserTabs = tabs; BrowserStatus = _bridge.IsConnected ? $"已连接 · {tabs.Count} 个标签页" : "等待扩展连接";
+        Dispatch(() => { _browserTabs = tabs; SetBrowserStatus(_bridge.IsConnected
+                ? _localization.Format("Dynamic.ConnectedTabs", tabs.Count)
+                : _localization["Dynamic.WaitingExtension"], false);
             Raise(nameof(ChromeConnectionStatus)); Raise(nameof(EdgeConnectionStatus));
             Raise(nameof(ChromeGuideStatus)); Raise(nameof(EdgeGuideStatus));
             Raise(nameof(BrowserStatusVisibility)); Reconcile(); });
@@ -568,11 +590,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         var routingSupported = tab.ProtocolVersion >= BrowserProtocol.RoutingVersion;
         var equalizerSupported = tab.ProtocolVersion >= BrowserProtocol.Version;
         var limitation = routingSupported
-            ? tab.OutputStatus is not null && (tab.OutputStatus.Contains("失败", StringComparison.Ordinal) || tab.OutputStatus.Contains("不可用", StringComparison.Ordinal))
-                ? tab.OutputStatus
-                : equalizerSupported ? null : "扩展仍可控制音量和输出，但音效不可用；请在扩展页重新加载当前版本。"
-            : "扩展正在使用旧协议 1；请在扩展页重新加载当前版本以启用 200% 增益和输出设备选择。";
-        return new AudioSourceSnapshot(tab.Id, kind, $"[{browser}] {title}", $"{domain} · 浏览器增强", 0, null, "browser",
+            ? equalizerSupported ? null : _localization["Dynamic.BrowserEqUnavailable"]
+            : _localization["Dynamic.BrowserProtocolOld"];
+        return new AudioSourceSnapshot(tab.Id, kind, $"[{browser}] {title}", $"{domain} · {_localization["Common.BrowserEnhanced"]}", 0, null, "browser",
             tab.Origin, tab.Id.Value, tab.CaptureState == "active" ? AudioPlaybackState.Active : AudioPlaybackState.Inactive,
             tab.Volume, tab.Muted, tab.Balance, tab.Peak, [1, 1],
             new AudioSourceCapabilities(true, true, true, 2, true, true, true, limitation,
@@ -599,7 +619,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private Task ResetBrowserSourceAsync(AudioSourceId id, AudioEffectSettings effects)
     {
         var resolved = ResolvePhysicalSystemDefault()
-            ?? throw new InvalidOperationException("无法解析当前 Windows 默认多媒体输出设备。");
+            ?? throw new InvalidOperationException(_localization["Dynamic.ResolveDefaultFailed"]);
         return _bridge.SetAudioAsync(id, 1, 0, false, "", null, OutputDevices.ToArray(),
             effects: effects, followSystemDefault: true,
             resolvedOutputDeviceId: resolved.Id, resolvedOutputDeviceName: resolved.Name);
@@ -645,7 +665,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private async Task ConfirmClearProfilesAsync()
     {
-        if (System.Windows.MessageBox.Show("清除全部已保存的应用音量、平衡和输出设备配置？", "Audio Source Mixer",
+        if (System.Windows.MessageBox.Show(_localization["Dynamic.ClearProfilesConfirm"], _localization["Common.ProductName"],
                 System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning) != System.Windows.MessageBoxResult.Yes) return;
         await ClearProfilesAsync();
     }
@@ -684,7 +704,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         else
         {
             var resolved = ResolvePhysicalSystemDefault()
-                ?? throw new InvalidOperationException("无法解析当前 Windows 默认多媒体输出设备。");
+                ?? throw new InvalidOperationException(_localization["Dynamic.ResolveDefaultFailed"]);
             await _bridge.SetAudioAsync(requested.Id, 1, 0, false, "", null, OutputDevices.ToArray(), cancellationToken,
                 effects: EqualizerCatalog.Off, followSystemDefault: true,
                 resolvedOutputDeviceId: resolved.Id, resolvedOutputDeviceName: resolved.Name);
@@ -830,19 +850,22 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         var status = _bridge.GetConnectionStatuses().FirstOrDefault(item => item.Browser == browser);
         var name = browser == "edge" ? "Edge" : "Chrome";
-        return status is null ? $"{name}：未连接" : $"{name}：已连接 · 扩展 {status.ExtensionVersion ?? "版本未知"}";
+        return status is null
+            ? _localization.Format("Dynamic.ConnectionMissing", name)
+            : _localization.Format("Dynamic.ConnectionReady", name, status.ExtensionVersion ?? _localization["Common.VersionUnknown"]);
     }
 
     private string BrowserGuideStatus(string browser)
     {
         var installation = _browserOnboarding.Detect(browser);
-        if (!installation.IsInstalled) return $"{installation.DisplayName}：未检测到浏览器";
+        if (!installation.IsInstalled) return _localization.Format("Dynamic.BrowserMissing", installation.DisplayName);
         var status = _bridge.GetConnectionStatuses().FirstOrDefault(item => item.Browser == browser);
-        if (status is null) return $"{installation.DisplayName}：浏览器已安装，扩展尚未连接";
+        if (status is null) return _localization.Format("Dynamic.BrowserInstalledDisconnected", installation.DisplayName);
         var desktopVersion = typeof(MainViewModel).Assembly.GetName().Version?.ToString(3);
         return !string.IsNullOrWhiteSpace(status.ExtensionVersion) && status.ExtensionVersion != desktopVersion
-            ? $"{installation.DisplayName}：已连接，但扩展 {status.ExtensionVersion} 与桌面端 {desktopVersion} 不一致"
-            : $"{installation.DisplayName}：已连接 · 扩展 {status.ExtensionVersion ?? "版本未知"}";
+            ? _localization.Format("Dynamic.BrowserVersionMismatch", installation.DisplayName, status.ExtensionVersion, desktopVersion)
+            : _localization.Format("Dynamic.ConnectionReady", installation.DisplayName,
+                status.ExtensionVersion ?? _localization["Common.VersionUnknown"]);
     }
 
     private void SelectPage(string page)
@@ -860,9 +883,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _settings = _settings with
         {
             BrowserOnboardingChoice = "setup-now",
-            OnboardingCompletedVersion = typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? "0.2.2",
+            OnboardingCompletedVersion = typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? "1.0.0",
             BrowserGuideDismissed = true,
-            SchemaVersion = 7
+            SchemaVersion = 8
         };
         Raise(nameof(IsFirstRunBrowserWelcome));
         SaveSettings();
@@ -874,9 +897,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _settings = _settings with
         {
             BrowserOnboardingChoice = choice,
-            OnboardingCompletedVersion = typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? "0.2.2",
+            OnboardingCompletedVersion = typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? "1.0.0",
             BrowserGuideDismissed = true,
-            SchemaVersion = 7
+            SchemaVersion = 8
         };
         Raise(nameof(IsFirstRunBrowserWelcome));
         SaveSettings();
@@ -886,7 +909,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private void RunOnboardingAction(Action action)
     {
         try { action(); }
-        catch (Exception exception) { BrowserStatus = exception.Message; Error(exception); }
+        catch (Exception exception) { SetBrowserStatus(exception.Message, true); Error(exception); }
         finally { RefreshBrowserGuideStatus(); }
     }
 
@@ -896,36 +919,62 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Raise(nameof(NativeHostRegistrationStatus)); Raise(nameof(ExtensionDirectoryText));
     }
 
+    private void SetBrowserStatus(string value, bool significant)
+    {
+        _browserStatusSignificant = significant;
+        BrowserStatus = value;
+        Raise(nameof(BrowserStatusVisibility));
+    }
+
+    private void LocalizationChanged(object? sender, EventArgs eventArgs) => Dispatch(() =>
+    {
+        if (!_browserStatusSignificant)
+            SetBrowserStatus(_bridge.IsConnected
+                ? _localization.Format("Dynamic.ConnectedTabs", _browserTabs.Count)
+                : _localization["Dynamic.WaitingExtension"], false);
+        if (_diagnosticSourcesActive) DeviceName = _localization["Dynamic.DiagnosticDefaultDevice"];
+        Raise(nameof(SourceSortModeLabel));
+        Raise(nameof(HiddenSourcesLabel));
+        Raise(nameof(VersionText));
+        Raise(nameof(DeploymentText));
+        Raise(nameof(ChromeConnectionStatus));
+        Raise(nameof(EdgeConnectionStatus));
+        RefreshBrowserGuideStatus();
+        foreach (var source in Sources) source.RefreshLocalization();
+        foreach (var source in HiddenSources) source.RefreshLocalization();
+    });
+
     private async Task ManageBrowserOutputsAsync(string browser)
     {
         try { await _bridge.OpenOutputManagerAsync(browser); }
-        catch (IOException exception) { BrowserStatus = exception.Message; throw; }
+        catch (IOException exception) { SetBrowserStatus(exception.Message, true); throw; }
     }
 
     private async Task ClearBrowserMappingsAsync(string browser)
     {
         var name = browser == "edge" ? "Edge" : "Chrome";
-        if (System.Windows.MessageBox.Show($"清除当前 {name} 配置中的全部输出设备映射？", "Audio Source Mixer",
+        if (System.Windows.MessageBox.Show(_localization.Format("Dynamic.ClearMappingsConfirm", name), _localization["Common.ProductName"],
                 System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning) != System.Windows.MessageBoxResult.Yes) return;
         await _bridge.ClearOutputMappingsAsync(browser);
-        BrowserStatus = $"已要求 {name} 清除输出设备映射";
+        SetBrowserStatus(_localization.Format("Dynamic.ClearMappingsRequested", name), true);
     }
 
     private async Task ResetAllAsync()
     {
-        if (System.Windows.MessageBox.Show("恢复全部音频控制和应用设置为默认值？已保存的应用配置也会清除。", "Audio Source Mixer",
+        if (System.Windows.MessageBox.Show(_localization["Dynamic.ResetAllConfirm"], _localization["Common.ProductName"],
                 System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning) != System.Windows.MessageBoxResult.Yes) return;
         _startup.SetEnabled(false, true);
         _runtimeHiddenSourceIds.Clear();
         _runtimeManualSourceOrder.Clear();
         _manualOrderInitialized = false;
-        _settings = new ApplicationSettings();
+        _settings = new ApplicationSettings(Language: SelectedLanguage);
         Raise(nameof(CloseToTray)); Raise(nameof(AutoApplyProfiles)); Raise(nameof(RememberProfiles));
         Raise(nameof(ShowInactiveSessions)); Raise(nameof(StartMinimizedToTray)); Raise(nameof(StartupEnabled));
         Raise(nameof(ShowOperationTips));
         Raise(nameof(HideBrowserAggregateSessions));
         Raise(nameof(AutoApplyProfilesEnabled));
         Raise(nameof(IsFirstRunBrowserWelcome));
+        Raise(nameof(SelectedLanguage));
         RaiseSortProperties();
         SaveSettings();
         SelectPage("browser");
@@ -978,6 +1027,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _localization.CultureChanged -= LocalizationChanged;
         _discovery.SourcesChanged -= AudioSourcesChanged;
         if (_discovery is IAudioSourceLevelDiscovery levelDiscovery)
             levelDiscovery.SourceLevelsChanged -= SourceLevelsChanged;

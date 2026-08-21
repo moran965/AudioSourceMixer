@@ -187,14 +187,14 @@ public sealed class IdentityAndPersistenceTests : IDisposable
         Assert.Empty(loaded.ManuallyHiddenSources!);
         Assert.True(loaded.HideBrowserAggregateSessions);
         Assert.Empty(loaded.VisibleBrowserAggregates!);
-        Assert.Equal(7, loaded.SchemaVersion);
+        Assert.Equal(8, loaded.SchemaVersion);
     }
 
     [Fact]
     public async Task FreshSettingsRequestOptionalBrowserOnboarding()
     {
         var loaded = await new JsonApplicationSettingsStore(_directory).LoadAsync();
-        Assert.Equal(7, loaded.SchemaVersion);
+        Assert.Equal(8, loaded.SchemaVersion);
         Assert.Equal("undecided", loaded.BrowserOnboardingChoice);
         Assert.Null(loaded.OnboardingCompletedVersion);
         Assert.False(loaded.BrowserGuideDismissed);
@@ -207,7 +207,7 @@ public sealed class IdentityAndPersistenceTests : IDisposable
         await File.WriteAllTextAsync(Path.Combine(_directory, "settings.json"),
             """{"CloseToTray":false,"ShowInactiveSessions":false,"SchemaVersion":3}""");
         var loaded = await new JsonApplicationSettingsStore(_directory).LoadAsync();
-        Assert.Equal(7, loaded.SchemaVersion);
+        Assert.Equal(8, loaded.SchemaVersion);
         Assert.False(loaded.CloseToTray);
         Assert.False(loaded.ShowInactiveSessions);
         Assert.Equal("existing-user", loaded.BrowserOnboardingChoice);
@@ -228,7 +228,7 @@ public sealed class IdentityAndPersistenceTests : IDisposable
 
         var loaded = await new JsonApplicationSettingsStore(_directory).LoadAsync();
 
-        Assert.Equal(7, loaded.SchemaVersion);
+        Assert.Equal(8, loaded.SchemaVersion);
         Assert.Equal("not-now", loaded.BrowserOnboardingChoice);
         Assert.Equal("0.2.2", loaded.OnboardingCompletedVersion);
         Assert.True(loaded.BrowserGuideDismissed);
@@ -259,7 +259,7 @@ public sealed class IdentityAndPersistenceTests : IDisposable
         Assert.Equal(["win:session-b", "win:session-a"], loaded.ManualSourceOrder);
         Assert.Equal("win:session-b", Assert.Single(loaded.ManuallyHiddenSources!).SourceId);
         Assert.False(loaded.HideBrowserAggregateSessions);
-        Assert.Equal(7, loaded.SchemaVersion);
+        Assert.Equal(8, loaded.SchemaVersion);
     }
 
     [Fact]
@@ -273,10 +273,43 @@ public sealed class IdentityAndPersistenceTests : IDisposable
 
         Assert.True(loaded.HideBrowserAggregateSessions);
         Assert.Empty(loaded.VisibleBrowserAggregates!);
-        Assert.Equal(7, loaded.SchemaVersion);
+        Assert.Equal(8, loaded.SchemaVersion);
         var rewritten = await File.ReadAllTextAsync(Path.Combine(_directory, "settings.json"));
-        Assert.Contains("\"SchemaVersion\":7", rewritten);
+        Assert.Contains("\"SchemaVersion\":8", rewritten);
         Assert.Contains("\"VisibleBrowserAggregates\":[]", rewritten);
+    }
+
+    [Fact]
+    public async Task SchemaSevenSettingsGainChineseLanguageWithoutChangingExistingChoices()
+    {
+        Directory.CreateDirectory(_directory);
+        await File.WriteAllTextAsync(Path.Combine(_directory, "settings.json"),
+            """{"CloseToTray":false,"RememberProfiles":false,"ManualSourceOrder":["win:session-a"],"Language":null,"SchemaVersion":7}""");
+
+        var loaded = await new JsonApplicationSettingsStore(_directory).LoadAsync();
+
+        Assert.Equal(8, loaded.SchemaVersion);
+        Assert.Equal("zh-CN", loaded.Language);
+        Assert.False(loaded.CloseToTray);
+        Assert.False(loaded.RememberProfiles);
+        Assert.Equal(["win:session-a"], loaded.ManualSourceOrder);
+    }
+
+    [Theory]
+    [InlineData("zh-CN")]
+    [InlineData("en-US")]
+    public async Task FreshSettingsConsumeInstallerLanguageBootstrapOnce(string language)
+    {
+        Directory.CreateDirectory(_directory);
+        var bootstrap = Path.Combine(_directory, "initial-language.json");
+        await File.WriteAllTextAsync(bootstrap, $$"""{"language":"{{language}}"}""");
+
+        var loaded = await new JsonApplicationSettingsStore(_directory).LoadAsync();
+
+        Assert.Equal(language, loaded.Language);
+        Assert.Equal(8, loaded.SchemaVersion);
+        Assert.False(File.Exists(bootstrap));
+        Assert.True(File.Exists(Path.Combine(_directory, "settings.json")));
     }
 
     public void Dispose()

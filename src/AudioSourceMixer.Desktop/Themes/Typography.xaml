@@ -3,7 +3,6 @@
     <FontFamily x:Key="ApplicationFont">Microsoft YaHei UI, Microsoft YaHei, Segoe UI, Global User Interface</FontFamily>
     <Style x:Key="ApplicationControlTypographyStyle" TargetType="Control">
         <Setter Property="FontFamily" Value="{DynamicResource ApplicationFont}"/>
-        <Setter Property="Language" Value="zh-CN"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
     </Style>
@@ -19,7 +18,6 @@
     <Style TargetType="ContextMenu" BasedOn="{StaticResource ApplicationControlTypographyStyle}"/>
     <Style TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{DynamicResource ApplicationFont}"/>
-        <Setter Property="Language" Value="zh-CN"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>

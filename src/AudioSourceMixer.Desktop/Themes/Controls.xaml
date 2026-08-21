@@ -1,5 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:l="clr-namespace:AudioSourceMixer.Desktop.Localization">
     <Style x:Key="FluentFocusVisual" TargetType="Control">
         <Setter Property="Template">
             <Setter.Value>
@@ -94,7 +95,7 @@
         <Setter Property="HorizontalContentAlignment" Value="Left"/>
         <Setter Property="HorizontalAlignment" Value="Stretch"/>
         <Setter Property="FontWeight" Value="Normal"/>
-        <Setter Property="AutomationProperties.HelpText" Value="会话操作菜单项"/>
+        <Setter Property="AutomationProperties.HelpText" Value="{l:Loc Key=Card.MenuAutomation}"/>
     </Style>
 
     <Style x:Key="NavigationButtonStyle" TargetType="RadioButton"

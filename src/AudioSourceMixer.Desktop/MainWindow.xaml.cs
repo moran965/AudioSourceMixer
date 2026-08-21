@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Windows.Controls;
+using System.Windows.Markup;
+using AudioSourceMixer.Desktop.Localization;
 using AudioSourceMixer.Desktop.ViewModels;
 using AudioSourceMixer.Desktop.Views;
 
@@ -18,6 +20,7 @@ public partial class MainWindow : System.Windows.Window
     public MainWindow(MainViewModel viewModel)
     {
         InitializeComponent();
+        Language = XmlLanguage.GetLanguage(LocalizationService.Current.CurrentLanguage);
         _viewModel = viewModel;
         DataContext = viewModel;
         Loaded += ConstrainInitialSizeToWorkArea;

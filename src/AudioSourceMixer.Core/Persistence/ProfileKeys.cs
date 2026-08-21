@@ -43,11 +43,13 @@ public sealed record ApplicationSettings(
     IReadOnlyList<HiddenSourceSetting>? ManuallyHiddenSources = null,
     bool HideBrowserAggregateSessions = true,
     IReadOnlyList<string>? VisibleBrowserAggregates = null,
-    int SchemaVersion = 7);
+    string Language = "zh-CN",
+    int SchemaVersion = 8);
 
 public sealed class JsonApplicationSettingsStore(string directory)
 {
     private readonly string _path = Path.Combine(directory, "settings.json");
+    private readonly string _initialLanguagePath = Path.Combine(directory, "initial-language.json");
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     public async Task<ApplicationSettings> LoadAsync(CancellationToken cancellationToken = default)
@@ -55,7 +57,16 @@ public sealed class JsonApplicationSettingsStore(string directory)
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (!File.Exists(_path)) return new ApplicationSettings();
+            if (!File.Exists(_path))
+            {
+                var fresh = new ApplicationSettings(Language: ReadInitialLanguage());
+                if (File.Exists(_initialLanguagePath))
+                {
+                    await WriteUnsafeAsync(fresh, cancellationToken).ConfigureAwait(false);
+                    File.Delete(_initialLanguagePath);
+                }
+                return fresh;
+            }
             ApplicationSettings? loaded;
             await using (var stream = File.OpenRead(_path))
                 loaded = await System.Text.Json.JsonSerializer.DeserializeAsync<ApplicationSettings>(stream, cancellationToken: cancellationToken)
@@ -68,7 +79,7 @@ public sealed class JsonApplicationSettingsStore(string directory)
                     BrowserOnboardingChoice = "existing-user",
                     OnboardingCompletedVersion = "0.2.1",
                     BrowserGuideDismissed = true,
-                    SchemaVersion = 7
+                    SchemaVersion = 8
                 };
             }
             var normalized = Normalize(loaded);
@@ -105,8 +116,21 @@ public sealed class JsonApplicationSettingsStore(string directory)
             // property keeps older JSON readable, while normalizing it to an empty array restores the
             // single settings-page switch as the source of truth.
             VisibleBrowserAggregates = [],
-            SchemaVersion = 7
+            Language = string.Equals(settings.Language, "en-US", StringComparison.OrdinalIgnoreCase) ? "en-US" : "zh-CN",
+            SchemaVersion = 8
         };
+    }
+
+    private string ReadInitialLanguage()
+    {
+        if (!File.Exists(_initialLanguagePath)) return "zh-CN";
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(_initialLanguagePath));
+            return document.RootElement.TryGetProperty("language", out var value) &&
+                   string.Equals(value.GetString(), "en-US", StringComparison.OrdinalIgnoreCase) ? "en-US" : "zh-CN";
+        }
+        catch (System.Text.Json.JsonException) { return "zh-CN"; }
     }
 
     public async Task SaveAsync(ApplicationSettings settings, CancellationToken cancellationToken = default)

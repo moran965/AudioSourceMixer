@@ -20,6 +20,8 @@
     <Resource Include="..\..\assets\generated\AudioSourceMixer-page.png" Link="Assets\AudioSourceMixer-page.png" />
     <ProjectReference Include="..\AudioSourceMixer.Core\AudioSourceMixer.Core.csproj" />
     <ProjectReference Include="..\AudioSourceMixer.WindowsAudio\AudioSourceMixer.WindowsAudio.csproj" />
+    <EmbeddedResource Include="Localization\Resources\strings.en-US.json" LogicalName="AudioSourceMixer.Desktop.Localization.strings.en-US.json" WithCulture="false" />
+    <EmbeddedResource Include="Localization\Resources\strings.zh-CN.json" LogicalName="AudioSourceMixer.Desktop.Localization.strings.zh-CN.json" WithCulture="false" />
   </ItemGroup>
 
 </Project>

@@ -1,5 +1,6 @@
 using Microsoft.Win32;
 using System.IO;
+using AudioSourceMixer.Desktop.Localization;
 
 namespace AudioSourceMixer.Desktop.Services;
 
@@ -20,7 +21,7 @@ public sealed class StartupRegistrationService : IStartupRegistrationService
     public StartupRegistrationService(string? executablePath = null)
     {
         _executablePath = Path.GetFullPath(executablePath ?? Environment.ProcessPath
-            ?? throw new InvalidOperationException("无法确定应用程序路径。"));
+            ?? throw new InvalidOperationException(LocalizationService.Current["Startup.PathUnknown"]));
     }
 
     public bool IsAvailable
@@ -48,7 +49,7 @@ public sealed class StartupRegistrationService : IStartupRegistrationService
     public void SetEnabled(bool enabled, bool background)
     {
         if (enabled && !IsAvailable)
-            throw new InvalidOperationException("当前程序未通过安装器注册；请安装后再启用开机启动。");
+            throw new InvalidOperationException(LocalizationService.Current["Startup.InstallRequired"]);
         using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath);
         if (enabled)
             key.SetValue(ValueName, $"\"{_executablePath}\"{(background ? " --background" : string.Empty)}");

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Windows.Input;
 using AudioSourceMixer.Core.Models;
 using AudioSourceMixer.Core.Persistence;
+using AudioSourceMixer.Desktop.Localization;
 
 namespace AudioSourceMixer.Desktop.ViewModels;
 
@@ -36,7 +37,7 @@ internal static class SourcePresentationPolicy
         {
             if (manuallyHidden.Contains(source.Id.Value))
             {
-                hidden.Add(new HiddenSourceDescriptor(source, "由你手动隐藏"));
+                hidden.Add(new HiddenSourceDescriptor(source, "Source.HiddenReason"));
                 continue;
             }
 
@@ -114,7 +115,7 @@ internal static class SourceCollectionReconciler
     }
 }
 
-public sealed class HiddenSourceViewModel
+public sealed class HiddenSourceViewModel : ObservableObject
 {
     private readonly Action<HiddenSourceDescriptor> _restore;
 
@@ -122,22 +123,25 @@ public sealed class HiddenSourceViewModel
     {
         Id = descriptor.Source.Id;
         DisplayName = descriptor.Source.DisplayName;
-        SourceType = descriptor.Source.Kind is AudioSourceKind.ChromeTab or AudioSourceKind.EdgeTab
-            ? "浏览器增强" : "Windows 应用";
-        Reason = descriptor.Reason;
         Descriptor = descriptor;
         CanRestore = true;
-        RestoreLabel = "恢复显示";
         _restore = restore;
         RestoreCommand = new RelayCommand(() => _restore(Descriptor));
     }
 
     public AudioSourceId Id { get; }
     public string DisplayName { get; }
-    public string SourceType { get; }
-    public string Reason { get; }
+    public string SourceType => LocalizationService.Current[Descriptor.Source.Kind is AudioSourceKind.ChromeTab or AudioSourceKind.EdgeTab
+        ? "Common.BrowserEnhanced" : "Common.WindowsApplication"];
+    public string Reason => LocalizationService.Current[Descriptor.Reason];
     public bool CanRestore { get; }
-    public string RestoreLabel { get; }
+    public string RestoreLabel => LocalizationService.Current["Source.RestoreDisplay"];
     internal HiddenSourceDescriptor Descriptor { get; }
     public ICommand RestoreCommand { get; }
+    internal void RefreshLocalization()
+    {
+        Raise(nameof(SourceType));
+        Raise(nameof(Reason));
+        Raise(nameof(RestoreLabel));
+    }
 }

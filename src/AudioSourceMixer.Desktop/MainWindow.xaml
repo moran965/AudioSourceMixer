@@ -2,7 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:AudioSourceMixer.Desktop.Views"
-        Title="Audio Source Mixer" Icon="Assets/AudioSourceMixer.ico"
+        xmlns:l="clr-namespace:AudioSourceMixer.Desktop.Localization"
+        Title="{l:Loc Key=Common.ProductName}" Icon="Assets/AudioSourceMixer.ico"
         Width="1240" Height="820" MinWidth="880" MinHeight="600"
         Style="{DynamicResource ApplicationWindowTypographyStyle}"
         Background="{DynamicResource WindowBackgroundBrush}"
@@ -16,32 +17,32 @@
             <Border Width="44" Height="44" CornerRadius="12" Background="{DynamicResource PrimarySoftBrush}" Margin="0,0,12,0">
                 <Image Width="30" Height="30"
                        RenderOptions.BitmapScalingMode="HighQuality" SnapsToDevicePixels="True" UseLayoutRounding="True"
-                       AutomationProperties.Name="Audio Source Mixer 产品图标">
+                       AutomationProperties.Name="{l:Loc Key=Main.ProductIconAutomation}">
                     <Image.Source>
                         <BitmapImage UriSource="Assets/AudioSourceMixer-page.png" DecodePixelWidth="128" CacheOption="OnLoad"/>
                     </Image.Source>
                 </Image>
             </Border>
             <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                <TextBlock Text="Audio Source Mixer" Style="{DynamicResource TitleTextStyle}"/>
-                <TextBlock Text="分别控制应用和浏览器标签页的声音" Style="{DynamicResource BodySecondaryTextStyle}" Margin="0,2,0,0"/>
+                <TextBlock Text="{l:Loc Key=Common.ProductName}" Style="{DynamicResource TitleTextStyle}"/>
+                <TextBlock Text="{l:Loc Key=Main.Tagline}" Style="{DynamicResource BodySecondaryTextStyle}" Margin="0,2,0,0"/>
             </StackPanel>
-            <Button Grid.Column="2" Content="恢复全部来源" Command="{Binding RestoreAllCommand, Mode=OneWay}"
-                    VerticalAlignment="Center" ToolTip="恢复音量、静音、平衡、输出设备和音效"
-                    AutomationProperties.Name="恢复全部来源"/>
+            <Button Grid.Column="2" Content="{l:Loc Key=Main.RestoreAll}" Command="{Binding RestoreAllCommand, Mode=OneWay}"
+                    VerticalAlignment="Center" ToolTip="{l:Loc Key=Main.RestoreAllTip}"
+                    AutomationProperties.Name="{l:Loc Key=Main.RestoreAll}"/>
         </Grid>
 
         <Border Grid.Row="1" Style="{DynamicResource CardBorderStyle}" Padding="4" Margin="0,0,0,12" HorizontalAlignment="Left">
             <StackPanel Orientation="Horizontal" KeyboardNavigation.TabNavigation="Continue">
-                <RadioButton Content="混音器" GroupName="MainNavigation" Style="{DynamicResource NavigationButtonStyle}"
+                <RadioButton Content="{l:Loc Key=Main.NavMixer}" GroupName="MainNavigation" Style="{DynamicResource NavigationButtonStyle}"
                              IsChecked="{Binding IsMixerPageSelected, Mode=OneWay}" Command="{Binding NavigateMixerCommand, Mode=OneWay}"
-                             AutomationProperties.Name="打开混音器"/>
-                <RadioButton Content="浏览器增强" GroupName="MainNavigation" Style="{DynamicResource NavigationButtonStyle}"
+                             AutomationProperties.Name="{l:Loc Key=Main.OpenMixerAutomation}"/>
+                <RadioButton Content="{l:Loc Key=Main.NavBrowser}" GroupName="MainNavigation" Style="{DynamicResource NavigationButtonStyle}"
                              IsChecked="{Binding IsBrowserSetupPageSelected, Mode=OneWay}" Command="{Binding NavigateBrowserSetupCommand, Mode=OneWay}"
-                             AutomationProperties.Name="打开浏览器增强设置"/>
-                <RadioButton Content="设置" GroupName="MainNavigation" Style="{DynamicResource NavigationButtonStyle}"
+                             AutomationProperties.Name="{l:Loc Key=Main.OpenBrowserAutomation}"/>
+                <RadioButton Content="{l:Loc Key=Main.NavSettings}" GroupName="MainNavigation" Style="{DynamicResource NavigationButtonStyle}"
                              IsChecked="{Binding IsSettingsPageSelected, Mode=OneWay}" Command="{Binding NavigateSettingsCommand, Mode=OneWay}"
-                             AutomationProperties.Name="打开设置"/>
+                             AutomationProperties.Name="{l:Loc Key=Main.OpenSettingsAutomation}"/>
             </StackPanel>
         </Border>
 

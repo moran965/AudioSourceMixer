@@ -6,6 +6,7 @@ using AudioSourceMixer.Core.Browser;
 using AudioSourceMixer.Core.Infrastructure;
 using AudioSourceMixer.Core.Persistence;
 using AudioSourceMixer.Desktop.Diagnostics;
+using AudioSourceMixer.Desktop.Localization;
 using AudioSourceMixer.Desktop.ViewModels;
 using AudioSourceMixer.WindowsAudio;
 using Forms = System.Windows.Forms;
@@ -17,6 +18,7 @@ public partial class App : System.Windows.Application
     private Mutex? _singleInstance;
     private bool _ownsMutex;
     private Forms.NotifyIcon? _tray;
+    private Forms.ContextMenuStrip? _trayMenu;
     private Icon? _productIcon;
     private Font? _trayMenuFont;
     private WindowsAudioService? _audio;
@@ -79,7 +81,7 @@ public partial class App : System.Windows.Application
             if (!_ownsMutex)
             {
                 if (!diagnosticUi)
-                    System.Windows.MessageBox.Show("Audio Source Mixer 已在运行。", "Audio Source Mixer", MessageBoxButton.OK, MessageBoxImage.Information);
+                    System.Windows.MessageBox.Show(LocalizationService.Current["App.AlreadyRunning"], LocalizationService.Current["Common.ProductName"], MessageBoxButton.OK, MessageBoxImage.Information);
                 Shutdown(0);
                 return;
             }
@@ -97,6 +99,14 @@ public partial class App : System.Windows.Application
             _startupStage = StartupStage.ViewModel;
             _viewModel = new MainViewModel(_audio, _audio, _audio, _bridge, profileStore, settingsStore, _logger);
             await _viewModel.LoadSettingsAsync();
+            var requestedLanguage = ArgumentValue(e.Args, "--language");
+            if (requestedLanguage is not null)
+            {
+                if (!LocalizationService.SupportedLanguages.Contains(requestedLanguage, StringComparer.OrdinalIgnoreCase))
+                    throw new ArgumentException($"Unsupported --language value '{requestedLanguage}'. Use zh-CN or en-US.");
+                _viewModel.SelectedLanguage = LocalizationService.NormalizeLanguage(requestedLanguage);
+                _logger.Info($"UI language selected by command line: {_viewModel.SelectedLanguage}.");
+            }
             if (_browserSetup)
             {
                 _viewModel.RequestBrowserSetup();
@@ -244,7 +254,7 @@ public partial class App : System.Windows.Application
         {
             _ = Dispatcher.InvokeAsync(async () =>
             {
-                if (!_uiSmokeTest) ShowFailureMessage("程序遇到未处理错误，完整信息已写入日志。程序将恢复音频设置并退出。");
+                if (!_uiSmokeTest) ShowFailureMessage(LocalizationService.Current["App.UnhandledError"]);
                 await ExitAndRestoreAsync(1);
             }, DispatcherPriority.Send);
         }
@@ -263,17 +273,18 @@ public partial class App : System.Windows.Application
 
     private static string GetStartupFailureMessage(StartupStage stage, Exception exception)
     {
+        var localization = LocalizationService.Current;
         var prefix = stage == StartupStage.AudioInitialization
-            ? "音频系统初始化失败"
+            ? localization["App.AudioInitializationFailed"]
             : stage is StartupStage.WindowCreation or StartupStage.WindowDisplay
-                ? "界面创建或显示失败"
-                : "应用启动失败";
-        return $"{prefix}：{exception.Message}{Environment.NewLine}完整异常信息已写入日志。";
+                ? localization["App.UiInitializationFailed"]
+                : localization["App.StartupFailed"];
+        return localization.Format("App.FailureFormat", prefix, exception.Message, localization["App.DetailsLogged"]);
     }
 
     private void ShowFailureMessage(string message)
     {
-        try { System.Windows.MessageBox.Show(message, "Audio Source Mixer", MessageBoxButton.OK, MessageBoxImage.Error); }
+        try { System.Windows.MessageBox.Show(message, LocalizationService.Current["Common.ProductName"], MessageBoxButton.OK, MessageBoxImage.Error); }
         catch (Exception exception) { TryLogError("Could not display the fatal error dialog.", exception); }
     }
 
@@ -333,13 +344,25 @@ public partial class App : System.Windows.Application
 
     private void CreateTray(bool visible)
     {
-        _productIcon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? throw new InvalidOperationException("无法读取产品图标。");
-        _tray = new Forms.NotifyIcon { Icon = _productIcon, Text = "Audio Source Mixer", Visible = visible };
+        _productIcon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? throw new InvalidOperationException(LocalizationService.Current["App.IconUnavailable"]);
+        _tray = new Forms.NotifyIcon { Icon = _productIcon, Text = LocalizationService.Current["Common.ProductName"], Visible = visible };
+        LocalizationService.Current.CultureChanged += TrayCultureChanged;
+        RebuildTrayMenu();
+        _tray.DoubleClick += (_, _) => ShowMainWindow();
+    }
+
+    private void TrayCultureChanged(object? sender, EventArgs eventArgs) => RebuildTrayMenu();
+
+    private void RebuildTrayMenu()
+    {
+        if (_tray is null) return;
+        var previousMenu = _trayMenu;
+        var previousFont = _trayMenuFont;
         var menu = new Forms.ContextMenuStrip();
         _trayMenuFont = CreateTrayMenuFont(menu.Font.Size);
         menu.Font = _trayMenuFont;
-        menu.Items.Add("打开主窗口", null, (_, _) => ShowMainWindow());
-        menu.Items.Add("全部恢复默认", null, async (_, _) =>
+        menu.Items.Add(LocalizationService.Current["App.TrayOpen"], null, (_, _) => ShowMainWindow());
+        menu.Items.Add(LocalizationService.Current["App.TrayRestoreAll"], null, async (_, _) =>
         {
             try
             {
@@ -351,14 +374,19 @@ public partial class App : System.Windows.Application
             catch (Exception exception) { QueueFatalExit("Tray restore command failed.", exception); }
         });
         menu.Items.Add(new Forms.ToolStripSeparator());
-        menu.Items.Add("退出并恢复音频设置", null, async (_, _) => await ExitAndRestoreAsync());
+        menu.Items.Add(LocalizationService.Current["App.TrayExit"], null, async (_, _) => await ExitAndRestoreAsync());
+        _trayMenu = menu;
         _tray.ContextMenuStrip = menu;
-        _tray.DoubleClick += (_, _) => ShowMainWindow();
+        previousMenu?.Dispose();
+        previousFont?.Dispose();
     }
 
     private static Font CreateTrayMenuFont(float size)
     {
-        foreach (var family in new[] { "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI" })
+        var families = LocalizationService.Current.CurrentLanguage == LocalizationService.ChineseLanguage
+            ? new[] { "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI" }
+            : new[] { "Segoe UI Variable Text", "Segoe UI", "Arial" };
+        foreach (var family in families)
         {
             var font = new System.Drawing.Font(family, size, System.Drawing.FontStyle.Regular, GraphicsUnit.Point);
             if (font.Name.Equals(family, StringComparison.OrdinalIgnoreCase)) return font;
@@ -382,7 +410,7 @@ public partial class App : System.Windows.Application
     {
         _window?.Hide();
         if (_viewModel?.TryConsumeTrayHint() == true)
-            _tray?.ShowBalloonTip(1500, "Audio Source Mixer", "程序仍在托盘运行；退出请使用托盘菜单。", Forms.ToolTipIcon.Info);
+            _tray?.ShowBalloonTip(1500, LocalizationService.Current["Common.ProductName"], LocalizationService.Current["App.TrayHint"], Forms.ToolTipIcon.Info);
     }
 
     private void ShowMainWindow()
@@ -447,7 +475,10 @@ public partial class App : System.Windows.Application
         });
         await CleanupAsync("Tray dispose", () =>
         {
+            LocalizationService.Current.CultureChanged -= TrayCultureChanged;
             _tray?.Dispose();
+            _trayMenu?.Dispose();
+            _trayMenu = null;
             _trayMenuFont?.Dispose();
             _trayMenuFont = null;
             _productIcon?.Dispose();
