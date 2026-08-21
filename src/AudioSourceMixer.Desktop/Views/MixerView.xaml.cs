@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -35,6 +36,7 @@ public partial class MixerView : UserControl
     private Window? _hostWindow;
     private Point? _hiddenPopupAnchor;
     private Point? _orderPopupAnchor;
+    private bool _hiddenPopupPreferAbove;
     private int _insertionFadeStartCount;
     private int _flipAnimationStartCount;
 
@@ -120,10 +122,34 @@ public partial class MixerView : UserControl
         if (DataContext is not MainViewModel viewModel || viewModel.HiddenSources.Count == 0) return;
         OrderMenuPopup.IsOpen = false;
         CloseSourceMenus();
+        if (!viewModel.IsHiddenSourcesPopupOpen) PrepareHiddenSourcesPopup(viewModel.HiddenSources.Count);
         viewModel.IsHiddenSourcesPopupOpen = !viewModel.IsHiddenSourcesPopupOpen;
         if (viewModel.IsHiddenSourcesPopupOpen)
             Dispatcher.BeginInvoke(() => _hiddenPopupAnchor = HiddenSourcesButton.PointToScreen(new Point()),
                 System.Windows.Threading.DispatcherPriority.Loaded);
+    }
+
+    private void PrepareHiddenSourcesPopup(int hiddenSourceCount)
+    {
+        var host = _hostWindow ?? Window.GetWindow(this);
+        if (host is null || host.ActualHeight <= 0) return;
+
+        var buttonTop = HiddenSourcesButton.TranslatePoint(new Point(), host).Y;
+        var availableBelow = Math.Max(0, host.ActualHeight - buttonTop - HiddenSourcesButton.ActualHeight - 18);
+        var availableAbove = Math.Max(0, buttonTop - 18);
+        var expectedHeight = Math.Min(360, 64 + hiddenSourceCount * 58);
+        _hiddenPopupPreferAbove = availableBelow < expectedHeight && availableAbove > availableBelow;
+        var available = _hiddenPopupPreferAbove ? availableAbove : availableBelow;
+        HiddenSourcesPopupBorder.MaxHeight = Math.Clamp(available, 120, 360);
+    }
+
+    private CustomPopupPlacement[] PlaceHiddenSourcesPopup(Size popupSize, Size targetSize, Point offset)
+    {
+        const double gap = 6;
+        var x = targetSize.Width - popupSize.Width;
+        var below = new CustomPopupPlacement(new Point(x, targetSize.Height + gap), PopupPrimaryAxis.Horizontal);
+        var above = new CustomPopupPlacement(new Point(x, -popupSize.Height - gap), PopupPrimaryAxis.Horizontal);
+        return _hiddenPopupPreferAbove ? [above, below] : [below, above];
     }
 
     private void HiddenSourcesButtonIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)

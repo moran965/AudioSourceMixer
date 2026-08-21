@@ -10,20 +10,20 @@
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="104"/>
-                    <ColumnDefinition Width="116"/>
                     <ColumnDefinition Width="220"/>
+                    <ColumnDefinition Width="116"/>
+                    <ColumnDefinition Width="104"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel>
                     <TextBlock Text="当前默认输出" Style="{DynamicResource CaptionTextStyle}"/>
                     <TextBlock Text="{Binding DeviceName, Mode=OneWay}" FontSize="15" FontWeight="Bold" Margin="0,3,0,0"
                                TextTrimming="CharacterEllipsis" ToolTip="{Binding DeviceName, Mode=OneWay}"/>
                 </StackPanel>
-                <Button x:Name="SortMenuButton" Grid.Column="1" Style="{DynamicResource QuietButtonStyle}" Width="96" MinWidth="0" MinHeight="30" Padding="8,4"
+                <Button x:Name="SortMenuButton" Grid.Column="3" Style="{DynamicResource QuietButtonStyle}" Width="96" MinWidth="0" MinHeight="30" Padding="8,4"
                             HorizontalAlignment="Right" VerticalAlignment="Center"
                             Content="调整顺序" ToolTip="拖动卡片右上角把手可调整顺序"
                             AutomationProperties.Name="调整会话顺序" Click="OpenHeaderMenu"/>
-                <Popup x:Name="OrderMenuPopup" Grid.Column="1" PlacementTarget="{x:Reference SortMenuButton}" Placement="Bottom"
+                <Popup x:Name="OrderMenuPopup" Grid.Column="3" PlacementTarget="{x:Reference SortMenuButton}" Placement="Bottom"
                            StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade" Closed="OrderMenuPopupClosed">
                         <Border Style="{DynamicResource CardBorderStyle}" Padding="8" Width="250" Margin="0,6,0,0">
                             <StackPanel KeyboardNavigation.DirectionalNavigation="Cycle">
@@ -39,7 +39,7 @@
                             Content="{Binding HiddenSourcesLabel, Mode=OneWay}" Visibility="{Binding HiddenSourcesVisibility, Mode=OneWay}"
                             ToolTip="查看由你手动隐藏的会话" AutomationProperties.Name="查看隐藏会话"
                             Click="ToggleHiddenSourcesPopup" IsVisibleChanged="HiddenSourcesButtonIsVisibleChanged"/>
-                <StackPanel x:Name="BrowserStatusPanel" Grid.Column="3" Width="204" HorizontalAlignment="Right" VerticalAlignment="Center"
+                <StackPanel x:Name="BrowserStatusPanel" Grid.Column="1" Width="204" HorizontalAlignment="Right" VerticalAlignment="Center"
                             Visibility="{Binding BrowserStatusVisibility, Mode=OneWay}" Margin="16,0,0,0">
                         <TextBlock Text="浏览器增强" Style="{DynamicResource CaptionTextStyle}" HorizontalAlignment="Right"/>
                         <TextBlock Text="{Binding BrowserStatus, Mode=OneWay}" FontWeight="Bold"
@@ -47,10 +47,12 @@
                                    HorizontalAlignment="Right" TextTrimming="CharacterEllipsis"
                                    ToolTip="{Binding BrowserStatus, Mode=OneWay}"/>
                     </StackPanel>
-                <Popup x:Name="HiddenSourcesPopup" PlacementTarget="{x:Reference HiddenSourcesButton}" Placement="Bottom"
+                <Popup x:Name="HiddenSourcesPopup" PlacementTarget="{x:Reference HiddenSourcesButton}" Placement="Custom"
+                       CustomPopupPlacementCallback="PlaceHiddenSourcesPopup"
                        IsOpen="{Binding IsHiddenSourcesPopupOpen, Mode=TwoWay}"
                        StaysOpen="False" AllowsTransparency="True" PopupAnimation="None" Closed="HiddenSourcesPopupClosed">
-                    <Border Style="{DynamicResource CardBorderStyle}" Padding="12" Width="380" MaxHeight="360" Margin="0,6,0,0">
+                    <Border x:Name="HiddenSourcesPopupBorder" Style="{DynamicResource CardBorderStyle}" Padding="12"
+                            Width="380" MinWidth="300" MaxWidth="420" MaxHeight="360">
                         <DockPanel>
                             <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
