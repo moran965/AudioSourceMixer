@@ -19,6 +19,7 @@ using AudioSourceMixer.Core.Persistence;
 using AudioSourceMixer.Desktop.Diagnostics;
 using AudioSourceMixer.Desktop.Controls;
 using AudioSourceMixer.Desktop.ViewModels;
+using AudioSourceMixer.Desktop.Views;
 
 namespace AudioSourceMixer.Desktop.Tests;
 
@@ -154,6 +155,7 @@ public sealed class WpfBindingRegressionTests
                      nameof(AudioSourceViewModel.EqualizerPreampDb), nameof(EqualizerBandViewModel.GainDb),
                      nameof(MainViewModel.HideBrowserAggregateSessions),
                      nameof(AudioSourceViewModel.IsEqualizerEnabled), nameof(AudioSourceViewModel.IsEqualizerExpanded),
+                     nameof(MainViewModel.IsHiddenSourcesPopupOpen),
                      nameof(MainViewModel.RememberProfiles), nameof(AudioSourceViewModel.SelectedEqualizerPresetId),
                      nameof(MainViewModel.ShowInactiveSessions), nameof(MainViewModel.ShowOperationTips),
                      nameof(MainViewModel.StartMinimizedToTray), nameof(MainViewModel.StartupEnabled),
@@ -215,6 +217,8 @@ public sealed class WpfBindingRegressionTests
                 await WaitUntilAsync(() => Math.Abs(levelTarget.PeakPercent - 81) < 0.01);
                 Assert.Equal(identitiesBeforeLevels.Keys, viewModel.Sources.Select(item => item.Id));
                 Assert.All(viewModel.Sources, item => Assert.Same(identitiesBeforeLevels[item.Id], item));
+                await AssertHiddenPopupLifecycleAndStableHeaderAsync(app, window, viewModel);
+                await AssertLiveDragPreviewAndCleanupAsync(app, window, viewModel);
                 var adjusted = viewModel.Sources[^1];
                 var originalIndex = viewModel.Sources.IndexOf(adjusted);
                 var stableOrder = viewModel.Sources.Select(item => item.Id).ToArray();
@@ -669,6 +673,172 @@ public sealed class WpfBindingRegressionTests
         Assert.True(viewportHeights[(1920, 1080)] > viewportHeights[(1240, 820)],
             $"Maximized viewport must show more content: default={viewportHeights[(1240, 820)]}, large={viewportHeights[(1920, 1080)]}.");
     }
+
+    private static async Task AssertLiveDragPreviewAndCleanupAsync(App app, MainWindow window, MainViewModel viewModel)
+    {
+        var mixer = window.MixerPage;
+        var list = window.SourceItems;
+        var scroller = window.SourceScroller;
+        var originalOrder = viewModel.Sources.ToArray();
+        Assert.True(originalOrder.Length >= 3);
+        originalOrder[1].IsEqualizerExpanded = true;
+        await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.Render);
+
+        var dragged = originalOrder[0];
+        var draggedContainer = Assert.IsType<ContentPresenter>(list.ItemContainerGenerator.ContainerFromItem(dragged));
+        var draggedCard = Assert.Single(Descendants(draggedContainer).OfType<AudioSourceCard>());
+        var nextContainer = Assert.IsType<ContentPresenter>(list.ItemContainerGenerator.ContainerFromItem(originalOrder[1]));
+        var nextMidpoint = nextContainer.TranslatePoint(new Point(), scroller).Y + nextContainer.ActualHeight / 2;
+        var originalHeight = draggedCard.DragVisual.ActualHeight;
+        var fadeStarts = mixer.InsertionFadeStartCount;
+
+        Assert.True(mixer.BeginSourceDrag(dragged, draggedCard.DragVisual,
+            new Point(Math.Max(1, draggedCard.DragVisual.ActualWidth - 42), 28)));
+        Assert.True(mixer.HasActiveDragPreview);
+        Assert.True(mixer.IsInsertionLineVisible);
+        Assert.Equal(fadeStarts + 1, mixer.InsertionFadeStartCount);
+        Assert.InRange(Math.Abs(mixer.ActiveDragPreviewSize.Width - draggedCard.DragVisual.ActualWidth), 0, 1);
+        Assert.InRange(Math.Abs(mixer.ActiveDragPreviewSize.Height - originalHeight), 0, 1);
+        Assert.Equal(originalHeight, draggedCard.DragVisual.ActualHeight, 1);
+        Assert.Equal(0.28, dragged.DragPlaceholderOpacity, 3);
+
+        mixer.ProcessDragPointForDiagnostics(new Point(scroller.ViewportWidth / 2, nextMidpoint + 12));
+        Assert.Equal(dragged, viewModel.Sources[1]);
+        Assert.True(mixer.FlipAnimationStartCount > 0);
+        var animationStarts = mixer.FlipAnimationStartCount;
+        mixer.ProcessDragPointForDiagnostics(new Point(scroller.ViewportWidth / 2, nextMidpoint + 12));
+        Assert.Equal(animationStarts, mixer.FlipAnimationStartCount);
+        Assert.Equal(fadeStarts + 1, mixer.InsertionFadeStartCount);
+        Assert.Equal(originalHeight, draggedCard.DragVisual.ActualHeight, 1);
+
+        await Task.Delay(210);
+        await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.Render);
+        Assert.Equal(0, mixer.ActiveFlipTransformCount);
+
+        mixer.CancelSourceDrag();
+        Assert.Equal(originalOrder, viewModel.Sources.ToArray());
+        Assert.False(mixer.HasActiveDragPreview);
+        Assert.False(mixer.IsInsertionLineVisible);
+        Assert.Equal(0, mixer.ActiveFlipTransformCount);
+        Assert.Equal(1, dragged.DragPlaceholderOpacity, 3);
+        Assert.All(Descendants(list).OfType<ContentPresenter>(), container =>
+            Assert.True(container.RenderTransform is null or { Value.IsIdentity: true }));
+        Assert.All(originalOrder, source => Assert.Contains(source, viewModel.Sources));
+
+        scroller.ScrollToTop();
+        await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.Render);
+        draggedContainer = Assert.IsType<ContentPresenter>(list.ItemContainerGenerator.ContainerFromItem(dragged));
+        draggedCard = Assert.Single(Descendants(draggedContainer).OfType<AudioSourceCard>());
+        nextContainer = Assert.IsType<ContentPresenter>(list.ItemContainerGenerator.ContainerFromItem(originalOrder[1]));
+        nextMidpoint = nextContainer.TranslatePoint(new Point(), scroller).Y + nextContainer.ActualHeight / 2;
+        Assert.True(mixer.BeginSourceDrag(dragged, draggedCard.DragVisual, new Point(draggedCard.ActualWidth - 42, 28)));
+        mixer.ProcessDragPointForDiagnostics(new Point(scroller.ViewportWidth / 2, nextMidpoint + 12));
+        mixer.CommitSourceDragForDiagnostics();
+        Assert.Equal(dragged, viewModel.Sources[1]);
+        Assert.False(mixer.HasActiveDragPreview);
+        Assert.False(mixer.IsInsertionLineVisible);
+        Assert.Equal(0, mixer.ActiveFlipTransformCount);
+        Assert.Equal(1, dragged.DragPlaceholderOpacity, 3);
+    }
+
+    private static async Task AssertHiddenPopupLifecycleAndStableHeaderAsync(App app, MainWindow window, MainViewModel viewModel)
+    {
+        var mixer = window.MixerPage;
+        var originalSources = viewModel.Sources.Take(2).ToArray();
+        var audioState = originalSources.ToDictionary(source => source.Id,
+            source => (source.VolumePercent, source.BalancePercent, source.Snapshot.Muted, source.SelectedOutputDeviceId,
+                source.SelectedEqualizerPresetId));
+        SetBrowserStatusForDiagnostics(viewModel, "扩展连接暂不可用");
+        await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.ApplicationIdle);
+        var before = HeaderCoordinates(mixer, window);
+        SetBrowserStatusForDiagnostics(viewModel, "扩展连接暂不可用，请检查浏览器增强连接状态");
+        await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.ApplicationIdle);
+        AssertHeaderCoordinatesStable(before, HeaderCoordinates(mixer, window));
+        var browserStatus = viewModel.BrowserStatus;
+        var windowsBeforePopup = Application.Current.Windows.Cast<Window>().ToArray();
+
+        foreach (var source in originalSources) source.HideCommand.Execute(null);
+        Assert.Equal(2, viewModel.HiddenSources.Count);
+        Assert.Equal(Visibility.Visible, mixer.HiddenButton.Visibility);
+        Assert.Equal(browserStatus, viewModel.BrowserStatus);
+
+        viewModel.IsHiddenSourcesPopupOpen = true;
+        await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.ApplicationIdle);
+        Assert.True(mixer.HiddenPopupIsOpen);
+        Assert.True(mixer.HiddenPopupChildIsVisible);
+        Assert.Equal(windowsBeforePopup, Application.Current.Windows.Cast<Window>().ToArray());
+
+        var restoredId = viewModel.HiddenSources[0].Id;
+        viewModel.HiddenSources[0].RestoreCommand.Execute(null);
+        await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.ApplicationIdle);
+        Assert.False(mixer.HiddenPopupIsOpen);
+        Assert.False(mixer.HiddenPopupChildIsVisible);
+        Assert.False(mixer.HiddenPopupChildHasVisibleRoot);
+        Assert.Contains(viewModel.Sources, source => source.Id == restoredId);
+        Assert.Single(viewModel.HiddenSources);
+        Assert.Equal(browserStatus, viewModel.BrowserStatus);
+        AssertHeaderCoordinatesStable(before, HeaderCoordinates(mixer, window));
+
+        viewModel.IsHiddenSourcesPopupOpen = true;
+        await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.ApplicationIdle);
+        Assert.True(mixer.HiddenPopupIsOpen);
+        window.SelectSettingsPage();
+        await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.ApplicationIdle);
+        Assert.False(mixer.HiddenPopupIsOpen);
+        Assert.False(mixer.HiddenPopupChildIsVisible);
+        Assert.False(mixer.HiddenPopupChildHasVisibleRoot);
+        window.SelectMixerPage();
+        viewModel.IsHiddenSourcesPopupOpen = true;
+        await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.ApplicationIdle);
+        Assert.True(mixer.HiddenPopupIsOpen);
+        viewModel.RestoreAllHiddenCommand.Execute(null);
+        await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.ApplicationIdle);
+        Assert.Empty(viewModel.HiddenSources);
+        Assert.Equal(Visibility.Hidden, mixer.HiddenButton.Visibility);
+        Assert.False(mixer.HiddenPopupIsOpen);
+        Assert.False(mixer.HiddenPopupChildIsVisible);
+        Assert.False(mixer.HiddenPopupChildHasVisibleRoot);
+        Assert.Equal(windowsBeforePopup, Application.Current.Windows.Cast<Window>().ToArray());
+        Assert.Equal(browserStatus, viewModel.BrowserStatus);
+        Assert.True(viewModel.SettingsForDiagnostics.HideBrowserAggregateSessions);
+        Assert.Empty(viewModel.SettingsForDiagnostics.VisibleBrowserAggregates!);
+        Assert.Empty(viewModel.SettingsForDiagnostics.ManuallyHiddenSources!);
+        AssertHeaderCoordinatesStable(before, HeaderCoordinates(mixer, window));
+
+        foreach (var original in originalSources)
+        {
+            var restored = Assert.Single(viewModel.Sources.Where(source => source.Id == original.Id));
+            Assert.Same(original, restored);
+            Assert.Equal(audioState[original.Id],
+                (restored.VolumePercent, restored.BalancePercent, restored.Snapshot.Muted, restored.SelectedOutputDeviceId,
+                    restored.SelectedEqualizerPresetId));
+        }
+    }
+
+    private static (Point Sort, Point Hidden, Point Status, Point Scroller) HeaderCoordinates(MixerView mixer, UIElement root)
+        => (mixer.SortButton.TranslatePoint(new Point(), root), mixer.HiddenButton.TranslatePoint(new Point(), root),
+            mixer.BrowserStatusElement.TranslatePoint(new Point(), root), mixer.SourceScroller.TranslatePoint(new Point(), root));
+
+    private static void AssertHeaderCoordinatesStable(
+        (Point Sort, Point Hidden, Point Status, Point Scroller) before,
+        (Point Sort, Point Hidden, Point Status, Point Scroller) after)
+    {
+        AssertPointStable(before.Sort, after.Sort, "sort button");
+        AssertPointStable(before.Hidden, after.Hidden, "hidden button");
+        AssertPointStable(before.Status, after.Status, "browser status");
+        AssertPointStable(before.Scroller, after.Scroller, "source scroller");
+    }
+
+    private static void AssertPointStable(Point before, Point after, string name)
+    {
+        Assert.InRange(Math.Abs(before.X - after.X), 0, 1);
+        Assert.InRange(Math.Abs(before.Y - after.Y), 0, 1);
+        Console.WriteLine($"HEADER {name}: before={before}, after={after}");
+    }
+
+    private static void SetBrowserStatusForDiagnostics(MainViewModel viewModel, string value)
+        => typeof(MainViewModel).GetProperty(nameof(MainViewModel.BrowserStatus), BindingFlags.Instance | BindingFlags.Public)!
+            .SetMethod!.Invoke(viewModel, [value]);
 
     private static void AssertInside(FrameworkElement ancestor, FrameworkElement child, double width, double height)
     {

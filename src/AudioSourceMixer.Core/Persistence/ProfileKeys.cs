@@ -43,7 +43,7 @@ public sealed record ApplicationSettings(
     IReadOnlyList<HiddenSourceSetting>? ManuallyHiddenSources = null,
     bool HideBrowserAggregateSessions = true,
     IReadOnlyList<string>? VisibleBrowserAggregates = null,
-    int SchemaVersion = 6);
+    int SchemaVersion = 7);
 
 public sealed class JsonApplicationSettingsStore(string directory)
 {
@@ -68,7 +68,7 @@ public sealed class JsonApplicationSettingsStore(string directory)
                     BrowserOnboardingChoice = "existing-user",
                     OnboardingCompletedVersion = "0.2.1",
                     BrowserGuideDismissed = true,
-                    SchemaVersion = 6
+                    SchemaVersion = 7
                 };
             }
             var normalized = Normalize(loaded);
@@ -96,17 +96,16 @@ public sealed class JsonApplicationSettingsStore(string directory)
             .Select(group => group.OrderByDescending(value => value.LastSeenUtc).First())
             .Take(256)
             .ToArray();
-        var visibleAggregates = (settings.VisibleBrowserAggregates ?? [])
-            .Where(value => value is "edge" or "chrome")
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
         return settings with
         {
             SourceSortMode = SourceSortModes.Manual,
             ManualSourceOrder = manualOrder,
             ManuallyHiddenSources = hidden,
-            VisibleBrowserAggregates = visibleAggregates,
-            SchemaVersion = 6
+            // Schema 7 removes the temporary browser-aggregate visibility exceptions. Retaining the
+            // property keeps older JSON readable, while normalizing it to an empty array restores the
+            // single settings-page switch as the source of truth.
+            VisibleBrowserAggregates = [],
+            SchemaVersion = 7
         };
     }
 

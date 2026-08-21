@@ -7,9 +7,7 @@ namespace AudioSourceMixer.Desktop.ViewModels;
 
 internal sealed record HiddenSourceDescriptor(
     AudioSourceSnapshot Source,
-    bool IsManual,
-    string Reason,
-    string? BrowserAggregate = null);
+    string Reason);
 
 internal sealed record SourcePresentationResult(
     IReadOnlyList<AudioSourceSnapshot> Visible,
@@ -31,7 +29,6 @@ internal static class SourcePresentationPolicy
         var manuallyHidden = (settings.ManuallyHiddenSources ?? [])
             .Select(item => item.SourceId).ToHashSet(StringComparer.Ordinal);
         if (runtimeManuallyHidden is not null) manuallyHidden.UnionWith(runtimeManuallyHidden);
-        var visibleBrowserAggregates = (settings.VisibleBrowserAggregates ?? []).ToHashSet(StringComparer.Ordinal);
         var hidden = new List<HiddenSourceDescriptor>();
         var visible = new List<AudioSourceSnapshot>(candidates.Length);
 
@@ -39,17 +36,15 @@ internal static class SourcePresentationPolicy
         {
             if (manuallyHidden.Contains(source.Id.Value))
             {
-                hidden.Add(new HiddenSourceDescriptor(source, true, "由你手动隐藏"));
+                hidden.Add(new HiddenSourceDescriptor(source, "由你手动隐藏"));
                 continue;
             }
 
             var aggregate = settings.HideBrowserAggregateSessions
                 ? MatchBrowserAggregate(source)
                 : null;
-            if (!visibleBrowserAggregates.Contains(aggregate ?? string.Empty) &&
-                ((aggregate == "edge" && activeEdge) || (aggregate == "chrome" && activeChrome)))
+            if ((aggregate == "edge" && activeEdge) || (aggregate == "chrome" && activeChrome))
             {
-                hidden.Add(new HiddenSourceDescriptor(source, false, "由浏览器增强自动隐藏", aggregate));
                 continue;
             }
             visible.Add(source);
@@ -132,7 +127,7 @@ public sealed class HiddenSourceViewModel
         Reason = descriptor.Reason;
         Descriptor = descriptor;
         CanRestore = true;
-        RestoreLabel = descriptor.IsManual ? "恢复显示" : "显示此聚合会话";
+        RestoreLabel = "恢复显示";
         _restore = restore;
         RestoreCommand = new RelayCommand(() => _restore(Descriptor));
     }

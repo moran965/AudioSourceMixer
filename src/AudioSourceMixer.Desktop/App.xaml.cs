@@ -27,6 +27,7 @@ public partial class App : System.Windows.Application
     private UiSmokeMonitor? _uiSmokeMonitor;
     private StartupStage _startupStage;
     private bool _uiSmokeTest;
+    private bool _uiInteractionTest;
     private int _fatalReported;
     private int _exiting;
     private int _exitCode;
@@ -38,6 +39,7 @@ public partial class App : System.Windows.Application
     private int _liveMeterDurationSeconds = 8;
     private EventWaitHandle? _exitSignal;
     private RegisteredWaitHandle? _exitSignalRegistration;
+    private string _exitSignalName = "Local\\AudioSourceMixer.Exit";
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -49,9 +51,10 @@ public partial class App : System.Windows.Application
         _liveMeterReportPath = ArgumentValue(e.Args, "--ui-live-meter-report");
         if (int.TryParse(ArgumentValue(e.Args, "--ui-live-meter-duration"), out var liveMeterDurationSeconds))
             _liveMeterDurationSeconds = Math.Clamp(liveMeterDurationSeconds, 3, 30);
+        _uiInteractionTest = e.Args.Contains("--ui-interaction-test", StringComparer.OrdinalIgnoreCase);
         _uiSmokeTest = e.Args.Contains("--ui-smoke-test", StringComparer.OrdinalIgnoreCase) ||
                        e.Args.Contains("--smoke-test", StringComparer.OrdinalIgnoreCase) ||
-                       _liveMeterProcessId.HasValue;
+                       _liveMeterProcessId.HasValue || _uiInteractionTest;
         _uiScreenshotDirectory = ArgumentValue(e.Args, "--ui-screenshot-dir");
         var diagnosticUi = _uiSmokeTest || _uiScreenshotDirectory is not null;
         _background = e.Args.Contains("--background", StringComparer.OrdinalIgnoreCase) && !diagnosticUi;
@@ -80,6 +83,7 @@ public partial class App : System.Windows.Application
                 Shutdown(0);
                 return;
             }
+            if (diagnosticUi) _exitSignalName = $"Local\\AudioSourceMixer.Exit.{Environment.ProcessId}";
             RegisterGracefulExitSignal();
 
             var profileStore = new JsonAudioProfileStore(dataDirectory);
@@ -101,7 +105,7 @@ public partial class App : System.Windows.Application
 
             _startupStage = StartupStage.WindowCreation;
             _window = new MainWindow(_viewModel);
-            if (diagnosticUi) ConfigureUiSmokeWindow(_window);
+            if (diagnosticUi && !_uiInteractionTest) ConfigureUiSmokeWindow(_window);
 
             _startupStage = StartupStage.TrayCreation;
             CreateTray(visible: !diagnosticUi);
@@ -126,6 +130,12 @@ public partial class App : System.Windows.Application
 
             if (diagnosticUi)
             {
+                if (_uiInteractionTest)
+                {
+                    _startupStage = StartupStage.Complete;
+                    _logger.Info($"Interactive WPF diagnostic ready. WindowShown={_window.IsVisible}; Sources={_viewModel.Sources.Count}.");
+                    return;
+                }
                 if (_liveMeterProcessId is { } processId)
                 {
                     var report = await LiveMeterVerifier.VerifyAsync(_window, _viewModel, _audio, processId,
@@ -361,7 +371,7 @@ public partial class App : System.Windows.Application
 
     private void RegisterGracefulExitSignal()
     {
-        _exitSignal = new EventWaitHandle(false, EventResetMode.AutoReset, "Local\\AudioSourceMixer.Exit");
+        _exitSignal = new EventWaitHandle(false, EventResetMode.AutoReset, _exitSignalName);
         _exitSignalRegistration = ThreadPool.RegisterWaitForSingleObject(_exitSignal, (_, timedOut) =>
         {
             if (!timedOut) _ = Dispatcher.InvokeAsync(() => ExitAndRestoreAsync(), DispatcherPriority.Send).Task.Unwrap();

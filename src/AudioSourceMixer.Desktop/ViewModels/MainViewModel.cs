@@ -46,6 +46,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private bool _browserSetupRequested;
     private ApplicationSettings _settings = new();
     private bool _manualOrderInitialized;
+    private bool _isHiddenSourcesPopupOpen;
+    private bool _isSourceOrderPreviewActive;
+    private bool _diagnosticSourcesActive;
 
     public MainViewModel(IAudioSourceDiscovery discovery, IAudioSourceController audio, IAudioOutputDeviceService outputDeviceService,
         BrowserBridgeServer bridge, IAudioProfileStore profiles,
@@ -78,7 +81,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         RecheckBrowserSetupCommand = new RelayCommand(RefreshBrowserGuideStatus);
         ResetSourceOrderCommand = new RelayCommand(ResetSourceOrder);
         RestoreAllHiddenCommand = new RelayCommand(RestoreAllHiddenSources);
-        RestoreBrowserAutoHideCommand = new RelayCommand(RestoreBrowserAutoHideRules);
     }
 
     public ObservableCollection<AudioSourceViewModel> Sources { get; } = [];
@@ -112,14 +114,20 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public ICommand RecheckBrowserSetupCommand { get; }
     public ICommand ResetSourceOrderCommand { get; }
     public ICommand RestoreAllHiddenCommand { get; }
-    public ICommand RestoreBrowserAutoHideCommand { get; }
     public string SourceSortModeLabel => "手动排序";
     public bool IsRecentSortMode => false;
     public bool IsManualSortMode => true;
-    public Visibility BrowserAutoHideRestoreVisibility => (_settings.VisibleBrowserAggregates?.Count ?? 0) > 0
-        ? Visibility.Visible : Visibility.Collapsed;
     public string HiddenSourcesLabel => $"已隐藏 {HiddenSources.Count}";
-    public Visibility HiddenSourcesVisibility => HiddenSources.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+    public Visibility HiddenSourcesVisibility => HiddenSources.Count == 0 ? Visibility.Hidden : Visibility.Visible;
+    public bool IsHiddenSourcesPopupOpen
+    {
+        get => _isHiddenSourcesPopupOpen;
+        set
+        {
+            var allowed = value && HiddenSources.Count > 0 && IsMixerPageSelected;
+            Set(ref _isHiddenSourcesPopupOpen, allowed);
+        }
+    }
     public bool IsMixerPageSelected => _selectedPage == "mixer";
     public bool IsBrowserSetupPageSelected => _selectedPage == "browser";
     public bool IsSettingsPageSelected => _selectedPage == "settings";
@@ -176,9 +184,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             _settings = _settings with
             {
                 HideBrowserAggregateSessions = value,
-                VisibleBrowserAggregates = value ? [] : _settings.VisibleBrowserAggregates
+                VisibleBrowserAggregates = []
             };
-            Raise(); Raise(nameof(BrowserAutoHideRestoreVisibility)); SaveSettings(); Reconcile();
+            Raise(); SaveSettings(); Reconcile();
         }
     }
 
@@ -191,10 +199,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     internal void SelectMixerForDiagnostics() => SelectPage("mixer");
     internal void SelectBrowserSetupForDiagnostics() => SelectPage("browser");
     internal void SelectSettingsForDiagnostics() => SelectPage("settings");
+    internal ApplicationSettings SettingsForDiagnostics => _settings;
 
     public async Task InitializeAsync(IReadOnlyList<AudioSourceSnapshot>? diagnosticSources = null)
     {
         await LoadSettingsAsync();
+        _diagnosticSourcesActive = diagnosticSources is { Count: > 0 };
         foreach (var (key, profile) in await _profiles.LoadAsync()) _savedProfiles[key] = profile;
         _discovery.SourcesChanged += AudioSourcesChanged;
         if (_discovery is IAudioSourceLevelDiscovery levelDiscovery)
@@ -223,7 +233,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _settings = await _settingsStore.LoadAsync(cancellationToken);
         _runtimeManualSourceOrder.Clear();
         _runtimeManualSourceOrder.AddRange(_settings.ManualSourceOrder ?? []);
-        _settings = _settings with { SourceSortMode = SourceSortModes.Manual, SchemaVersion = 6 };
+        _settings = _settings with { SourceSortMode = SourceSortModes.Manual, VisibleBrowserAggregates = [], SchemaVersion = 7 };
         _manualOrderInitialized = false;
         _settingsLoaded = true;
         Raise(nameof(CloseToTray));
@@ -234,7 +244,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Raise(nameof(SourceSortModeLabel));
             Raise(nameof(IsRecentSortMode));
             Raise(nameof(IsManualSortMode));
-            Raise(nameof(BrowserAutoHideRestoreVisibility));
         Raise(nameof(StartMinimizedToTray));
         Raise(nameof(ShowOperationTips));
         Raise(nameof(StartupEnabled));
@@ -278,7 +287,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private void OutputDevicesChanged(object? sender, IReadOnlyList<OutputDeviceInfo> devices)
         => Dispatch(() => ReplaceOutputDevices(devices));
     private void AudioSourcesChanged(object? sender, IReadOnlyList<AudioSourceSnapshot> sources)
-        => Dispatch(() => { _windowsSources = sources; Reconcile(); });
+    {
+        if (_diagnosticSourcesActive) return;
+        Dispatch(() => { _windowsSources = sources; Reconcile(); });
+    }
     private void SourceLevelsChanged(object? sender, IReadOnlyList<AudioSourceLevel> levels)
         => Dispatch(() =>
         {
@@ -286,10 +298,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 if (_byId.TryGetValue(level.Id, out var source)) source.UpdatePeak(level.Peak, level.ObservedAt);
         });
     private void BrowserTabsChanged(object? sender, IReadOnlyList<BrowserTabSource> tabs)
-        => Dispatch(() => { _browserTabs = tabs; BrowserStatus = _bridge.IsConnected ? $"已连接 · {tabs.Count} 个标签页" : "等待扩展连接";
+    {
+        if (_diagnosticSourcesActive) return;
+        Dispatch(() => { _browserTabs = tabs; BrowserStatus = _bridge.IsConnected ? $"已连接 · {tabs.Count} 个标签页" : "等待扩展连接";
             Raise(nameof(ChromeConnectionStatus)); Raise(nameof(EdgeConnectionStatus));
             Raise(nameof(ChromeGuideStatus)); Raise(nameof(EdgeGuideStatus));
             Raise(nameof(BrowserStatusVisibility)); Reconcile(); });
+    }
 
     private void Reconcile()
     {
@@ -326,9 +341,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         foreach (var source in Sources.Where(item => !visibleIds.Contains(item.Id)).ToArray()) Sources.Remove(source);
         foreach (var source in visible)
             if (!Sources.Contains(_byId[source.Id])) Sources.Add(_byId[source.Id]);
-        SourceCollectionReconciler.Reorder(Sources, visible.Select(source => source.Id).ToArray(), source => source.Id);
+        if (!_isSourceOrderPreviewActive)
+            SourceCollectionReconciler.Reorder(Sources, visible.Select(source => source.Id).ToArray(), source => source.Id);
         SynchronizeHiddenSources(presentation.Hidden);
-        PersistCurrentManualOrderIfChanged();
+        if (!_isSourceOrderPreviewActive) PersistCurrentManualOrderIfChanged();
 
         var liveApplications = discovered.Select(AudioApplicationInstanceKey.For).ToHashSet();
         TrackAndPruneApplications(liveApplications);
@@ -366,6 +382,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private void SynchronizeHiddenSources(IReadOnlyList<HiddenSourceDescriptor> hidden)
     {
+        if (hidden.Count == 0) IsHiddenSourcesPopupOpen = false;
         HiddenSources.Clear();
         foreach (var descriptor in hidden)
             HiddenSources.Add(new HiddenSourceViewModel(descriptor, RestoreHiddenSource));
@@ -393,19 +410,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private void RestoreHiddenSource(HiddenSourceDescriptor descriptor)
     {
+        IsHiddenSourcesPopupOpen = false;
         var id = descriptor.Source.Id;
         _runtimeHiddenSourceIds.Remove(id.Value);
         var hidden = (_settings.ManuallyHiddenSources ?? [])
             .Where(item => !string.Equals(item.SourceId, id.Value, StringComparison.Ordinal)).ToArray();
-        var visibleAggregates = (_settings.VisibleBrowserAggregates ?? []).ToList();
-        if (!descriptor.IsManual && descriptor.BrowserAggregate is { } aggregate &&
-            !visibleAggregates.Contains(aggregate, StringComparer.Ordinal))
-            visibleAggregates.Add(aggregate);
-        if (hidden.Length != (_settings.ManuallyHiddenSources?.Count ?? 0) ||
-            !visibleAggregates.SequenceEqual(_settings.VisibleBrowserAggregates ?? [], StringComparer.Ordinal))
+        if (hidden.Length != (_settings.ManuallyHiddenSources?.Count ?? 0))
         {
-            _settings = _settings with { ManuallyHiddenSources = hidden, VisibleBrowserAggregates = visibleAggregates };
-            Raise(nameof(BrowserAutoHideRestoreVisibility));
+            _settings = _settings with { ManuallyHiddenSources = hidden, VisibleBrowserAggregates = [] };
             SaveSettings();
         }
         Reconcile();
@@ -413,20 +425,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private void RestoreAllHiddenSources()
     {
+        IsHiddenSourcesPopupOpen = false;
         _runtimeHiddenSourceIds.Clear();
-        _settings = _settings with { ManuallyHiddenSources = [], VisibleBrowserAggregates = ["edge", "chrome"] };
-        BrowserStatus = "已显示全部来源；浏览器聚合会话自动隐藏已暂停。";
-        Raise(nameof(BrowserAutoHideRestoreVisibility));
-        SaveSettings();
-        Reconcile();
-    }
-
-    private void RestoreBrowserAutoHideRules()
-    {
-        if ((_settings.VisibleBrowserAggregates?.Count ?? 0) == 0) return;
-        _settings = _settings with { VisibleBrowserAggregates = [] };
-        BrowserStatus = "已恢复 Edge 和 Chrome 的浏览器聚合会话自动隐藏规则。";
-        Raise(nameof(BrowserAutoHideRestoreVisibility));
+        _settings = _settings with { ManuallyHiddenSources = [], VisibleBrowserAggregates = [] };
         SaveSettings();
         Reconcile();
     }
@@ -485,6 +486,28 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         insertionIndex = Math.Clamp(insertionIndex, 0, Sources.Count);
         var finalIndex = currentIndex < insertionIndex ? insertionIndex - 1 : insertionIndex;
         MoveSource(source, Math.Clamp(finalIndex, 0, Sources.Count - 1));
+    }
+
+    internal void BeginSourceOrderPreview()
+    {
+        IsHiddenSourcesPopupOpen = false;
+        _isSourceOrderPreviewActive = true;
+        _logger.Info($"Session drag preview started. Sources={Sources.Count}.");
+    }
+
+    internal void CommitSourceOrderPreview(bool changed)
+    {
+        if (!_isSourceOrderPreviewActive) return;
+        _isSourceOrderPreviewActive = false;
+        if (changed) PersistCurrentManualOrderIfChanged(forceSave: true);
+        _logger.Info($"Session drag preview committed. Changed={changed}; Sources={Sources.Count}.");
+    }
+
+    internal void CancelSourceOrderPreview()
+    {
+        if (!_isSourceOrderPreviewActive) return;
+        _isSourceOrderPreviewActive = false;
+        _logger.Info($"Session drag preview cancelled. Sources={Sources.Count}.");
     }
 
     private void PersistCurrentManualOrderIfChanged(bool forceSave = false)
@@ -825,6 +848,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private void SelectPage(string page)
     {
         if (page is not ("mixer" or "browser" or "settings")) throw new ArgumentOutOfRangeException(nameof(page));
+        if (page != "mixer") IsHiddenSourcesPopupOpen = false;
         if (_selectedPage == page) return;
         _selectedPage = page;
         Raise(nameof(IsMixerPageSelected)); Raise(nameof(IsBrowserSetupPageSelected)); Raise(nameof(IsSettingsPageSelected));
@@ -838,7 +862,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             BrowserOnboardingChoice = "setup-now",
             OnboardingCompletedVersion = typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? "0.2.2",
             BrowserGuideDismissed = true,
-            SchemaVersion = 6
+            SchemaVersion = 7
         };
         Raise(nameof(IsFirstRunBrowserWelcome));
         SaveSettings();
@@ -852,7 +876,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             BrowserOnboardingChoice = choice,
             OnboardingCompletedVersion = typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? "0.2.2",
             BrowserGuideDismissed = true,
-            SchemaVersion = 6
+            SchemaVersion = 7
         };
         Raise(nameof(IsFirstRunBrowserWelcome));
         SaveSettings();

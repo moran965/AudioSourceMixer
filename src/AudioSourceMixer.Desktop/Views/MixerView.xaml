@@ -2,46 +2,54 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:AudioSourceMixer.Desktop.Controls"
-             Focusable="False">
+             Focusable="False" Loaded="MixerViewLoaded" Unloaded="MixerViewUnloaded"
+             IsVisibleChanged="MixerViewIsVisibleChanged">
     <Grid>
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
         <Border Grid.Row="0" Style="{DynamicResource CardBorderStyle}" Padding="15" Margin="0,0,0,12">
             <Grid>
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="104"/>
+                    <ColumnDefinition Width="116"/>
+                    <ColumnDefinition Width="220"/>
+                </Grid.ColumnDefinitions>
                 <StackPanel>
                     <TextBlock Text="当前默认输出" Style="{DynamicResource CaptionTextStyle}"/>
                     <TextBlock Text="{Binding DeviceName, Mode=OneWay}" FontSize="15" FontWeight="Bold" Margin="0,3,0,0"
                                TextTrimming="CharacterEllipsis" ToolTip="{Binding DeviceName, Mode=OneWay}"/>
                 </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="24,0,0,0">
-                    <Button x:Name="SortMenuButton" Style="{DynamicResource QuietButtonStyle}" MinWidth="0" MinHeight="30" Padding="8,4"
+                <Button x:Name="SortMenuButton" Grid.Column="1" Style="{DynamicResource QuietButtonStyle}" Width="96" MinWidth="0" MinHeight="30" Padding="8,4"
+                            HorizontalAlignment="Right" VerticalAlignment="Center"
                             Content="调整顺序" ToolTip="拖动卡片右上角把手可调整顺序"
                             AutomationProperties.Name="调整会话顺序" Click="OpenHeaderMenu"/>
-                    <Popup x:Name="OrderMenuPopup" PlacementTarget="{x:Reference SortMenuButton}" Placement="Bottom"
-                           StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                <Popup x:Name="OrderMenuPopup" Grid.Column="1" PlacementTarget="{x:Reference SortMenuButton}" Placement="Bottom"
+                           StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade" Closed="OrderMenuPopupClosed">
                         <Border Style="{DynamicResource CardBorderStyle}" Padding="8" Width="250" Margin="0,6,0,0">
                             <StackPanel KeyboardNavigation.DirectionalNavigation="Cycle">
                                 <TextBlock Text="拖动卡片右上角把手可调整顺序" Style="{DynamicResource CaptionTextStyle}"
                                            TextWrapping="Wrap" Margin="7,4,7,7"/>
                                 <Button Content="恢复默认顺序" Command="{Binding ResetSourceOrderCommand, Mode=OneWay}"
                                         Style="{DynamicResource FlyoutMenuButtonStyle}" AutomationProperties.Name="恢复默认会话顺序"/>
-                                <Button Content="恢复浏览器自动隐藏规则" Command="{Binding RestoreBrowserAutoHideCommand, Mode=OneWay}"
-                                        Visibility="{Binding BrowserAutoHideRestoreVisibility, Mode=OneWay}"
-                                        Style="{DynamicResource FlyoutMenuButtonStyle}" AutomationProperties.Name="恢复浏览器自动隐藏规则"/>
                             </StackPanel>
                         </Border>
                     </Popup>
-                    <Button x:Name="HiddenSourcesButton" Style="{DynamicResource QuietButtonStyle}" MinWidth="0" MinHeight="30" Padding="8,4"
+                <Button x:Name="HiddenSourcesButton" Grid.Column="2" Style="{DynamicResource QuietButtonStyle}" Width="108" MinWidth="0" MinHeight="30" Padding="8,4"
+                            HorizontalAlignment="Right" VerticalAlignment="Center"
                             Content="{Binding HiddenSourcesLabel, Mode=OneWay}" Visibility="{Binding HiddenSourcesVisibility, Mode=OneWay}"
-                            ToolTip="查看被隐藏的会话" AutomationProperties.Name="查看隐藏会话" Click="ToggleHiddenSourcesPopup"/>
-                    <StackPanel Visibility="{Binding BrowserStatusVisibility, Mode=OneWay}" Margin="16,0,0,0">
+                            ToolTip="查看由你手动隐藏的会话" AutomationProperties.Name="查看隐藏会话"
+                            Click="ToggleHiddenSourcesPopup" IsVisibleChanged="HiddenSourcesButtonIsVisibleChanged"/>
+                <StackPanel x:Name="BrowserStatusPanel" Grid.Column="3" Width="204" HorizontalAlignment="Right" VerticalAlignment="Center"
+                            Visibility="{Binding BrowserStatusVisibility, Mode=OneWay}" Margin="16,0,0,0">
                         <TextBlock Text="浏览器增强" Style="{DynamicResource CaptionTextStyle}" HorizontalAlignment="Right"/>
                         <TextBlock Text="{Binding BrowserStatus, Mode=OneWay}" FontWeight="Bold"
-                                   Foreground="{DynamicResource PrimaryDarkBrush}" Margin="0,3,0,0"/>
+                                   Foreground="{DynamicResource PrimaryDarkBrush}" Margin="0,3,0,0"
+                                   HorizontalAlignment="Right" TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding BrowserStatus, Mode=OneWay}"/>
                     </StackPanel>
-                </StackPanel>
                 <Popup x:Name="HiddenSourcesPopup" PlacementTarget="{x:Reference HiddenSourcesButton}" Placement="Bottom"
-                       StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                       IsOpen="{Binding IsHiddenSourcesPopupOpen, Mode=TwoWay}"
+                       StaysOpen="False" AllowsTransparency="True" PopupAnimation="None" Closed="HiddenSourcesPopupClosed">
                     <Border Style="{DynamicResource CardBorderStyle}" Padding="12" Width="380" MaxHeight="360" Margin="0,6,0,0">
                         <DockPanel>
                             <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
@@ -49,7 +57,7 @@
                                 <TextBlock Text="隐藏的会话" FontWeight="Bold" VerticalAlignment="Center"/>
                                 <Button Grid.Column="1" Content="全部恢复显示" Command="{Binding RestoreAllHiddenCommand, Mode=OneWay}"
                                         Style="{DynamicResource QuietButtonStyle}" MinHeight="28" MinWidth="0" Padding="7,3"
-                                        ToolTip="显示所有手动隐藏和浏览器自动隐藏的会话"/>
+                                        ToolTip="恢复所有由你手动隐藏的会话"/>
                             </Grid>
                             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                 <ItemsControl ItemsSource="{Binding HiddenSources, Mode=OneWay}">
@@ -80,13 +88,14 @@
         <Grid Grid.Row="1">
             <ScrollViewer x:Name="SourceScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                           CanContentScroll="True" IsDeferredScrollingEnabled="False" PanningMode="VerticalOnly"
-                          Focusable="False">
+                          Focusable="False" AutomationProperties.AutomationId="SourceScrollViewer">
                 <ItemsControl x:Name="SourcesItemsControl" ItemsSource="{Binding Sources, Mode=OneWay}"
                               Background="{x:Null}" Focusable="False"
                               VirtualizingPanel.IsVirtualizing="True"
                               VirtualizingPanel.VirtualizationMode="Recycling"
                               VirtualizingPanel.ScrollUnit="Pixel"
-                              AllowDrop="True" DragOver="SourcesDragOver" DragLeave="SourcesDragLeave" Drop="SourcesDrop"
+                              AllowDrop="True" DragEnter="SourcesDragEnter" DragOver="SourcesDragOver"
+                              DragLeave="SourcesDragLeave" Drop="SourcesDrop"
                               KeyboardNavigation.TabNavigation="Continue">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate><VirtualizingStackPanel IsItemsHost="True"/></ItemsPanelTemplate>

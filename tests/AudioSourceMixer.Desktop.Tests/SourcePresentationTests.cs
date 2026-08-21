@@ -10,7 +10,7 @@ namespace AudioSourceMixer.Desktop.Tests;
 public sealed class SourcePresentationTests
 {
     [Fact]
-    public void BrowserAggregateFilteringIsExactIndependentAndReversible()
+    public void BrowserAggregateFilteringIsExactIndependentAndNeverEntersManualHiddenUi()
     {
         var edge = Source("edge-session", "msedge", "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe");
         var chrome = Source("chrome-session", "chrome", "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe");
@@ -22,7 +22,7 @@ public sealed class SourcePresentationTests
         Assert.DoesNotContain(edgeOnly.Visible, item => item.Id == edge.Id);
         Assert.Contains(edgeOnly.Visible, item => item.Id == chrome.Id);
         Assert.Contains(edgeOnly.Visible, item => item.Id == electron.Id);
-        Assert.Contains(edgeOnly.Hidden, item => item.Source.Id == edge.Id && !item.IsManual);
+        Assert.DoesNotContain(edgeOnly.Hidden, item => item.Source.Id == edge.Id);
 
         var noEnhancedTab = SourcePresentationPolicy.Apply([edge, chrome, electron], new ApplicationSettings());
         Assert.Contains(noEnhancedTab.Visible, item => item.Id == edge.Id);
@@ -32,10 +32,12 @@ public sealed class SourcePresentationTests
             new ApplicationSettings(HideBrowserAggregateSessions: false));
         Assert.Contains(disabled.Visible, item => item.Id == edge.Id);
 
-        var forcedEdge = SourcePresentationPolicy.Apply([edge, chrome, edgeTab, chromeTab],
+        var legacyExceptionIsIgnored = SourcePresentationPolicy.Apply([edge, chrome, edgeTab, chromeTab],
             new ApplicationSettings(VisibleBrowserAggregates: ["edge"]));
-        Assert.Contains(forcedEdge.Visible, item => item.Id == edge.Id);
-        Assert.DoesNotContain(forcedEdge.Visible, item => item.Id == chrome.Id && item.Kind == AudioSourceKind.WindowsSession);
+        Assert.DoesNotContain(legacyExceptionIsIgnored.Visible, item => item.Id == edge.Id);
+        Assert.DoesNotContain(legacyExceptionIsIgnored.Visible,
+            item => item.Id == chrome.Id && item.Kind == AudioSourceKind.WindowsSession);
+        Assert.Empty(legacyExceptionIsIgnored.Hidden);
     }
 
     [Fact]
@@ -50,7 +52,7 @@ public sealed class SourcePresentationTests
 
         Assert.DoesNotContain(result.Visible, item => item.Id == first.Id);
         Assert.Contains(result.Visible, item => item.Id == second.Id);
-        Assert.Contains(result.Hidden, item => item.Source.Id == first.Id && item.IsManual);
+        Assert.Contains(result.Hidden, item => item.Source.Id == first.Id && item.Reason == "由你手动隐藏");
     }
 
     [Fact]

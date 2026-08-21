@@ -187,14 +187,14 @@ public sealed class IdentityAndPersistenceTests : IDisposable
         Assert.Empty(loaded.ManuallyHiddenSources!);
         Assert.True(loaded.HideBrowserAggregateSessions);
         Assert.Empty(loaded.VisibleBrowserAggregates!);
-        Assert.Equal(6, loaded.SchemaVersion);
+        Assert.Equal(7, loaded.SchemaVersion);
     }
 
     [Fact]
     public async Task FreshSettingsRequestOptionalBrowserOnboarding()
     {
         var loaded = await new JsonApplicationSettingsStore(_directory).LoadAsync();
-        Assert.Equal(6, loaded.SchemaVersion);
+        Assert.Equal(7, loaded.SchemaVersion);
         Assert.Equal("undecided", loaded.BrowserOnboardingChoice);
         Assert.Null(loaded.OnboardingCompletedVersion);
         Assert.False(loaded.BrowserGuideDismissed);
@@ -207,7 +207,7 @@ public sealed class IdentityAndPersistenceTests : IDisposable
         await File.WriteAllTextAsync(Path.Combine(_directory, "settings.json"),
             """{"CloseToTray":false,"ShowInactiveSessions":false,"SchemaVersion":3}""");
         var loaded = await new JsonApplicationSettingsStore(_directory).LoadAsync();
-        Assert.Equal(6, loaded.SchemaVersion);
+        Assert.Equal(7, loaded.SchemaVersion);
         Assert.False(loaded.CloseToTray);
         Assert.False(loaded.ShowInactiveSessions);
         Assert.Equal("existing-user", loaded.BrowserOnboardingChoice);
@@ -228,7 +228,7 @@ public sealed class IdentityAndPersistenceTests : IDisposable
 
         var loaded = await new JsonApplicationSettingsStore(_directory).LoadAsync();
 
-        Assert.Equal(6, loaded.SchemaVersion);
+        Assert.Equal(7, loaded.SchemaVersion);
         Assert.Equal("not-now", loaded.BrowserOnboardingChoice);
         Assert.Equal("0.2.2", loaded.OnboardingCompletedVersion);
         Assert.True(loaded.BrowserGuideDismissed);
@@ -259,7 +259,24 @@ public sealed class IdentityAndPersistenceTests : IDisposable
         Assert.Equal(["win:session-b", "win:session-a"], loaded.ManualSourceOrder);
         Assert.Equal("win:session-b", Assert.Single(loaded.ManuallyHiddenSources!).SourceId);
         Assert.False(loaded.HideBrowserAggregateSessions);
-        Assert.Equal(6, loaded.SchemaVersion);
+        Assert.Equal(7, loaded.SchemaVersion);
+    }
+
+    [Fact]
+    public async Task SchemaSixBrowserVisibilityExceptionsAreClearedSafely()
+    {
+        Directory.CreateDirectory(_directory);
+        await File.WriteAllTextAsync(Path.Combine(_directory, "settings.json"),
+            """{"HideBrowserAggregateSessions":true,"VisibleBrowserAggregates":["edge","chrome"],"SchemaVersion":6}""");
+
+        var loaded = await new JsonApplicationSettingsStore(_directory).LoadAsync();
+
+        Assert.True(loaded.HideBrowserAggregateSessions);
+        Assert.Empty(loaded.VisibleBrowserAggregates!);
+        Assert.Equal(7, loaded.SchemaVersion);
+        var rewritten = await File.ReadAllTextAsync(Path.Combine(_directory, "settings.json"));
+        Assert.Contains("\"SchemaVersion\":7", rewritten);
+        Assert.Contains("\"VisibleBrowserAggregates\":[]", rewritten);
     }
 
     public void Dispose()

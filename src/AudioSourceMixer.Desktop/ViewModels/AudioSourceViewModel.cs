@@ -47,6 +47,7 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     private bool _equalizerExpanded;
     private ImageSource _iconSource;
     private string? _iconCacheKey;
+    private bool _isDragPlaceholder;
 
     public AudioSourceViewModel(AudioSourceSnapshot snapshot, IAudioSourceController audio, BrowserBridgeServer bridge,
         IAudioProfileStore profiles, Func<ApplicationSettings> settings, RollingFileLogger logger,
@@ -119,6 +120,7 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         ? "浏览器增强" : "Windows 应用";
     public double VolumeMaximum => SupportsExtendedGain ? 200 : 100;
     public double PeakPercent => Math.Clamp(_snapshot.Peak, 0, 1) * 100;
+    public double DragPlaceholderOpacity => _isDragPlaceholder ? 0.28 : 1;
     public Visibility StopVisibility => _snapshot.Kind == AudioSourceKind.WindowsSession ? Visibility.Collapsed : Visibility.Visible;
     public Visibility EnhancedStatusVisibility => _snapshot.Kind == AudioSourceKind.WindowsSession ? Visibility.Collapsed : Visibility.Visible;
     public Visibility ReauthorizeOutputVisibility => _snapshot.Kind != AudioSourceKind.WindowsSession &&
@@ -162,6 +164,13 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
                 _ => string.Empty
             };
         }
+    }
+
+    internal void SetDragPlaceholder(bool value)
+    {
+        if (_isDragPlaceholder == value) return;
+        _isDragPlaceholder = value;
+        Raise(nameof(DragPlaceholderOpacity));
     }
     public Visibility UserStatusVisibility => string.IsNullOrWhiteSpace(UserStatusMessage) ? Visibility.Collapsed : Visibility.Visible;
     public Visibility GainWarningVisibility => string.IsNullOrWhiteSpace(GainWarning) ? Visibility.Collapsed : Visibility.Visible;
