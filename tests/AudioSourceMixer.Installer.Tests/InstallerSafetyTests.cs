@@ -54,7 +54,10 @@ public sealed class InstallerSafetyTests : IDisposable
         Assert.DoesNotContain("安装/升级", source[formStart..]);
         Assert.Contains("Forms.ProgressBarStyle.Marquee", source);
         Assert.Contains("private async void InstallClicked", source);
-        Assert.Contains("安装/升级完成", source);
+        Assert.Contains("Install.Completed", source);
+        Assert.Contains("LanguageSelectionForm", source);
+        Assert.Contains("--language", source);
+        Assert.Contains("ReadInstalledLanguage", source);
     }
 
     [Fact]
@@ -109,6 +112,38 @@ public sealed class InstallerSafetyTests : IDisposable
         var invalid = Path.Combine(_root, "invalid.json");
         File.WriteAllText(invalid, $$"""{"schemaVersion":1,"developmentExtensionId":"{{Program.DevelopmentExtensionId}}","chromeStoreExtensionId":"*"}""");
         Assert.Throws<InvalidDataException>(() => Program.LoadTrustedExtensionOrigins(invalid));
+    }
+
+    [Fact]
+    public void InstallerAndUninstallerResourcesHaveMatchingNonEmptyKeys()
+    {
+        Assert.True(InstallerLocalization.Keys.Count >= 45);
+        foreach (var language in InstallerLocalization.SupportedLanguages)
+        foreach (var key in InstallerLocalization.Keys)
+        {
+            var value = InstallerLocalization.Get(key, language);
+            Assert.False(string.IsNullOrWhiteSpace(value), $"{language}:{key}");
+            Assert.NotEqual(key, value);
+        }
+    }
+
+    [Theory]
+    [InlineData("zh-CN")]
+    [InlineData("en-US")]
+    public void InstallOptionsCarryValidatedInitialApplicationLanguage(string language)
+    {
+        var options = new Program.InstallOptions(Path.Combine(_root, "language"), true, false, false,
+            Language: InstallerLocalization.Normalize(language));
+        Assert.Equal(language, options.Language);
+        Assert.Throws<ArgumentException>(() => InstallerLocalization.Normalize("fr-FR"));
+    }
+
+    [Fact]
+    public void InstallerProgramContainsNoScatteredChineseUiText()
+    {
+        var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "src", "AudioSourceMixer.Installer", "Program.cs"));
+        Assert.DoesNotMatch("[\\u4E00-\\u9FFF]", source);
     }
 
     public void Dispose()
