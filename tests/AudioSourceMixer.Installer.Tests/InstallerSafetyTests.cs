@@ -65,11 +65,9 @@ public sealed class InstallerSafetyTests : IDisposable
             Path.Combine(root, "packaging", "runtime-allowlist.json")));
         var runtime = document.RootElement.GetProperty("runtimeFiles").EnumerateArray()
             .Select(item => item.GetProperty("path").GetString()!).ToArray();
-        var portableOnly = document.RootElement.GetProperty("portableOnlyFiles").EnumerateArray()
-            .Select(item => item.GetProperty("path").GetString()!).ToArray();
         var generated = document.RootElement.GetProperty("installerGeneratedFiles").EnumerateArray()
             .Select(item => item.GetProperty("path").GetString()!).ToArray();
-        var all = runtime.Concat(portableOnly).Concat(generated).ToArray();
+        var all = runtime.Concat(generated).ToArray();
 
         Assert.Equal(all.Length, all.Distinct(StringComparer.OrdinalIgnoreCase).Count());
         Assert.All(all, path =>
@@ -88,10 +86,11 @@ public sealed class InstallerSafetyTests : IDisposable
             Assert.True(File.Exists(Path.Combine(root, "src", "AudioSourceMixer.BrowserExtension",
                 path["BrowserExtension/".Length..].Replace('/', Path.DirectorySeparatorChar))), path);
 
-        var portableScript = File.ReadAllText(Path.Combine(root, "scripts", "package-portable.ps1"));
         var installerScript = File.ReadAllText(Path.Combine(root, "scripts", "package-installer.ps1"));
-        Assert.Contains("Assert-RuntimePayload $portable 'Portable'", portableScript);
-        Assert.DoesNotContain("Copy-Item -LiteralPath '.\\docs'", portableScript);
+        Assert.False(File.Exists(Path.Combine(root, "scripts", "package-portable.ps1")));
+        Assert.DoesNotContain("portable", installerScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("runtime-publish", installerScript);
+        Assert.Contains("installer-runtime-payload", installerScript);
         Assert.Contains("Get-ExpectedPayloadPaths 'InstallerPayload'", installerScript);
         Assert.Contains("Assert-RuntimePayload $payloadDirectory 'InstallerPayload'", installerScript);
     }

@@ -48,7 +48,7 @@ public sealed class StartupRegistrationService : IStartupRegistrationService
     public void SetEnabled(bool enabled, bool background)
     {
         if (enabled && !IsAvailable)
-            throw new InvalidOperationException("便携版不写入开机启动项；请安装后再启用。移动便携目录会使启动路径失效。");
+            throw new InvalidOperationException("当前程序未通过安装器注册；请安装后再启用开机启动。");
         using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath);
         if (enabled)
             key.SetValue(ValueName, $"\"{_executablePath}\"{(background ? " --background" : string.Empty)}");

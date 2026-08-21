@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "runtimeFiles": [
     { "path": "AudioSourceMixer.exe", "purpose": "WPF desktop application and self-contained .NET runtime" },
     { "path": "AudioSourceMixer.NativeHost.exe", "purpose": "Chrome/Edge Native Messaging bridge" },
@@ -28,11 +28,6 @@
     { "path": "BrowserExtension/shared/equalizer.js", "purpose": "shared ten-band equalizer definitions and validation" },
     { "path": "BrowserExtension/shared/levels.js", "purpose": "shared realtime peak smoothing" },
     { "path": "BrowserExtension/shared/protocol.js", "purpose": "extension protocol validation" }
-  ],
-  "portableOnlyFiles": [
-    { "path": "USER_GUIDE.md", "purpose": "short end-user setup guide" },
-    { "path": "scripts/register-native-host.ps1", "purpose": "portable Native Messaging registration" },
-    { "path": "scripts/unregister-native-host.ps1", "purpose": "portable Native Messaging removal" }
   ],
   "installerGeneratedFiles": [
     { "path": "AudioSourceMixer.Uninstall.exe", "purpose": "dedicated installed uninstaller" },

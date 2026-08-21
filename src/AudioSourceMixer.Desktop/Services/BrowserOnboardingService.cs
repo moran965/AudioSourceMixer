@@ -177,7 +177,7 @@ internal sealed class BrowserOnboardingService : IBrowserOnboardingService
         {
             var chrome = ReadRegisteredManifest(@$"Software\Google\Chrome\NativeMessagingHosts\{HostName}");
             var edge = ReadRegisteredManifest(@$"Software\Microsoft\Edge\NativeMessagingHosts\{HostName}");
-            if (chrome is null && edge is null) return "桌面桥尚未注册；请重新运行安装程序或便携版注册脚本。";
+            if (chrome is null && edge is null) return "桌面桥尚未注册；请重新运行安装程序。";
             if (!PathEquals(chrome, edge)) return "Chrome 与 Edge 的桌面桥注册不一致，建议重新安装。";
             return chrome is not null && File.Exists(chrome)
                 ? "桌面桥注册正常。"

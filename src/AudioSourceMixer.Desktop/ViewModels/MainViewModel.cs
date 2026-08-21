@@ -164,7 +164,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public string ChromeConnectionStatus => BrowserConnectionText("chrome");
     public string EdgeConnectionStatus => BrowserConnectionText("edge");
     public string VersionText => $"版本 {typeof(MainViewModel).Assembly.GetName().Version?.ToString(3)}";
-    public string DeploymentText => StartupAvailable ? "安装版" : "便携版";
+    public string DeploymentText => StartupAvailable ? "安装版" : "开发运行";
     public bool CloseToTray { get => _settings.CloseToTray; set { _settings = _settings with { CloseToTray = value }; Raise(); SaveSettings(); } }
     public bool ShowOperationTips { get => _settings.ShowOperationTips; set { _settings = _settings with { ShowOperationTips = value }; Raise(); SaveSettings(); } }
     public bool AutoApplyProfiles { get => _settings.AutoApplyProfiles; set { _settings = _settings with { AutoApplyProfiles = value }; Raise(); SaveSettings(); Reconcile(); } }

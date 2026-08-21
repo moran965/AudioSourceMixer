@@ -4,16 +4,15 @@ $ErrorActionPreference = 'Stop'
 
 $root = Get-RepositoryRoot
 $version = Get-ProductVersion
-$portable = Join-Path $root "artifacts\portable\AudioSourceMixer-$version"
-$desktop = Join-Path $portable 'AudioSourceMixer.exe'
-$extension = Join-Path $portable 'BrowserExtension'
-$register = Join-Path $portable 'scripts\register-native-host.ps1'
-$unregister = Join-Path $portable 'scripts\unregister-native-host.ps1'
-$generatedManifest = Join-Path $portable 'native-host-manifest.generated.json'
+$runtimePayload = Join-Path $root "artifacts\staging\$version\installer-runtime-payload"
+$desktop = Join-Path $runtimePayload 'AudioSourceMixer.exe'
+$nativeHost = Join-Path $runtimePayload 'AudioSourceMixer.NativeHost.exe'
+$extension = Join-Path $runtimePayload 'BrowserExtension'
 $chrome = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
 $edge = 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
 $dataDirectory = Join-Path $env:LOCALAPPDATA 'AudioSourceMixer'
 $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) "AudioSourceMixer-browser-runtime-$PID-$([Guid]::NewGuid().ToString('N'))"
+$generatedManifest = Join-Path $temporaryRoot 'native-host-manifest.json'
 $dataBackup = Join-Path $temporaryRoot 'user-data'
 $dataExisted = Test-Path -LiteralPath $dataDirectory
 $nativeHostKeys = @(
@@ -31,7 +30,28 @@ function Get-Inventory([string] $Path) {
     } | Sort-Object)
 }
 
-foreach ($required in @($desktop,$extension,$register,$unregister,$chrome,$edge)) {
+function Register-TestNativeHost {
+    $trusted = Get-Content -LiteralPath (Join-Path $runtimePayload 'browser-extension-origins.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $ids = @($trusted.developmentExtensionId,$trusted.chromeStoreExtensionId,$trusted.edgeStoreExtensionId) |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
+    if ($ids.Count -eq 0 -or @($ids | Where-Object { $_ -notmatch '^[a-p]{32}$' }).Count -ne 0) {
+        throw 'Trusted extension configuration contains a missing or invalid extension ID.'
+    }
+    $manifest = [ordered]@{
+        name = 'com.audiosourcemixer.bridge'
+        description = 'Audio Source Mixer browser bridge'
+        path = $nativeHost
+        type = 'stdio'
+        allowed_origins = @($ids | ForEach-Object { "chrome-extension://$_/" })
+    }
+    $manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $generatedManifest -Encoding UTF8
+    foreach ($key in $nativeHostKeys) {
+        New-Item -Path $key -Force | Out-Null
+        Set-Item -Path $key -Value $generatedManifest
+    }
+}
+
+foreach ($required in @($desktop,$nativeHost,$extension,$chrome,$edge)) {
     if (-not (Test-Path -LiteralPath $required)) { throw "Browser runtime verification input is missing: $required" }
 }
 
@@ -55,16 +75,16 @@ try {
     $settings = '{"CloseToTray":false,"AutoApplyProfiles":true,"RememberProfiles":true,"ShowInactiveSessions":true,"BrowserOnboardingChoice":"runtime-test","OnboardingCompletedVersion":"0.2.2","BrowserGuideDismissed":true,"SchemaVersion":4}'
     [System.IO.File]::WriteAllText((Join-Path $dataDirectory 'settings.json'), $settings, [System.Text.UTF8Encoding]::new($false))
 
-    & $register
+    Register-TestNativeHost
     $desktopProcess = Start-Process -FilePath $desktop -PassThru
     $deadline = [DateTimeOffset]::Now.AddSeconds(30)
     while ([DateTimeOffset]::Now -lt $deadline) {
         Start-Sleep -Milliseconds 200
         $desktopProcess.Refresh()
-        if ($desktopProcess.HasExited) { throw "Portable desktop exited before browser testing with code $($desktopProcess.ExitCode)." }
+        if ($desktopProcess.HasExited) { throw "Installer runtime payload exited before browser testing with code $($desktopProcess.ExitCode)." }
         if ($desktopProcess.MainWindowHandle -ne 0) { break }
     }
-    if ($desktopProcess.MainWindowHandle -eq 0) { throw 'Portable desktop did not show its main window for browser testing.' }
+    if ($desktopProcess.MainWindowHandle -eq 0) { throw 'Installer runtime payload did not show its main window for browser testing.' }
 
     if ($Browser -in @('Both','Chrome')) {
         & node (Join-Path $PSScriptRoot 'verify-browser-runtime.mjs') $chrome $extension 'chrome'
@@ -79,9 +99,9 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Edge authorization runtime verification failed with exit code $LASTEXITCODE." }
     }
 
-    if (-not $desktopProcess.CloseMainWindow()) { throw 'Could not close portable desktop normally after browser testing.' }
-    if (-not $desktopProcess.WaitForExit(30000)) { throw 'Portable desktop did not exit after browser testing.' }
-    if ($desktopProcess.ExitCode -ne 0) { throw "Portable desktop exited with code $($desktopProcess.ExitCode)." }
+    if (-not $desktopProcess.CloseMainWindow()) { throw 'Could not close installer runtime payload normally after browser testing.' }
+    if (-not $desktopProcess.WaitForExit(30000)) { throw 'Installer runtime payload did not exit after browser testing.' }
+    if ($desktopProcess.ExitCode -ne 0) { throw "Installer runtime payload exited with code $($desktopProcess.ExitCode)." }
     $desktopProcess = $null
     $rollback = Join-Path $dataDirectory 'rollback.json'
     if (Test-Path -LiteralPath $rollback) {
@@ -97,7 +117,9 @@ finally {
             Stop-Process -Id $desktopProcess.Id -Force -ErrorAction SilentlyContinue
         }
     }
-    try { & $unregister } catch { Write-Warning "Could not unregister the temporary portable Native Host: $_" }
+    foreach ($key in $nativeHostKeys) {
+        if (Test-Path -LiteralPath $key) { Remove-Item -LiteralPath $key -Recurse -Force }
+    }
     foreach ($key in $nativeHostKeys) {
         $saved = $nativeHostBackup[$key]
         if ($saved.Exists) {
@@ -105,7 +127,6 @@ finally {
             (Get-Item -LiteralPath $key).SetValue('', [string]$saved.Value)
         }
     }
-    if (Test-Path -LiteralPath $generatedManifest) { Remove-Item -LiteralPath $generatedManifest -Force }
     if (Test-Path -LiteralPath $dataDirectory) { Remove-Item -LiteralPath $dataDirectory -Recurse -Force }
     if ($dataExisted) { Copy-Item -LiteralPath $dataBackup -Destination $dataDirectory -Recurse -Force }
     if (@(Compare-Object $dataInventory (Get-Inventory $dataDirectory)).Count -ne 0) {

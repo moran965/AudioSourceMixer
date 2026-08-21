@@ -17,10 +17,9 @@ function Get-PayloadInventory([string] $Directory) {
     } | Sort-Object path)
 }
 
-function Get-ExpectedPayloadPaths([ValidateSet('Portable','InstallerPayload','Installed')][string] $Mode) {
+function Get-ExpectedPayloadPaths([ValidateSet('InstallerPayload','Installed')][string] $Mode) {
     $allowlist = Get-RuntimeAllowlist
     $paths = @($allowlist.runtimeFiles.path)
-    if ($Mode -eq 'Portable') { $paths += @($allowlist.portableOnlyFiles.path) }
     if ($Mode -eq 'Installed') { $paths += @($allowlist.installerGeneratedFiles.path) }
     return @($paths | ForEach-Object { ([string]$_).Replace('\', '/') } | Sort-Object -Unique)
 }
@@ -80,7 +79,7 @@ function Assert-ExtensionRuntimeGraph([string] $PayloadDirectory) {
 }
 
 function Assert-RuntimePayload([string] $Directory,
-    [ValidateSet('Portable','InstallerPayload','Installed')][string] $Mode) {
+    [ValidateSet('InstallerPayload','Installed')][string] $Mode) {
     $actual = @(Get-PayloadInventory $Directory)
     $expected = @(Get-ExpectedPayloadPaths $Mode)
     $difference = @(Compare-Object $expected @($actual.path))

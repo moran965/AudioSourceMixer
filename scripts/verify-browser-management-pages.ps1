@@ -1,5 +1,5 @@
 ﻿param(
-    [string] $ExecutablePath = (Join-Path $PSScriptRoot '..\artifacts\portable\AudioSourceMixer-0.2.2\AudioSourceMixer.exe'),
+    [string] $ExecutablePath = (Join-Path $PSScriptRoot '..\artifacts\staging\1.0.0\installer-runtime-payload\AudioSourceMixer.exe'),
     [string] $ReportPath = (Join-Path $PSScriptRoot '..\artifacts\browser-management-pages.json')
 )
 
