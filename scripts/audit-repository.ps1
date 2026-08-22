@@ -50,7 +50,9 @@ try {
     }
 
     $absoluteMatches = @(git -c safe.directory=$root grep -I -n -E '[A-Za-z]:\\Users\\|/Users/|/home/' -- 2>$null)
-    $absoluteMatches = $absoluteMatches | Where-Object { $_ -notmatch '^scripts/runtime-payload\.ps1:' }
+    $absoluteMatches = $absoluteMatches | Where-Object {
+        $_ -notmatch '^scripts/(runtime-payload|audit-repository)\.ps1:'
+    }
     if ($absoluteMatches) { throw "Tracked text contains a user-specific absolute path: $($absoluteMatches -join '; ')" }
 
     $workflows = Get-ChildItem -LiteralPath (Join-Path $root '.github\workflows') -Filter *.yml
