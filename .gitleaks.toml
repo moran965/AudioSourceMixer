@@ -5,5 +5,5 @@ useDefault = true
 description = "Manifest V3 public key used only to keep the unpacked extension ID stable; this is not a private key or credential."
 condition = "AND"
 regexTarget = "match"
-paths = ['''^src/AudioSourceMixer\.BrowserExtension/manifest\.json$''']
+paths = ['''^(src/AudioSourceMixer\.BrowserExtension|artifacts/staging/[0-9.]+/installer-runtime-payload/BrowserExtension)/manifest\.json$''']
 regexes = ['''^MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A[A-Za-z0-9+/]+={0,2}$''']
