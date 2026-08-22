@@ -27,7 +27,9 @@ flowchart LR
 
 `profiles.json` schemaVersion 3 保存来源类型及浏览器 EQ。普通来源最大值为 1 且 `SupportsEqualizer=false`，浏览器来源最大值为 2；schema 2 浏览器配置迁移为 EQ 关闭。单项恢复关闭该来源 EQ 并删除对应 stable key；全部恢复在一个 guarded 流程中取消防抖/路由，恢复音频和浏览器图，清除配置及内存应用状态。“记住应用设置”关闭时采用“保留但忽略”语义。
 
-浏览器输出授权把系统选择结果先作为内存候选；只有用户播放低音量测试声并明确确认后才持久化 browser + Windows endpoint ID 到 browser deviceId/label/groupId 的映射。每个实际捕获标签页持有独立的 `MediaStreamAudioSourceNode → 10×BiquadFilterNode → headroom GainNode → 主音量 GainNode → StereoPannerNode → AnalyserNode → destination` 固定图；EQ 更新不重建 capture、context 或 sink，关闭时全部频段归零且 headroom 为 1。offscreen 只对该 `AudioContext` 调用 `setSinkId()` 并回读 `sinkId`。空闲 service worker 不连接 Native Host，Native Host 也不会启动桌面程序。
+浏览器输出授权把系统选择结果先作为内存候选。试听拒绝空值、`default`、`communications` 和已经不在 `enumerateDevices()` 中的 ID；优先使用构造时 `sinkId`，兼容路径则在创建任何可听节点前调用 `setSinkId()`。只有在 resume 前后都严格回读到相同有效 `sinkId`，才创建并启动测试音。验证证明绑定 browser、Windows endpoint、browser device、候选 generation 和设备列表 generation；候选或设备变化会使旧证明失效。用户确认后才持久化 browser + Windows endpoint ID 到 browser deviceId/label/groupId 的映射。
+
+每个实际捕获标签页持有独立的 `MediaStreamAudioSourceNode → 10×BiquadFilterNode → headroom GainNode → 主音量 GainNode → StereoPannerNode → AnalyserNode → destination` 固定图；EQ 更新不重建 capture、context 或 sink，关闭时全部频段归零且 headroom 为 1。offscreen 只对该 `AudioContext` 调用 `setSinkId()` 并回读 `sinkId`。空闲 service worker 不连接 Native Host，Native Host 也不会启动桌面程序。
 
 ## 安装边界
 

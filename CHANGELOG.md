@@ -2,6 +2,8 @@
 
 ## 1.0.0 - 2026-08-22
 
+- Fixed browser output authorization so a test tone is created only after a concrete, currently enumerated physical device is selected and the effective `sinkId` is read back exactly before and after resume. Test results are now bound to the browser, Windows endpoint, browser device, and candidate/device-list generations; untested or stale candidates cannot be saved.
+- Fixed the global WPF ComboBox template to honor `SelectionBoxItem`, `DisplayMemberPath`, and custom item templates, so the current application language is visible when the list is closed. Added real WPF coverage for language, output-device, EQ-preset, string, and custom-template selectors.
 - Added complete Simplified Chinese and English localization for WPF views, dynamic status text, accessibility names, tray UI, installer, uninstaller, onboarding, and the Manifest V3 extension. Language changes apply immediately without rebuilding audio services or changing active source state.
 - Added settings schema 8 with persistent `zh-CN` / `en-US` selection. Existing users without a language setting remain on Simplified Chinese; fresh installs inherit the installer language only when no settings file exists.
 - Localized the installer and uninstaller, including a bilingual first page, saved uninstall language, and `--language zh-CN|en-US` for silent workflows.
