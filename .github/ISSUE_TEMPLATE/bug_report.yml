@@ -1,0 +1,48 @@
+name: Bug report
+description: Report a reproducible, non-sensitive defect
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not upload full logs, raw device IDs, browser profiles, page titles/URLs, user-directory paths, credentials, or other personal data. Redact diagnostics and use private vulnerability reporting for security issues.
+  - type: input
+    id: version
+    attributes:
+      label: Version and installation source
+      placeholder: 1.0.0, downloaded from this repository's GitHub Release
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Windows build and, when relevant, Chrome/Edge version; do not include profile paths.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Redacted reproduction steps
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I removed secrets, complete logs, raw device IDs, browser/profile data, URLs/page titles, and user paths.
+          required: true
