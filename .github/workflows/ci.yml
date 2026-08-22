@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "codex/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-package:
+    name: Windows build, tests, audit, and installer
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up .NET
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
+        with:
+          global-json-file: global.json
+      - name: Set up Node.js
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: 24
+      - name: Restore
+        run: dotnet restore .\AudioSourceMixer.sln
+      - name: Build Release
+        run: dotnet build .\AudioSourceMixer.sln --configuration Release --no-restore
+      - name: Run .NET tests
+        run: dotnet test .\AudioSourceMixer.sln --configuration Release --no-build --no-restore
+      - name: Run browser extension tests
+        working-directory: src/AudioSourceMixer.BrowserExtension
+        run: npm test
+      - name: Audit repository, licenses, versions, localization, and action pins
+        shell: powershell
+        run: .\scripts\audit-repository.ps1
+      - name: Scan complete Git history and working tree for secrets
+        shell: powershell
+        run: |
+          $gitleaks = & .\scripts\install-gitleaks.ps1
+          & $gitleaks git . --config .gitleaks.toml --redact --no-banner --exit-code 1
+          if ($LASTEXITCODE -ne 0) { throw "Gitleaks history scan failed with exit code $LASTEXITCODE." }
+          & $gitleaks dir . --config .gitleaks.toml --redact --no-banner --exit-code 1
+          if ($LASTEXITCODE -ne 0) { throw "Gitleaks working-tree scan failed with exit code $LASTEXITCODE." }
+      - name: Build fresh installer payload
+        shell: powershell
+        run: .\scripts\package-installer.ps1 -Configuration Release
+
+  codeql:
+    name: CodeQL
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@f52b05f4acaaa234e44466e66d29050e135ea9ef # v4.36.0
+        with:
+          languages: csharp,javascript-typescript
+      - name: Build for analysis
+        uses: github/codeql-action/autobuild@f52b05f4acaaa234e44466e66d29050e135ea9ef # v4.36.0
+      - name: Analyze
+        uses: github/codeql-action/analyze@f52b05f4acaaa234e44466e66d29050e135ea9ef # v4.36.0

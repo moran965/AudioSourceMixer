@@ -1,4 +1,8 @@
-param([ValidateSet('Debug','Release')][string] $Configuration = 'Release')
+param(
+    [ValidateSet('Debug','Release')][string] $Configuration = 'Release',
+    [string] $DesktopPublishPath = '',
+    [string] $NativeHostPublishPath = ''
+)
 . (Join-Path $PSScriptRoot 'common.ps1')
 . (Join-Path $PSScriptRoot 'runtime-payload.ps1')
 $root = Get-RepositoryRoot
@@ -7,8 +11,12 @@ $version = Get-ProductVersion
 $artifacts = Join-Path $root 'artifacts'
 $staging = Join-Path $artifacts "staging\$version"
 $publish = Join-Path $staging 'runtime-publish'
-$desktopPublish = Join-Path $publish 'desktop'
-$nativeHostPublish = Join-Path $publish 'native-host'
+$externalPublish = -not [string]::IsNullOrWhiteSpace($DesktopPublishPath) -or -not [string]::IsNullOrWhiteSpace($NativeHostPublishPath)
+if ($externalPublish -and ([string]::IsNullOrWhiteSpace($DesktopPublishPath) -or [string]::IsNullOrWhiteSpace($NativeHostPublishPath))) {
+    throw 'DesktopPublishPath and NativeHostPublishPath must be supplied together.'
+}
+$desktopPublish = if ($externalPublish) { [IO.Path]::GetFullPath($DesktopPublishPath) } else { Join-Path $publish 'desktop' }
+$nativeHostPublish = if ($externalPublish) { [IO.Path]::GetFullPath($NativeHostPublishPath) } else { Join-Path $publish 'native-host' }
 $payloadDirectory = Join-Path $staging 'installer-runtime-payload'
 $payloadArchive = Join-Path $staging 'installer-payload.zip'
 $installerPublish = Join-Path $staging 'installer-publish'
@@ -22,7 +30,9 @@ if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurs
 foreach ($path in @($installer,$manifestPath)) {
     if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
 }
-New-Item -ItemType Directory -Path $desktopPublish,$nativeHostPublish,$payloadDirectory,$installerPublish -Force | Out-Null
+$directories = @($payloadDirectory,$installerPublish)
+if (-not $externalPublish) { $directories += @($desktopPublish,$nativeHostPublish) }
+New-Item -ItemType Directory -Path $directories -Force | Out-Null
 
 function Copy-RuntimeFile([string] $RelativePath) {
     $normalized = $RelativePath.Replace('/', '\')
@@ -37,8 +47,14 @@ function Copy-RuntimeFile([string] $RelativePath) {
 
 Push-Location $root
 try {
-    Invoke-Checked { & $dotnet publish '.\src\AudioSourceMixer.Desktop\AudioSourceMixer.Desktop.csproj' -c $Configuration -r win-x64 --self-contained true -o $desktopPublish -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None } 'Desktop runtime publish'
-    Invoke-Checked { & $dotnet publish '.\src\AudioSourceMixer.NativeHost\AudioSourceMixer.NativeHost.csproj' -c $Configuration -r win-x64 --self-contained true -o $nativeHostPublish -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None } 'Native host runtime publish'
+    if (-not $externalPublish) {
+        Invoke-Checked { & $dotnet publish '.\src\AudioSourceMixer.Desktop\AudioSourceMixer.Desktop.csproj' -c $Configuration -r win-x64 --self-contained true -o $desktopPublish -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None } 'Desktop runtime publish'
+        Invoke-Checked { & $dotnet publish '.\src\AudioSourceMixer.NativeHost\AudioSourceMixer.NativeHost.csproj' -c $Configuration -r win-x64 --self-contained true -o $nativeHostPublish -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None } 'Native host runtime publish'
+    }
+
+    foreach ($requiredPublish in @((Join-Path $desktopPublish 'AudioSourceMixer.exe'),(Join-Path $nativeHostPublish 'AudioSourceMixer.NativeHost.exe'))) {
+        if (-not (Test-Path -LiteralPath $requiredPublish -PathType Leaf)) { throw "Required runtime publish is missing: $requiredPublish" }
+    }
 
     Copy-Item -LiteralPath (Join-Path $desktopPublish 'AudioSourceMixer.exe') -Destination $payloadDirectory -Force
     Copy-Item -LiteralPath (Join-Path $nativeHostPublish 'AudioSourceMixer.NativeHost.exe') -Destination $payloadDirectory -Force
@@ -60,6 +76,7 @@ try {
         schemaVersion = 3
         version = $version
         configuration = $Configuration
+        externalSignedPublish = $externalPublish
         createdUtc = [DateTimeOffset]::UtcNow.ToString('O')
         runtimePublish = [ordered]@{
             desktop = [ordered]@{ path = 'staging/runtime-publish/desktop/AudioSourceMixer.exe'; size = (Get-Item $desktopPublishExe).Length; sha256 = $publishHash }

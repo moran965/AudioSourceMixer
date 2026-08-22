@@ -1,0 +1,178 @@
+name: Signed release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing annotated v* tag to release
+        required: true
+        default: v1.0.0
+        type: string
+      hardware_gate_attested:
+        description: Human maintainer completed the documented Chrome/Edge physical-output matrix
+        required: true
+        default: false
+        type: boolean
+      publish:
+        description: Publish after signed Draft assets and provenance are created
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  signed-release:
+    name: Build, sign, verify, attest, and release
+    runs-on: windows-latest
+    timeout-minutes: 90
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      HARDWARE_GATE: ${{ github.event_name == 'workflow_dispatch' && inputs.hardware_gate_attested || vars.RELEASE_HARDWARE_GATE_V1_0_0 }}
+      SIGNING_ENDPOINT: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+      SIGNING_ACCOUNT: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+      SIGNING_PROFILE: ${{ vars.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+    steps:
+      - name: Fail closed unless human and trusted-signing gates are configured
+        shell: powershell
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') { throw "Invalid release tag: $env:RELEASE_TAG" }
+          if ($env:HARDWARE_GATE -ne 'true' -and $env:HARDWARE_GATE -ne 'passed') { throw 'The real-hardware release gate is not attested.' }
+          foreach ($name in 'SIGNING_ENDPOINT','SIGNING_ACCOUNT','SIGNING_PROFILE','AZURE_CLIENT_ID','AZURE_TENANT_ID','AZURE_SUBSCRIPTION_ID') {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) { throw "Required release setting is missing: $name" }
+          }
+      - name: Checkout clean tag
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify annotated tag and version
+        shell: powershell
+        run: |
+          git cat-file -t $env:RELEASE_TAG | Select-String '^tag$' | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "$env:RELEASE_TAG is not an annotated tag." }
+          [xml]$props = Get-Content .\Directory.Build.props
+          $version = $props.Project.PropertyGroup.AudioSourceMixerVersion
+          if ("v$version" -ne $env:RELEASE_TAG) { throw "Tag $env:RELEASE_TAG does not match product $version." }
+          if (git status --porcelain) { throw 'Release checkout is not clean.' }
+      - name: Set up .NET
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5.2.0
+        with:
+          global-json-file: global.json
+      - name: Set up Node.js
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: 24
+      - name: Restore, build, and test
+        shell: powershell
+        run: |
+          dotnet restore .\AudioSourceMixer.sln
+          dotnet build .\AudioSourceMixer.sln --configuration Release --no-restore
+          dotnet test .\AudioSourceMixer.sln --configuration Release --no-build --no-restore
+          Push-Location .\src\AudioSourceMixer.BrowserExtension
+          npm test
+          Pop-Location
+          .\scripts\audit-repository.ps1
+          $gitleaks = & .\scripts\install-gitleaks.ps1
+          & $gitleaks git . --config .gitleaks.toml --redact --no-banner --exit-code 1
+          if ($LASTEXITCODE -ne 0) { throw 'Gitleaks blocked the release.' }
+      - name: Publish internal executables
+        shell: powershell
+        run: |
+          $desktop = Join-Path $env:RUNNER_TEMP 'asm-publish\desktop'
+          $host = Join-Path $env:RUNNER_TEMP 'asm-publish\native-host'
+          dotnet publish .\src\AudioSourceMixer.Desktop\AudioSourceMixer.Desktop.csproj -c Release -r win-x64 --self-contained true -o $desktop -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None
+          dotnet publish .\src\AudioSourceMixer.NativeHost\AudioSourceMixer.NativeHost.csproj -c Release -r win-x64 --self-contained true -o $host -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None
+      - name: Azure login with OIDC
+        uses: azure/login@93381592711f247e165c389ebb30b596c84cdc48 # v3.0.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Sign desktop and Native Host before packaging
+        uses: Azure/artifact-signing-action@208f8af4bf26cf2af8597424e3cb5582801523ba # v2.0.0
+        with:
+          endpoint: ${{ env.SIGNING_ENDPOINT }}
+          signing-account-name: ${{ env.SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ env.SIGNING_PROFILE }}
+          files: |
+            ${{ runner.temp }}\asm-publish\desktop\AudioSourceMixer.exe
+            ${{ runner.temp }}\asm-publish\native-host\AudioSourceMixer.NativeHost.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          cache-dependencies: false
+      - name: Verify internal signatures and assemble installer
+        shell: powershell
+        run: |
+          $desktop = Join-Path $env:RUNNER_TEMP 'asm-publish\desktop\AudioSourceMixer.exe'
+          $host = Join-Path $env:RUNNER_TEMP 'asm-publish\native-host\AudioSourceMixer.NativeHost.exe'
+          foreach ($file in $desktop,$host) {
+            $signature = Get-AuthenticodeSignature -LiteralPath $file
+            if ($signature.Status -ne 'Valid' -or $null -eq $signature.TimeStamperCertificate) { throw "Invalid internal signature: $file" }
+          }
+          .\scripts\package-installer.ps1 -Configuration Release `
+            -DesktopPublishPath (Split-Path $desktop -Parent) -NativeHostPublishPath (Split-Path $host -Parent)
+      - name: Sign final setup
+        uses: Azure/artifact-signing-action@208f8af4bf26cf2af8597424e3cb5582801523ba # v2.0.0
+        with:
+          endpoint: ${{ env.SIGNING_ENDPOINT }}
+          signing-account-name: ${{ env.SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ env.SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\artifacts\AudioSourceMixer-1.0.0-win-x64-setup.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          cache-dependencies: false
+      - name: Finalize signed hashes and verify installation
+        shell: powershell
+        run: |
+          .\scripts\finalize-signed-release.ps1 -RequireTrustedSignature
+          .\scripts\verify-installer.ps1
+          $manifest = Get-Content .\artifacts\AudioSourceMixer-1.0.0-build-manifest.json -Raw | ConvertFrom-Json
+          $notes = Get-Content .\docs\release-notes-1.0.0.md -Raw
+          $notes += "`n`nPublisher: ``$($manifest.installer.signerSubject)```n`nSHA-256: ``$($manifest.installer.sha256)```n"
+          $notes | Set-Content .\artifacts\release-notes.md -Encoding UTF8
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@aa0e114b2e19480f157109b9922bda359bd98b90 # v0.20.8
+        with:
+          path: artifacts/staging/1.0.0/installer-runtime-payload
+          format: spdx-json
+          output-file: artifacts/AudioSourceMixer-1.0.0.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Attest release assets
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-path: |
+            artifacts/AudioSourceMixer-1.0.0-win-x64-setup.exe
+            artifacts/SHA256SUMS.txt
+            artifacts/AudioSourceMixer-1.0.0.spdx.json
+      - name: Create or update signed Draft Release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view $env:RELEASE_TAG *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:RELEASE_TAG --verify-tag --draft --title "Audio Source Mixer 1.0.0" --notes-file .\artifacts\release-notes.md
+          }
+          gh release upload $env:RELEASE_TAG --clobber `
+            .\artifacts\AudioSourceMixer-1.0.0-win-x64-setup.exe `
+            .\artifacts\SHA256SUMS.txt `
+            .\artifacts\AudioSourceMixer-1.0.0.spdx.json
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ inputs.publish }}' -eq 'true') {
+            gh release edit $env:RELEASE_TAG --draft=false --latest
+          }
