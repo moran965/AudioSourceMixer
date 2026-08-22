@@ -2,6 +2,7 @@ import process from 'node:process';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
+import { resolve } from 'node:path';
 
 const [portText, firstLabel, secondLabel, pageMode = 'extension'] = process.argv.slice(2);
 const port = Number(portText);
@@ -83,6 +84,16 @@ async function extensionIdFromManifestKey() {
 
 let targets = await getTargets();
 const extensionId = extensionIdFromTargets(targets) || await extensionIdFromManifestKey();
+let browserClient;
+if (pageMode === 'extension' && !extensionIdFromTargets(targets)) {
+  const version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
+  browserClient = await CdpClient.connect(version.webSocketDebuggerUrl);
+  const loaded = await browserClient.send('Extensions.loadUnpacked', {
+    path: resolve('src/AudioSourceMixer.BrowserExtension')
+  });
+  if (loaded.id !== extensionId && loaded.result?.id !== extensionId)
+    throw new Error('CDP did not load the expected Audio Source Mixer extension ID.');
+}
 
 let probeServer;
 let probeUrl;
@@ -125,6 +136,11 @@ try {
   const expression = `
     (async () => {
       const startedAt = performance.now();
+      const hash = async (value) => {
+        const bytes = new TextEncoder().encode(String(value || ''));
+        const digest = await crypto.subtle.digest('SHA-256', bytes);
+        return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+      };
       let stream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -140,47 +156,72 @@ try {
       };
       const requested = [${JSON.stringify(firstLabel)}, ${JSON.stringify(secondLabel)}].map(find);
       if (requested.some((device) => !device)) {
-        throw new Error('Requested physical outputs were not both visible: ' + JSON.stringify({
-          requestedLabels: [${JSON.stringify(firstLabel)}, ${JSON.stringify(secondLabel)}],
-          visibleLabels: devices.map((device) => device.label)
-        }));
+        throw new Error('Both requested physical outputs were not visible. visibleOutputCount=' + devices.length);
       }
-      const context = new AudioContext();
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
-      gain.gain.value = 0.015;
-      oscillator.frequency.value = 440;
-      oscillator.connect(gain).connect(context.destination);
-      oscillator.start();
       const checks = [];
-      try {
-        for (const device of requested) {
-          const before = performance.now();
-          await context.setSinkId(device.deviceId);
-          await context.resume();
-          await new Promise((resolve) => setTimeout(resolve, 750));
-          checks.push({
-            label: device.label,
-            requestedSinkId: device.deviceId,
-            effectiveSinkId: context.sinkId,
-            matched: context.sinkId === device.deviceId,
-            setSinkMilliseconds: Math.round((performance.now() - before) * 1000) / 1000,
-            state: context.state
-          });
-        }
-      } finally {
-        oscillator.stop();
-        oscillator.disconnect();
-        gain.disconnect();
-        await context.close();
+      const strictPlay = ${JSON.stringify(pageMode)} === 'extension'
+        ? (await import(chrome.runtime.getURL('output-authorization/authorization-workflow.js'))).playOutputTestTone
+        : async (deviceId) => {
+          const available = (await navigator.mediaDevices.enumerateDevices())
+            .some((device) => device.kind === 'audiooutput' && device.deviceId === deviceId &&
+              !['', 'default', 'communications'].includes(device.deviceId.toLowerCase()));
+          if (!available) throw new Error('sinkUnavailable');
+          let context;
+          let oscillator;
+          let gain;
+          try {
+            try { context = new AudioContext({ sinkId: deviceId, latencyHint: 'interactive' }); }
+            catch { context = new AudioContext(); }
+            if (context.sinkId !== deviceId) await context.setSinkId(deviceId);
+            if (context.sinkId !== deviceId) throw new Error('sinkMismatch');
+            await context.resume();
+            if (context.sinkId !== deviceId) throw new Error('sinkMismatch');
+            oscillator = context.createOscillator();
+            gain = context.createGain();
+            oscillator.frequency.value = 660;
+            gain.gain.value = 0.025;
+            oscillator.connect(gain);
+            gain.connect(context.destination);
+            oscillator.start();
+            await new Promise((resolve) => setTimeout(resolve, 750));
+            if (context.sinkId !== deviceId) throw new Error('sinkMismatch');
+            return { deviceId, effectiveSinkId: context.sinkId, verified: true };
+          } finally {
+            try { oscillator?.stop(); } catch {}
+            try { oscillator?.disconnect(); } catch {}
+            try { gain?.disconnect(); } catch {}
+            if (context && context.state !== 'closed') await context.close();
+          }
+        };
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      for (const device of requested) {
+        const before = performance.now();
+        const startedUnixMilliseconds = Date.now();
+        const result = await strictPlay(device.deviceId, {
+          mediaDevices: navigator.mediaDevices,
+          durationMs: 750
+        });
+        checks.push({
+          requestedDeviceIdSha256: await hash(device.deviceId),
+          effectiveSinkIdSha256: await hash(result.effectiveSinkId),
+          labelSha256: await hash(device.label),
+          groupIdSha256: await hash(device.groupId),
+          matched: result.verified === true && result.effectiveSinkId === device.deviceId,
+          startedUnixMilliseconds,
+          endedUnixMilliseconds: Date.now(),
+          testMilliseconds: Math.round((performance.now() - before) * 1000) / 1000
+        });
+        await new Promise((resolve) => setTimeout(resolve, 500));
       }
+      const defaults = devices.filter((device) => ['default', 'communications'].includes(device.deviceId));
       return {
         userAgent: navigator.userAgent,
         extensionId: globalThis.chrome?.runtime?.id || null,
         probeContext: ${JSON.stringify(pageMode)},
         setSinkIdSupported: typeof AudioContext.prototype.setSinkId === 'function',
         selectAudioOutputSupported: typeof navigator.mediaDevices.selectAudioOutput === 'function',
-        visibleOutputLabels: devices.map((device) => device.label),
+        visibleOutputCount: devices.length,
+        virtualDefaultLabelsSha256: await Promise.all(defaults.map((device) => hash(device.label))),
         checks,
         microphoneTracksStopped: !stream || stream.getTracks().every((track) => track.readyState === 'ended'),
         totalMilliseconds: Math.round((performance.now() - startedAt) * 1000) / 1000
@@ -195,11 +236,13 @@ try {
   if (evaluated.exceptionDetails) throw new Error(evaluated.exceptionDetails.exception?.description || evaluated.exceptionDetails.text);
   const result = evaluated.result.value;
   if (!result?.setSinkIdSupported || !result?.microphoneTracksStopped || result.checks?.length !== 2 ||
-      result.checks.some((check) => !check.matched || check.state !== 'running')) {
+      result.checks.some((check) => !check.matched || check.requestedDeviceIdSha256 !== check.effectiveSinkIdSha256)) {
     throw new Error(`Browser sink verification failed: ${JSON.stringify(result)}`);
   }
   console.log(JSON.stringify(result, null, 2));
 } finally {
   client.close();
+  try { await browserClient?.send('Browser.close'); } catch { /* isolated-process cleanup is the fallback */ }
+  browserClient?.close();
   if (probeServer) await new Promise((resolve) => probeServer.close(resolve));
 }

@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using AudioSourceMixer.Core.Infrastructure;
 using AudioSourceMixer.Core.Models;
 using AudioSourceMixer.Core.Persistence;
@@ -34,6 +36,57 @@ try
 
     await using var audio = new WindowsAudioService(journal, logger);
     var device = await audio.InitializeAsync();
+
+    var endpointMeterIndex = Array.FindIndex(args, argument => string.Equals(argument, "--endpoint-meter-samples", StringComparison.OrdinalIgnoreCase));
+    if (endpointMeterIndex >= 0)
+    {
+        var durationSeconds = 6;
+        if (endpointMeterIndex + 1 < args.Length &&
+            (!int.TryParse(args[endpointMeterIndex + 1], out durationSeconds) || durationSeconds is < 2 or > 30))
+        {
+            Console.Error.WriteLine("Usage: AudioSourceMixer.CapabilityProbe --endpoint-meter-samples [2-30 seconds]");
+            return 2;
+        }
+        var endpoints = (await audio.GetOutputDevicesAsync()).Where(item => !item.IsSystemDefault).ToArray();
+        var endpointEvidence = endpoints.ToDictionary(item => item.Id, item => new
+        {
+            endpointIdSha256 = HashForEvidence(item.Id),
+            nameSha256 = HashForEvidence(item.Name),
+            item.IsDefaultMultimedia,
+            item.IsDefaultCommunications
+        }, StringComparer.Ordinal);
+        var samples = new List<object>();
+        var startedUnixMilliseconds = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        Console.WriteLine($"METER_READY endpointCount={endpoints.Length} durationSeconds={durationSeconds}");
+        Console.Out.Flush();
+        while (started.Elapsed < TimeSpan.FromSeconds(durationSeconds))
+        {
+            var sources = await audio.GetSourcesAsync();
+            foreach (var endpoint in endpoints)
+            {
+                var peak = sources.Where(source => string.Equals(source.DeviceId, endpoint.Id, StringComparison.Ordinal))
+                    .Select(source => source.Peak).DefaultIfEmpty(0).Max();
+                samples.Add(new
+                {
+                    unixMilliseconds = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    elapsedMilliseconds = Math.Round(started.Elapsed.TotalMilliseconds, 1),
+                    endpointIdSha256 = endpointEvidence[endpoint.Id].endpointIdSha256,
+                    peak = Math.Round(peak, 6)
+                });
+            }
+            await Task.Delay(40);
+        }
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            startedUnixMilliseconds,
+            durationMilliseconds = Math.Round(started.Elapsed.TotalMilliseconds, 1),
+            sampleIntervalMilliseconds = 40,
+            endpoints = endpointEvidence.Values,
+            samples
+        }, new JsonSerializerOptions { WriteIndented = true }));
+        return 0;
+    }
 
     var coordinatedRouteIndex = Array.FindIndex(args, argument => string.Equals(argument, "--coordinated-route", StringComparison.OrdinalIgnoreCase));
     if (coordinatedRouteIndex >= 0)
@@ -396,3 +449,6 @@ catch (Exception exception)
     Console.Error.WriteLine($"Capability probe failed: {exception}");
     return 1;
 }
+
+static string HashForEvidence(string value)
+    => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
