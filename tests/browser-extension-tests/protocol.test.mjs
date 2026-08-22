@@ -227,13 +227,15 @@ test('name mismatch warns and test tone closes its temporary audio context', asy
   assert.equal(compareDeviceNames('WH-1000XM5 Bluetooth Headphones', 'Speakers (Realtek Audio)').level, 'warning');
   const calls = [];
   const context = {
-    currentTime: 1, destination: {}, setSinkId: async (id) => calls.push(['sink', id]),
+    currentTime: 1, destination: {}, sinkId: 'candidate', state: 'running',
     createOscillator: () => ({ frequency: { value: 0 }, connect: () => {}, start: () => calls.push(['start']),
       stop: () => calls.push(['stop']), disconnect: () => calls.push(['osc-disconnect']) }),
     createGain: () => ({ gain: { setValueAtTime: (value) => calls.push(['gain', value]) }, connect: () => {}, disconnect: () => calls.push(['gain-disconnect']) }),
     close: async () => calls.push(['close'])
   };
-  await playOutputTestTone('candidate', { createContext: () => context, durationMs: 500, wait: async () => {} });
+  const mediaDevices = { enumerateDevices: async () => [{ kind: 'audiooutput', deviceId: 'candidate' }],
+    addEventListener() {}, removeEventListener() {} };
+  await playOutputTestTone('candidate', { createContext: () => context, mediaDevices, durationMs: 500, wait: async () => {} });
   assert.deepEqual(calls.at(-1), ['close']);
   assert.ok(calls.some(([name]) => name === 'stop'));
 });

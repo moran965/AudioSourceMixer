@@ -74,13 +74,22 @@ export function createConfirmationSnapshot(browser, candidate, pendingRequest, o
   if (!pendingRequest?.windowsEndpointId) throw uiError('requestExpired', 'The authorization request no longer exists.');
   if (candidate.windowsEndpointId !== pendingRequest.windowsEndpointId)
     throw uiError('candidateMismatch', 'The candidate does not match the current authorization request.');
+  const verification = candidate.testVerification;
+  if (verification?.status !== 'verified' || verification.browser !== browser ||
+      verification.windowsEndpointId !== candidate.windowsEndpointId ||
+      verification.deviceId !== candidate.deviceId || verification.effectiveSinkId !== candidate.deviceId ||
+      verification.candidateGeneration !== candidate.candidateGeneration ||
+      verification.deviceListGeneration !== candidate.deviceListGeneration || !verification.verifiedAt) {
+    throw uiError('testRequiredBeforeSave', 'The current candidate must pass its output test before it can be saved.');
+  }
   if (!Number.isSafeInteger(operationToken) || operationToken <= 0) throw uiError('operationInvalid', 'The confirmation operation token is invalid.');
 
   const waiterEntries = Object.entries(pendingRequest.waiters || {})
     .map(([key, value]) => [key, Object.freeze({ ...(value || {}) })]);
   const candidateSnapshot = Object.freeze({
     ...candidate,
-    compatibility: Object.freeze({ ...(candidate.compatibility || {}) })
+    compatibility: Object.freeze({ ...(candidate.compatibility || {}) }),
+    testVerification: Object.freeze({ ...verification })
   });
   const requestSnapshot = Object.freeze({
     ...pendingRequest,

@@ -1,12 +1,19 @@
 import { browserName } from '../shared/protocol.js';
 import { createI18n } from '../shared/i18n.js';
 import { createAuthorizationController } from './authorization-controller.js';
-import { compareDeviceNames, createOutputMappingCandidate, playOutputTestTone } from './authorization-workflow.js';
+import {
+  candidateTestIsCurrent,
+  compareDeviceNames,
+  createCandidateTestVerification,
+  createOutputMappingCandidate,
+  playOutputTestTone
+} from './authorization-workflow.js';
 import {
   LEGACY_OUTPUT_MAPPINGS_KEY,
   OUTPUT_MAPPINGS_KEY,
   PENDING_OUTPUT_AUTHORIZATION_KEY,
   clearBrowserOutputMappings,
+  markOutputMappingStale,
   mappingDisplayState,
   migrateOutputMappingStore,
   outputMappings,
@@ -23,6 +30,8 @@ let visibleOutputs = [];
 let candidate = null;
 let mismatchConfirmationArmed = false;
 let operationGeneration = 0;
+let candidateGeneration = 0;
+let deviceListGeneration = 0;
 let pendingRefreshRequested = false;
 let pendingRefreshPromise = null;
 let mappingRefreshRequested = false;
@@ -196,7 +205,14 @@ function selectFallbackCandidate() {
 function showCandidate(selected) {
   if (authorizationController.confirmInFlight) return;
   requirePendingRequest();
-  candidate = createOutputMappingCandidate(pendingRequest, selected, browser);
+  const selectedCandidate = createOutputMappingCandidate(pendingRequest, selected, browser);
+  const generation = ++candidateGeneration;
+  candidate = {
+    ...selectedCandidate,
+    candidateGeneration: generation,
+    deviceListGeneration,
+    testVerification: createCandidateTestVerification(selectedCandidate, generation, deviceListGeneration)
+  };
   mismatchConfirmationArmed = false;
   elements.candidateWindows.textContent = candidate.windowsEndpointName;
   elements.candidateBrowser.textContent = candidate.browserLabel || i18n.t('browserNameUnavailable');
@@ -209,12 +225,38 @@ function showCandidate(selected) {
 
 async function testCandidate() {
   if (!candidate) return;
+  const candidateAtStart = candidate;
+  const identity = createCandidateTestVerification(candidateAtStart, candidateAtStart.candidateGeneration,
+    candidateAtStart.deviceListGeneration, 'testing');
+  candidate = { ...candidateAtStart, testVerification: identity };
   elements.testCandidate.disabled = true;
+  elements.confirmCandidate.disabled = true;
+  setStatus(i18n.t('testBinding', candidateAtStart.browserLabel || i18n.t('browserNameUnavailable')));
   try {
-    await playOutputTestTone(candidate.deviceId);
-    setStatus(i18n.t('testComplete'));
-  } catch (error) { setStatus(i18n.t('testFailed', localizedError(error))); }
-  finally { elements.testCandidate.disabled = false; }
+    const result = await playOutputTestTone(candidateAtStart.deviceId, { mediaDevices: navigator.mediaDevices });
+    if (!candidateIdentityMatches(candidate, identity)) {
+      setStatus(i18n.t('deviceListChanged'));
+      return;
+    }
+    candidate = {
+      ...candidate,
+      testVerification: createCandidateTestVerification(candidate, identity.candidateGeneration,
+        identity.deviceListGeneration, 'verified', result.effectiveSinkId, new Date().toISOString())
+    };
+    setStatus(i18n.t('testVerified'));
+  } catch (error) {
+    if (candidateIdentityMatches(candidate, identity)) {
+      candidate = {
+        ...candidate,
+        testVerification: createCandidateTestVerification(candidate, identity.candidateGeneration,
+          identity.deviceListGeneration, 'failed')
+      };
+    }
+    setStatus(i18n.t('testFailed', localizedError(error)));
+  } finally {
+    elements.testCandidate.disabled = false;
+    elements.confirmCandidate.disabled = authorizationController.confirmInFlight;
+  }
 }
 
 async function confirmCandidate() {
@@ -224,6 +266,10 @@ async function confirmCandidate() {
   if (!candidateAtStart || !requestAtStart) return;
   if (authorizationController.confirmInFlight) {
     setStatus(i18n.t('savingMapping'));
+    return;
+  }
+  if (!candidateTestIsCurrent(candidateAtStart)) {
+    setStatus(i18n.t('testRequiredBeforeSave'));
     return;
   }
   if (candidateAtStart.compatibility.level === 'warning' && !mismatchConfirmationArmed) {
@@ -290,6 +336,7 @@ function setConfirmationBusy(busy) {
 function resetCandidate(force = false) {
   if (authorizationController.confirmInFlight && !force) return;
   candidate = null;
+  candidateGeneration++;
   mismatchConfirmationArmed = false;
   elements.candidatePanel.classList.add('hidden');
 }
@@ -302,6 +349,14 @@ function cancelCandidate() {
 
 async function refreshVisibleDevices(deviceChanged) {
   visibleOutputs = physicalOutputDevices(await navigator.mediaDevices.enumerateDevices());
+  deviceListGeneration++;
+  if (candidate) {
+    candidate = {
+      ...candidate,
+      deviceListGeneration,
+      testVerification: createCandidateTestVerification(candidate, candidate.candidateGeneration, deviceListGeneration)
+    };
+  }
   elements.fallbackDevices.replaceChildren();
   for (const device of visibleOutputs) {
     const option = document.createElement('option');
@@ -380,9 +435,32 @@ function actionButton(key, action, className = '') {
 
 async function testExistingMapping(mapping) {
   try {
-    await playOutputTestTone(mapping.deviceId);
+    await playOutputTestTone(mapping.deviceId, { mediaDevices: navigator.mediaDevices });
     setStatus(i18n.t('existingTestComplete', mapping.windowsEndpointName));
-  } catch (error) { setStatus(i18n.t('existingTestFailed', localizedError(error))); }
+  } catch (error) {
+    if (['sinkMismatch', 'sinkUnavailable'].includes(error?.uiMessageKey)) {
+      const store = await loadMappingStore();
+      await chrome.storage.local.set({
+        [OUTPUT_MAPPINGS_KEY]: markOutputMappingStale(store, browser, mapping.windowsEndpointId,
+          error.uiMessageKey === 'sinkMismatch' ? 'sink-mismatch' : 'device-id-not-visible')
+      });
+      try {
+        await chrome.runtime.sendMessage({ type: 'authorization.mappingChanged', action: 'stale', browser,
+          windowsEndpointId: mapping.windowsEndpointId });
+      } catch { /* the persisted stale state remains authoritative */ }
+      await renderMappings();
+      setStatus(i18n.t('existingMappingInvalidated', localizedError(error)));
+      return;
+    }
+    setStatus(i18n.t('existingTestFailed', localizedError(error)));
+  }
+}
+
+function candidateIdentityMatches(current, identity) {
+  return Boolean(current && identity && current.browser === identity.browser &&
+    current.windowsEndpointId === identity.windowsEndpointId && current.deviceId === identity.deviceId &&
+    current.candidateGeneration === identity.candidateGeneration &&
+    current.deviceListGeneration === identity.deviceListGeneration);
 }
 
 function editMapping(mapping) {

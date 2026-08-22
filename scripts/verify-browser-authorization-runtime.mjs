@@ -91,7 +91,11 @@ async function main() {
         const candidate = {
           browser, windowsEndpointId: endpointId, windowsEndpointName: 'CDP Runtime USB DAC',
           deviceId, browserLabel: 'CDP Runtime USB DAC ' + generation, browserGroupId: 'cdp-group',
-          compatibility: { level: 'match', message: 'runtime test' }
+          compatibility: { level: 'match', message: 'runtime test' },
+          candidateGeneration: generation, deviceListGeneration: generation,
+          testVerification: { status: 'verified', browser, windowsEndpointId: endpointId, deviceId,
+            effectiveSinkId: deviceId, candidateGeneration: generation, deviceListGeneration: generation,
+            verifiedAt: new Date().toISOString() }
         };
         return controller.confirm(candidate, request, ++token);
       }

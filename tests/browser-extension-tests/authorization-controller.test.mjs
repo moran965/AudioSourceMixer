@@ -10,12 +10,19 @@ import {
   createConfirmationSnapshot
 } from '../../src/AudioSourceMixer.BrowserExtension/output-authorization/authorization-controller.js';
 
-function candidate(endpointId = 'endpoint-a') {
-  return {
+function candidate(endpointId = 'endpoint-a', testStatus = 'verified') {
+  const selected = {
     browser: 'edge', windowsEndpointId: endpointId, windowsEndpointName: '扬声器 A',
     browserLabel: 'Speakers A', browserGroupId: 'group-a', deviceId: 'device-a',
-    authorizedAt: '2026-08-14T00:00:00.000Z', compatibility: { level: 'likely', messageCode: 'compatLikely' }
+    authorizedAt: '2026-08-14T00:00:00.000Z', compatibility: { level: 'likely', messageCode: 'compatLikely' },
+    candidateGeneration: 3, deviceListGeneration: 7
   };
+  return { ...selected, testVerification: {
+    status: testStatus, browser: selected.browser, windowsEndpointId: selected.windowsEndpointId,
+    deviceId: selected.deviceId, effectiveSinkId: testStatus === 'verified' ? selected.deviceId : '',
+    candidateGeneration: selected.candidateGeneration, deviceListGeneration: selected.deviceListGeneration,
+    verifiedAt: testStatus === 'verified' ? '2026-08-14T00:00:01.000Z' : null
+  } };
 }
 
 function request(endpointId = 'endpoint-a', waiterIds = ['edge:1', 'edge:2']) {
@@ -207,6 +214,22 @@ test('invalid or mismatched transient state is rejected before storage mutation'
   assert.equal(state.localWrites, 0);
   assert.equal(state.sessionWrites, 0);
   assert.equal(state.notifications, 0);
+});
+
+test('confirmation rejects untested, failed, stale-generation, and wrong-device verification proofs', async () => {
+  for (const selected of [
+    candidate('endpoint-a', 'untested'),
+    candidate('endpoint-a', 'failed'),
+    { ...candidate(), deviceListGeneration: 8 },
+    { ...candidate(), testVerification: { ...candidate().testVerification, effectiveSinkId: 'default' } }
+  ]) {
+    const { controller, state } = harness();
+    await assert.rejects(controller.confirm(selected, request(), 10),
+      (error) => error.uiMessageKey === 'testRequiredBeforeSave');
+    assert.equal(state.localWrites, 0);
+    assert.equal(state.sessionWrites, 0);
+    assert.equal(state.notifications, 0);
+  }
 });
 
 test('handled notification failures do not emit unhandledRejection', async () => {
