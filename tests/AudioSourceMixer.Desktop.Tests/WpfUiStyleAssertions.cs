@@ -7,6 +7,7 @@ using System.Windows.Automation.Provider;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Markup;
 using System.Windows.Media;
 using System.Windows.Threading;
 using AudioSourceMixer.Desktop.Localization;
@@ -30,7 +31,111 @@ internal static class WpfUiStyleAssertions
     {
         AssertTypography(app, window);
         AssertUserVisibleTextSources();
+        await AssertComboBoxSelectionPresentationAsync(app, window, viewModel);
         await AssertCheckBoxTemplateAndHitRangeAsync(app, window, viewModel);
+    }
+
+    private static async Task AssertComboBoxSelectionPresentationAsync(App app, MainWindow window, MainViewModel viewModel)
+    {
+        window.Width = 1240;
+        window.Height = 820;
+        window.SelectSettingsPage();
+        await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.Render);
+
+        var language = window.SettingsPage.LanguageSelector;
+        var originalLanguage = viewModel.SelectedLanguage;
+        try
+        {
+            viewModel.SelectedLanguage = LocalizationService.ChineseLanguage;
+            await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.Render);
+            Assert.Equal(LocalizationService.ChineseLanguage, language.SelectedValue);
+            AssertSelectionText(language, "简体中文");
+
+            viewModel.SelectedLanguage = LocalizationService.EnglishLanguage;
+            await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.Render);
+            Assert.Equal(LocalizationService.EnglishLanguage, language.SelectedValue);
+            AssertSelectionText(language, "English");
+            Assert.Equal(2, language.Items.Count);
+            Assert.All(language.Items.Cast<LanguageOption>(), option => Assert.False(string.IsNullOrWhiteSpace(option.DisplayName)));
+
+            language.IsDropDownOpen = true;
+            await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.Render);
+            Assert.True(language.IsDropDownOpen);
+            RaiseKey(language, Key.Escape, UIElement.KeyDownEvent);
+            Assert.False(language.IsDropDownOpen);
+        }
+        finally
+        {
+            viewModel.SelectedLanguage = originalLanguage;
+            await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.Render);
+        }
+
+        window.SelectMixerPage();
+        await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.ApplicationIdle);
+        var outputSelector = Assert.Single(Descendants(window).OfType<ComboBox>()
+            .Where(comboBox => System.Windows.Automation.AutomationProperties.GetName(comboBox) == LocalizationService.Current["Card.OutputDevice"]));
+        AssertSelectionText(outputSelector, viewModel.Sources.Single().SelectedOutputDevice!.Name);
+
+        var equalizedSource = Assert.Single(viewModel.Sources.Where(source => source.SupportsEqualizer));
+        var wasExpanded = equalizedSource.IsEqualizerExpanded;
+        try
+        {
+            equalizedSource.IsEqualizerExpanded = true;
+            await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.Render);
+            var presetSelector = Assert.Single(Descendants(window).OfType<ComboBox>()
+                .Where(comboBox => System.Windows.Automation.AutomationProperties.GetName(comboBox) == LocalizationService.Current["Equalizer.PresetAutomation"]));
+            var selectedPreset = equalizedSource.EqualizerPresets.Single(preset => preset.Id == equalizedSource.SelectedEqualizerPresetId);
+            AssertSelectionText(presetSelector, selectedPreset.Name);
+        }
+        finally
+        {
+            equalizedSource.IsEqualizerExpanded = wasExpanded;
+        }
+
+        var template = Assert.IsType<DataTemplate>(XamlReader.Parse(
+            "<DataTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'><TextBlock Text='{Binding DisplayName}'/></DataTemplate>"));
+        var stringSelector = new ComboBox { ItemsSource = new[] { "Plain string" }, SelectedIndex = 0 };
+        var templatedSelector = new ComboBox { ItemsSource = viewModel.LanguageOptions, ItemTemplate = template, SelectedIndex = 1 };
+        var host = new Window
+        {
+            Left = -10000,
+            Top = -10000,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            Width = 360,
+            Height = 160,
+            Content = new StackPanel { Children = { stringSelector, templatedSelector } }
+        };
+        try
+        {
+            host.Show();
+            await app.Dispatcher.InvokeAsync(host.UpdateLayout, DispatcherPriority.Render);
+            AssertSelectionText(stringSelector, "Plain string");
+            AssertSelectionText(templatedSelector, "English");
+        }
+        finally { host.Close(); }
+    }
+
+    private static void AssertSelectionText(ComboBox comboBox, string expected)
+    {
+        comboBox.ApplyTemplate();
+        comboBox.UpdateLayout();
+        var presenter = Descendants(comboBox).OfType<ContentPresenter>()
+            .FirstOrDefault(candidate => Equals(candidate.Content, comboBox.SelectionBoxItem));
+        Assert.NotNull(presenter);
+        var visibleText = string.Join("", Descendants(presenter!).Select(element => element switch
+        {
+            TextBlock text => text.Text,
+            AccessText access => access.Text,
+            _ => string.Empty
+        }));
+        Assert.False(string.IsNullOrWhiteSpace(visibleText),
+            $"Selection did not render. Content={presenter!.Content}; SelectionBoxItem={comboBox.SelectionBoxItem}; " +
+            $"SelectedValue={comboBox.SelectedValue}; SelectedIndex={comboBox.SelectedIndex}; Items={comboBox.Items.Count}; " +
+            $"ItemValues={string.Join('|', comboBox.Items.Cast<object>().Select(item => item))}; " +
+            $"DataContext={comboBox.DataContext}; SelectionTemplate={comboBox.SelectionBoxItemTemplate}; " +
+            $"ItemTemplate={comboBox.ItemTemplate}; DisplayMemberPath={comboBox.DisplayMemberPath}.");
+        Assert.Contains(expected, visibleText, StringComparison.Ordinal);
     }
 
     private static void AssertTypography(App app, MainWindow window)

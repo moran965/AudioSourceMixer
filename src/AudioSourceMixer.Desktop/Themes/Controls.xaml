@@ -177,9 +177,14 @@
                                             BorderThickness="{Binding BorderThickness, RelativeSource={RelativeSource AncestorType=ComboBox}, Mode=OneWay}" CornerRadius="7">
                                         <Grid>
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="30"/></Grid.ColumnDefinitions>
-                                            <TextBlock Margin="{Binding Padding, RelativeSource={RelativeSource AncestorType=ComboBox}, Mode=OneWay}"
-                                                       Text="{Binding SelectedItem.Name, RelativeSource={RelativeSource AncestorType=ComboBox}, Mode=OneWay}"
-                                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                            <ContentPresenter Margin="{Binding Padding, RelativeSource={RelativeSource AncestorType=ComboBox}, Mode=OneWay}"
+                                                              Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}, Mode=OneWay}"
+                                                              ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}, Mode=OneWay}"
+                                                              ContentStringFormat="{Binding SelectionBoxItemStringFormat, RelativeSource={RelativeSource AncestorType=ComboBox}, Mode=OneWay}"
+                                                              ContentTemplateSelector="{Binding ItemTemplateSelector, RelativeSource={RelativeSource AncestorType=ComboBox}, Mode=OneWay}"
+                                                              RecognizesAccessKey="True" IsHitTestVisible="False"
+                                                              TextElement.Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBox}, Mode=OneWay}"
+                                                              VerticalAlignment="Center"/>
                                             <Path Grid.Column="1" Data="M 0,0 L 4,4 L 8,0" Stroke="{DynamicResource TextSecondaryBrush}"
                                                   StrokeThickness="1.5" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Grid>

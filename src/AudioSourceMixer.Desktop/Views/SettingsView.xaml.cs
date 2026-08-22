@@ -6,4 +6,5 @@ public partial class SettingsView : System.Windows.Controls.UserControl
 {
     public SettingsView() => InitializeComponent();
     internal ScrollViewer PageScrollViewer => SettingsScrollViewer;
+    internal System.Windows.Controls.ComboBox LanguageSelector => LanguageComboBox;
 }

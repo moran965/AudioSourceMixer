@@ -36,4 +36,10 @@ public sealed class EqualizerBandViewModel : ObservableObject
     }
 }
 
-public sealed record EqualizerPresetOption(string Id, string Name);
+public sealed class EqualizerPresetOption(string id, string name) : ObservableObject
+{
+    private string _name = name;
+    public string Id { get; } = id;
+    public string Name => _name;
+    internal void UpdateName(string value) => Set(ref _name, value, nameof(Name));
+}

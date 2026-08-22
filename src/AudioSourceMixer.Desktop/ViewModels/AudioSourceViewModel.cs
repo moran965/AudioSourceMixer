@@ -34,6 +34,7 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     private readonly AsyncDebouncer _volumeDebouncer = new(TimeSpan.FromMilliseconds(60));
     private readonly AsyncDebouncer _balanceDebouncer = new(TimeSpan.FromMilliseconds(60));
     private readonly AsyncDebouncer _equalizerDebouncer = new(TimeSpan.FromMilliseconds(60));
+    private readonly ObservableCollection<EqualizerPresetOption> _equalizerPresets = [];
     private CancellationTokenSource? _routeCancellation;
     private Task _routeTask = Task.CompletedTask;
     private AudioSourceSnapshot _snapshot;
@@ -86,6 +87,8 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
         _balancePercent = snapshot.Balance * 100;
         _muted = snapshot.Muted;
         _effects = EqualizerCatalog.Normalize(snapshot.Effects);
+        foreach (var preset in EqualizerCatalog.Presets)
+            _equalizerPresets.Add(new EqualizerPresetOption(preset.Id, PresetName(preset.Id)));
         _iconSource = ProcessIconProvider.Fallback(snapshot.Kind);
         _preferredOutputDeviceId = string.IsNullOrWhiteSpace(snapshot.RequestedOutputDeviceId) && snapshot.Kind != AudioSourceKind.WindowsSession
             ? snapshot.OutputDeviceId : snapshot.RequestedOutputDeviceId;
@@ -182,8 +185,7 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     public Visibility GainWarningVisibility => string.IsNullOrWhiteSpace(GainWarning) ? Visibility.Collapsed : Visibility.Visible;
     public Visibility EqualizerVisibility => SupportsEqualizer ? Visibility.Visible : Visibility.Collapsed;
     public ObservableCollection<EqualizerBandViewModel> EqualizerBands { get; } = [];
-    public IReadOnlyList<EqualizerPresetOption> EqualizerPresets => EqualizerCatalog.Presets
-        .Select(preset => new EqualizerPresetOption(preset.Id, PresetName(preset.Id))).ToArray();
+    public IReadOnlyList<EqualizerPresetOption> EqualizerPresets => _equalizerPresets;
     public string EqualizerSummary => !_effects.Enabled ? _localization["Source.EffectsOff"] : _localization.Format("Source.EffectsPreset", PresetName(_effects.PresetId));
     public string EqualizerHeadroomText => !_effects.Enabled ? _localization["Source.EffectsBypassed"] :
         _localization.Format("Source.Headroom", EqualizerCatalog.EffectiveHeadroomDb(_effects));
@@ -600,7 +602,8 @@ public sealed class AudioSourceViewModel : ObservableObject, IDisposable
     {
         UpdateOutputDevices(OutputDevices.ToArray());
         Raise(nameof(SourceTypeLabel));
-        Raise(nameof(EqualizerPresets));
+        foreach (var option in _equalizerPresets)
+            option.UpdateName(PresetName(option.Id));
         RaiseAllDisplayProperties();
     }
 

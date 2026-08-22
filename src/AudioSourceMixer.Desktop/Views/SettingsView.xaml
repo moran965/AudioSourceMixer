@@ -16,7 +16,7 @@
                     </StackPanel>
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                         <TextBlock Text="{l:Loc Key=Settings.LanguageLabel}" Style="{DynamicResource CaptionTextStyle}" Margin="0,0,0,5"/>
-                        <ComboBox Width="180" ItemsSource="{Binding LanguageOptions, Mode=OneWay}" DisplayMemberPath="DisplayName"
+                        <ComboBox x:Name="LanguageComboBox" Width="180" ItemsSource="{Binding LanguageOptions, Mode=OneWay}" DisplayMemberPath="DisplayName"
                                   SelectedValuePath="Code" SelectedValue="{Binding SelectedLanguage, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                   AutomationProperties.Name="{l:Loc Key=Settings.LanguageAutomation}"/>
                     </StackPanel>
