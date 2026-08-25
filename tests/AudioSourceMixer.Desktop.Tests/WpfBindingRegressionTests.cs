@@ -69,6 +69,7 @@ public sealed class WpfBindingRegressionTests
 
     private static void RunWpfTestAsync(TaskCompletionSource completion)
     {
+        Exception? failure = null;
         try
         {
             var app = new App();
@@ -78,19 +79,25 @@ public sealed class WpfBindingRegressionTests
                 try
                 {
                     await ExecuteAssertionsAsync(app);
-                    completion.TrySetResult();
                 }
                 catch (Exception exception)
                 {
-                    completion.TrySetException(exception);
+                    failure = exception;
                 }
                 finally
                 {
-                    app.Shutdown();
-                    app.Dispatcher.InvokeShutdown();
+                    // Begin shutdown after the async dispatcher callback has returned. Calling
+                    // Application.Shutdown followed by synchronous InvokeShutdown from inside
+                    // that callback can leave the hosted Windows runner's dispatcher frame alive.
+                    app.Dispatcher.BeginInvokeShutdown(DispatcherPriority.Send);
                 }
             });
             Dispatcher.Run();
+
+            if (failure is null)
+                completion.TrySetResult();
+            else
+                completion.TrySetException(failure);
         }
         catch (Exception exception)
         {
