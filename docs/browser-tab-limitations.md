@@ -15,4 +15,6 @@
 
 Node 测试验证多 endpoint/多 waiter 授权队列、每标签页 generation、service worker 恢复入口、track 立即停止、200% gain、十段 EQ/预设/headroom、双图隔离、sink 匹配/不匹配、安全重绑定、deviceId 失效和资源关闭。隔离 profile 的 Chrome/Edge 真实引擎测试用 OfflineAudioContext 客观验证频响、0.5 主音量比例和单声道无泄漏。浏览器 API 或离线渲染仍不能代替人耳确认物理声卡实际出声。
 
-0.1.2 曾在 Chrome 151 开发者模式手工加载固定 ID 扩展，并以 440/880 Hz 两个真实标签完成 action/tabCapture、具体 Realtek/WH deviceId、双 sink、独立音量/平衡/暂停、20 次交替路由、停止单图、service worker Reload/重连及蓝牙断连/重连恢复。这是历史 API 证据。v1.0.0 使用隔离临时 profile 和 CDP 验证中英授权页、offscreen 图及 service worker 无运行时错误，但不会接管或改写正在使用的个人浏览器配置。action/tabCapture 物理听音、Realtek/WH 授权与双 sink 仍需用户完成；API 的精确 sinkId 与 Windows 会话 endpoint 读回不能替代真人听感，DRM、受保护内容、页面导航、全屏、休眠/丢弃标签页也仍以人工硬件矩阵为准。
+0.1.2 曾在 Chrome 151 开发者模式手工加载固定 ID 扩展，并以 440/880 Hz 两个真实标签完成 action/tabCapture、具体 Realtek/WH deviceId、双 sink、独立音量/平衡/暂停、20 次交替路由、停止单图、service worker Reload/重连及蓝牙断连/重连恢复。这是历史 API 证据。v1.0.0 使用隔离临时 profile 和 CDP 验证中英授权页、offscreen 图及 service worker 无运行时错误，并在不更改 Windows 默认设备的前提下，以 Core Audio 端点电平确认 Chrome/Edge 的默认耳机与非默认扬声器两个方向出现互斥峰值；自动报告仍如实保留 `humanListeningConfirmed: false`。
+
+维护者于 2026-08-25 另行人工确认当前浏览器增强模式在日常使用中可正常工作。该人工验收与 2026-08-22 自动端点报告是两份独立证据，不表示所有蓝牙断连/重连、DRM、受保护内容、页面导航、全屏、休眠/丢弃标签页、驱动或硬件组合均已覆盖。API 的精确 sinkId 和端点电平仍不能替代对每一种环境的人工听感验收。

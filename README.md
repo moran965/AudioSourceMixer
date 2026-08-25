@@ -21,7 +21,9 @@ Audio Source Mixer is an open-source Windows audio utility for per-application a
 
 Download `AudioSourceMixer-1.0.0-win-x64-setup.exe` only from this repository's [GitHub Releases](../../releases). Do not download repackaged installers from third-party sites. The per-user installer needs no administrator rights and defaults to `%LocalAppData%\Programs\AudioSourceMixer`.
 
-Official binary releases are published only after trusted Authenticode signing. Check the Publisher shown by Windows and verify both signature and SHA-256 as described below. A source-only or Draft release is not an official binary release.
+The initial v1.0.0 installer uses a transparently documented unsigned fallback while free trusted signing through SignPath Foundation is being prepared. Windows may show an unknown publisher or SmartScreen warning. Download only from this repository's Release page, verify `SHA256SUMS.txt`, and verify GitHub Artifact Attestation before running it. GitHub provenance identifies the source workflow and commit; it is not Authenticode and does not create a Windows Publisher identity.
+
+See the bilingual [Code signing policy](CODE_SIGNING_POLICY.md) for SignPath roles, build provenance, approval rules, and the initial unsigned fallback.
 
 There is no portable edition. GitHub's automatically generated “Source code (zip)” and “Source code (tar.gz)” files are source archives, not runnable portable builds.
 
@@ -53,7 +55,7 @@ Verify Authenticode status, publisher, and timestamp:
 Get-AuthenticodeSignature .\AudioSourceMixer-1.0.0-win-x64-setup.exe | Format-List Status,SignerCertificate,TimeStamperCertificate
 ```
 
-The expected status for an official binary Release is `Valid`. A valid signature does not guarantee immediate SmartScreen reputation for a new publisher.
+For the initial v1.0.0 unsigned fallback, the expected Authenticode status is `NotSigned`; the Release notes must show the same status. Future trusted releases will identify their real signer and timestamp. A valid signature would still not guarantee immediate SmartScreen reputation for a new publisher.
 
 ## Build and test
 

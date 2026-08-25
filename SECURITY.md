@@ -12,4 +12,4 @@ Include the affected version/commit, impact, reproduction prerequisites, and a m
 
 The maintainer will acknowledge a report when available, investigate it, and coordinate disclosure. No fixed response time or bounty is promised. Do not test against systems or accounts you do not own or have permission to use.
 
-Official binary releases require a valid trusted Authenticode signature and published SHA-256. Report a missing/invalid signature or unexpected publisher privately before running the file.
+Binary releases disclose their actual Authenticode state and publish SHA-256 plus GitHub Artifact Attestation. The initial v1.0.0 release may use the explicitly approved unsigned fallback and therefore show `NotSigned`/unknown publisher; this must be stated prominently on the matching Release page. GitHub provenance is not Authenticode. Report any signature state, publisher, hash, or provenance that differs from the Release description before running the file.

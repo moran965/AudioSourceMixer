@@ -28,6 +28,16 @@ The automated suite covers:
 - strict Release publish → installer runtime payload → installed file allowlist and SHA-256 equality;
 - fresh Chinese and English install, default/space/Chinese paths, repair, injected rollback, startup on/off, background tray, Native Messaging registration, no-argument localized uninstaller, running-app uninstall, preserve/delete user data, and 0.2.2 → 1.0.0 settings-preserving upgrade.
 
+## Maintainer-only browser and audio tools
+
+These tools are intentionally kept out of CI because they require a visible desktop, installed browsers, user gestures, or specific physical endpoints. Their reports belong under the ignored `artifacts/` directory and must not contain raw device identifiers.
+
+- `tools/browser-route-matrix/server.mjs` serves two user-started deterministic tone tabs for manual independent-tab routing checks: `node .\tools\browser-route-matrix\server.mjs 8765`, then open `http://127.0.0.1:8765/?label=A&frequency=440` and `http://127.0.0.1:8765/?label=B&frequency=880`.
+- `scripts/browser-sink-hardware-probe.mjs` exercises the extension's strict authorization test-tone path through an isolated Chromium debugging port. Pass only local label fragments on the command line and publish only hashed endpoint evidence.
+- `scripts/verify-browser-management-pages.ps1` invokes the real WPF Chrome/Edge setup buttons with Windows UI Automation and confirms the actual management-page addresses. It is a desktop interaction check, not a headless unit test.
+- `AudioSourceMixer.CapabilityProbe` supplies the controlled WaveOut source and Core Audio endpoint-meter sampling used by live-meter and installer verification. It is part of the solution and must remain buildable.
+- `tests/audio/short-loop.wav` is the only checked-in audio fixture. It is deterministic synthetic PCM used by `scripts/common.ps1` and `scripts/verify-installer.ps1`; regenerate it with `scripts/generate-test-audio.ps1`.
+
 ## Bilingual UI capture
 
 Run the installed Release executable with the diagnostic source set:
@@ -43,16 +53,20 @@ Each language capture includes ordinary and long browser sources, expanded EQ, b
 
 ## Release result
 
-Final verification was completed on 2026-08-22 on Windows 11 x64:
+Local QA verification was completed on 2026-08-22 on Windows 11 x64. These values identify that local candidate only; they are not permanent hashes for files rebuilt by GitHub Actions. The sole checksum authority for a published download is `SHA256SUMS.txt` attached to the same GitHub Release.
 
 - Release restore/build: exit 0, 0 warnings, 0 errors.
 - .NET tests: 151/151 passed (Core 93, Native Host 2, Windows Audio 15, Desktop/WPF 29, Installer 12). Test projects run serially so independent WPF hosts cannot steal keyboard focus from one another.
-- browser-extension Node tests: 48/48 passed. Chrome and Edge Web Audio EQ checks passed (`volumeRatio=0.5`, `leftLeakRatio=0`); each browser completed four authorization operations with zero runtime exceptions, log errors, unhandled rejections, or service-worker errors.
+- browser-extension Node tests: 56/56 passed. Chrome and Edge Web Audio EQ checks passed (`volumeRatio=0.5`, `leftLeakRatio=0`); each browser completed four authorization operations with zero runtime exceptions, log errors, unhandled rejections, or service-worker errors.
 - source Release UI smoke: exit 0. Its real WaveOut meter run collected 71 samples, reached a raw/smoothed peak of 0.3662 and a 49.33-DIP indicator, then returned to zero.
 - bilingual screenshot capture: 13 final PNGs per language in `artifacts/ui-1.0.0-zh-CN` and `artifacts/ui-1.0.0-en-US`; real mouse/keyboard hide, restore, reorder, drag, auto-scroll, Drop, and Escape runs produced eight captures per language in the matching `ui-interaction-1.0.0-*-installed` directories.
 - installer matrix: exit 0. All 24 recorded gates passed, including fresh zh-CN/en-US installs, default/space/Chinese paths, same-version repair, injected rollback, startup/background modes, localized no-argument and silent uninstall, preserve/delete user data, running-app uninstall, browser setup, and 0.2.2 → 1.0.0 migration.
 - normal installed launch used a controlled WaveOut source and completed with `WindowShown=True; Sources=13; MaterializedItems=13`; the installed live meter collected 72 samples, reached 0.3662/49.33 DIP, returned to zero, and exited through the normal audio-restore path.
-- Release publish, installer payload, and installed `AudioSourceMixer.exe` SHA-256: `DEEEA7F9959B91AC8EFC3A0599A75A623773E6D7945FC46CC4BBFA1672EC932A` (all equal). The installed runtime allowlist contains 33 files.
-- final setup: `artifacts/AudioSourceMixer-1.0.0-win-x64-setup.exe`, 257,293,921 bytes, SHA-256 `F76CF0018B0D951CE36FE76942494451E2F0A4395588C1600F08DA82713021E7`.
+- Local Release publish, installer payload, and installed `AudioSourceMixer.exe` SHA-256: `23FFE8CF79FBF09033CE4E2AA8015C01A83D25446566D0D57FA94FFA2E8A1EBF` (all equal). The installed runtime allowlist contains 33 files.
+- Local QA setup: `artifacts/AudioSourceMixer-1.0.0-win-x64-setup.exe`, 257,298,017 bytes, SHA-256 `3C9E1E88920E76F1D71B5D6FF465C52264F9DF09A2F8033F960445F1524B92F2`, Authenticode `NotSigned`.
 
-The machine-readable source of truth is `artifacts/AudioSourceMixer-1.0.0-build-manifest.json`. It contains the publish/payload/installed inventories and each installer verification result.
+The local machine-readable evidence is `artifacts/AudioSourceMixer-1.0.0-build-manifest.json`. It contains the publish/payload/installed inventories and each installer verification result, but it is intentionally not committed or uploaded as a release asset.
+
+## Maintainer hands-on acceptance
+
+On 2026-08-25 the maintainer separately confirmed that the current browser-enhancement mode works in normal use. This acceptance covers the enabled extension's user-facing mixing and output-routing flow on the maintainer's current setup. It does not retroactively change `humanListeningConfirmed: false` in the 2026-08-22 automated endpoint-meter reports, and it does not claim exhaustive disconnect/reconnect, DRM, driver, browser-lifecycle, or hardware-combination coverage.

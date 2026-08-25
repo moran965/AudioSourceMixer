@@ -8,15 +8,17 @@ Only a human maintainer may approve a release. The version is centralized in `Di
 2. Release restore/build with zero warnings and errors; all .NET and Node tests pass.
 3. Bilingual WPF UI smoke and installer/uninstaller matrices pass, including default/custom paths, repair, running-app uninstall, Native Messaging cleanup, and the supported previous-version upgrade.
 4. Chrome and Edge authorization pages have no console/service-worker/unhandled errors.
-5. Hands-on hardware matrix proves default headphones → non-default speakers without changing the Windows default, disconnect/reconnect and reauthorization, saved mapping retest, and independent multi-tab routes. API `sinkId` equality is necessary but is not physical-output proof.
+5. Maintainer acceptance records the exact physical-output scope tested. API `sinkId` equality is necessary but is not physical-output proof, and untested disconnect/reconnect, DRM, lifecycle, driver, and hardware combinations remain disclosed limitations.
 6. Repository, license, privacy, runtime allowlist, and secret audits pass.
-7. Every installed PE and the final setup are signed by a trusted Authenticode publisher with SHA-256 and an RFC 3161 timestamp; signatures are rechecked after installation.
+7. The selected signing mode is verified exactly: trusted modes require every installed PE and the final setup to be `Valid` with a real signer and RFC 3161 timestamp; the manually approved unsigned fallback requires every relevant PE to be `NotSigned` and prominent bilingual risk disclosure.
 
-If trusted signing credentials are unavailable, the source repository may be public and a Draft Release may be prepared, but no unsigned setup is uploaded or published as an official 1.0.0 binary.
+SignPath Foundation is the preferred free trusted-signing path. Its OSS conditions require an already released project and human application/approval, so it must not indefinitely block the first release. If no free trusted signing is immediately available, v1.0.0 may be published unsigned only through the workflow's explicit `unsigned` selection, boolean opt-in, exact risk-confirmation text, and maintainer-approved `release` environment. The release must warn that Windows may show an unknown publisher or SmartScreen prompt, and that GitHub Artifact Attestation is not Authenticode. A later trusted binary must use a new patch version rather than silently replacing v1.0.0 assets.
+
+The public [Code signing policy](../CODE_SIGNING_POLICY.md) identifies the actual GitHub account roles, privacy links, automated-build boundary, and human approval rules required by the SignPath Foundation OSS program.
 
 ## GitHub workflow
 
-`.github/workflows/release.yml` runs only for `v*` tags or an explicit manual dispatch. It fails closed when the signing environment is not configured. The signing job uses OIDC and Azure Artifact Signing, signs internal desktop/native-host executables before packaging, signs the final installer afterwards, verifies signatures, creates `SHA256SUMS.txt`, generates an SPDX SBOM, creates GitHub build provenance, and uploads only release-approved files.
+`.github/workflows/release.yml` runs only by explicit manual dispatch for an existing annotated tag. Inputs bind the tag, hardware attestation, publish decision, signing mode, unsigned opt-in, and an exact risk-confirmation phrase. `signpath` is enabled only after a real SignPath Foundation configuration exists; `azure` remains an optional future OIDC path and must not create paid resources; `unsigned` fails unless its acknowledgements match exactly. Every mode rebuilds and tests the tag, scans the complete history, creates `SHA256SUMS.txt`, an SPDX JSON SBOM and GitHub build provenance, and dynamically records the actual signature state and final hash.
 
 The release environment should require human approval. Protect `main` and `v*` tags, forbid force pushes/deletion, and require CI. Fork pull requests never receive signing credentials.
 

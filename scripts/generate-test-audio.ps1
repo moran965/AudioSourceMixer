@@ -23,10 +23,5 @@ function Write-Wave([string] $Name, [int] $Channels, [scriptblock] $SampleFactor
     } finally { $writer.Dispose(); $stream.Dispose() }
 }
 
-Write-Wave 'stereo-440-left-880-right.wav' 2 { param($i,$rate) @([Math]::Sin(2*[Math]::PI*440*$i/$rate), [Math]::Sin(2*[Math]::PI*880*$i/$rate)) }
-Write-Wave 'left-only.wav' 2 { param($i,$rate) @([Math]::Sin(2*[Math]::PI*440*$i/$rate), 0) }
-Write-Wave 'right-only.wav' 2 { param($i,$rate) @(0, [Math]::Sin(2*[Math]::PI*880*$i/$rate)) }
-Write-Wave 'mono-440.wav' 1 { param($i,$rate) @([Math]::Sin(2*[Math]::PI*440*$i/$rate)) }
-Write-Wave 'silence.wav' 2 { param($i,$rate) @(0,0) }
 Write-Wave 'short-loop.wav' 2 { param($i,$rate) $tone = [Math]::Sin(2*[Math]::PI*660*$i/$rate); @($tone,$tone) }
 Write-Output "Generated test audio in $OutputDirectory"

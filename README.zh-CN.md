@@ -21,7 +21,9 @@ Audio Source Mixer 是一款开源 Windows 音频工具，可分别控制应用�
 
 只从本仓库的 [GitHub Releases](../../releases) 下载 `AudioSourceMixer-1.0.0-win-x64-setup.exe`，不要使用第三方网站重新打包的安装程序。安装器按当前用户安装，无需管理员权限，默认目录为 `%LocalAppData%\Programs\AudioSourceMixer`。
 
-只有经过受信 Authenticode 签名后才发布正式二进制版本。请检查 Windows 显示的发布者，并按下文验证签名和 SHA-256。仅源码或 Draft Release 不属于正式二进制发行。
+首次 v1.0.0 安装程序在 SignPath Foundation 免费可信签名准备期间采用透明披露的未签名回退方案。Windows 可能显示“未知发布者”或 SmartScreen 提示。请只从本仓库 Release 页面下载，运行前核对 `SHA256SUMS.txt` 并验证 GitHub Artifact Attestation。GitHub 来源证明只能关联源码工作流与提交，不是 Authenticode，也不会创建 Windows 发布者身份。
+
+SignPath 角色、构建来源、审批原则和首次未签名回退详见中英文[代码签名政策](CODE_SIGNING_POLICY.md)。
 
 本项目不提供便携版。GitHub 自动生成的 “Source code (zip)” 和 “Source code (tar.gz)” 是源码归档，不是可运行的便携程序。
 
@@ -53,7 +55,7 @@ Get-FileHash .\AudioSourceMixer-1.0.0-win-x64-setup.exe -Algorithm SHA256
 Get-AuthenticodeSignature .\AudioSourceMixer-1.0.0-win-x64-setup.exe | Format-List Status,SignerCertificate,TimeStamperCertificate
 ```
 
-正式二进制 Release 的预期状态是 `Valid`。即使签名有效，新发布者仍可能需要逐步积累 SmartScreen 信誉。
+首次 v1.0.0 未签名回退版本的预期 Authenticode 状态是 `NotSigned`，Release 说明必须与之完全一致。未来的可信签名版本会列出真实签名者和时间戳；即使签名有效，新发布者仍可能需要逐步积累 SmartScreen 信誉。
 
 ## 构建与测试
 
