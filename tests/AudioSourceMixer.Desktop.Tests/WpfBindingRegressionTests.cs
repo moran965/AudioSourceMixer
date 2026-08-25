@@ -70,6 +70,7 @@ public sealed class WpfBindingRegressionTests
     private static void RunWpfTestAsync(TaskCompletionSource completion)
     {
         Exception? failure = null;
+        var frame = new DispatcherFrame();
         try
         {
             var app = new App();
@@ -86,13 +87,13 @@ public sealed class WpfBindingRegressionTests
                 }
                 finally
                 {
-                    // Begin shutdown after the async dispatcher callback has returned. Calling
-                    // Application.Shutdown followed by synchronous InvokeShutdown from inside
-                    // that callback can leave the hosted Windows runner's dispatcher frame alive.
-                    app.Dispatcher.BeginInvokeShutdown(DispatcherPriority.Send);
+                    // This test owns the nested frame, so stop that exact frame after the async
+                    // callback returns. Application/dispatcher shutdown timing differs on hosted
+                    // Windows runners and must not determine whether the test thread can exit.
+                    frame.Continue = false;
                 }
             });
-            Dispatcher.Run();
+            Dispatcher.PushFrame(frame);
 
             if (failure is null)
                 completion.TrySetResult();
