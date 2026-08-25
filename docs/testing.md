@@ -32,6 +32,8 @@ The automated suite covers:
 
 These tools are intentionally kept out of CI because they require a visible desktop, installed browsers, user gestures, or specific physical endpoints. Their reports belong under the ignored `artifacts/` directory and must not contain raw device identifiers.
 
+The live default-endpoint/session probe in `AudioSourceMixer.WindowsAudio.Tests` follows the same rule: set `AUDIO_SOURCE_MIXER_HARDWARE_TEST=1` only on a Windows machine with an active default render endpoint. Hosted CI still runs all deterministic Windows Audio tests, but does not treat the absence of physical audio hardware as a product failure.
+
 - `tools/browser-route-matrix/server.mjs` serves two user-started deterministic tone tabs for manual independent-tab routing checks: `node .\tools\browser-route-matrix\server.mjs 8765`, then open `http://127.0.0.1:8765/?label=A&frequency=440` and `http://127.0.0.1:8765/?label=B&frequency=880`.
 - `scripts/browser-sink-hardware-probe.mjs` exercises the extension's strict authorization test-tone path through an isolated Chromium debugging port. Pass only local label fragments on the command line and publish only hashed endpoint evidence.
 - `scripts/verify-browser-management-pages.ps1` invokes the real WPF Chrome/Edge setup buttons with Windows UI Automation and confirms the actual management-page addresses. It is a desktop interaction check, not a headless unit test.

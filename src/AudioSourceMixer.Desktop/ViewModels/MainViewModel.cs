@@ -328,7 +328,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             Raise(nameof(BrowserStatusVisibility)); Reconcile(); });
     }
 
-    private void Reconcile()
+    private void Reconcile(bool updateExistingSnapshots = true)
     {
         var discovered = _windowsSources.Concat(_browserTabs.Select(ToSnapshot)).ToArray();
         EnsureRuntimeManualOrder(discovered);
@@ -342,7 +342,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
         foreach (var source in discovered)
         {
-            if (_byId.TryGetValue(source.Id, out var existing)) existing.Update(source);
+            if (_byId.TryGetValue(source.Id, out var existing))
+            {
+                if (updateExistingSnapshots) existing.Update(source);
+            }
             else
             {
                 var vm = new AudioSourceViewModel(source, _audio, _bridge, _profiles, () => _settings, _logger, OutputDevices,
@@ -427,7 +430,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             _settings = _settings with { ManuallyHiddenSources = hidden };
             SaveSettings();
         }
-        Reconcile();
+        Reconcile(updateExistingSnapshots: false);
     }
 
     private void RestoreHiddenSource(HiddenSourceDescriptor descriptor)
@@ -442,7 +445,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             _settings = _settings with { ManuallyHiddenSources = hidden, VisibleBrowserAggregates = [] };
             SaveSettings();
         }
-        Reconcile();
+        Reconcile(updateExistingSnapshots: false);
     }
 
     private void RestoreAllHiddenSources()
@@ -451,7 +454,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _runtimeHiddenSourceIds.Clear();
         _settings = _settings with { ManuallyHiddenSources = [], VisibleBrowserAggregates = [] };
         SaveSettings();
-        Reconcile();
+        Reconcile(updateExistingSnapshots: false);
     }
 
     private void ResetSourceOrder()
@@ -470,7 +473,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         };
         RaiseSortProperties();
         SaveSettings();
-        Reconcile();
+        Reconcile(updateExistingSnapshots: false);
     }
 
     private void RaiseSortProperties()

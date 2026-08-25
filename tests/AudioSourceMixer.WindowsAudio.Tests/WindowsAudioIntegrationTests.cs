@@ -35,7 +35,8 @@ public sealed class WindowsAudioIntegrationTests
     [Fact]
     public async Task DefaultDeviceAndLiveSessionsCanBeProbed()
     {
-        if (!OperatingSystem.IsWindows()) return;
+        if (!OperatingSystem.IsWindows() ||
+            !string.Equals(Environment.GetEnvironmentVariable("AUDIO_SOURCE_MIXER_HARDWARE_TEST"), "1", StringComparison.Ordinal)) return;
         var directory = Path.Combine(Path.GetTempPath(), "AudioSourceMixer.AudioTests", Guid.NewGuid().ToString("N"));
         try
         {
