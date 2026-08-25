@@ -635,7 +635,7 @@ public sealed class WpfBindingRegressionTests
 
     private static async Task AssertResponsiveLayoutsAsync(App app, MainWindow window, MainViewModel viewModel)
     {
-        var viewportHeights = new Dictionary<(double Width, double Height), double>();
+        var layoutHeights = new Dictionary<(double Width, double Height), (double Window, double Viewport)>();
         foreach (var (width, height) in new[] { (880d, 600d), (1240d, 820d), (1600d, 900d), (1920d, 1080d) })
         {
             window.Width = width;
@@ -645,7 +645,7 @@ public sealed class WpfBindingRegressionTests
             sourceList.InvalidateMeasure();
             await app.Dispatcher.InvokeAsync(window.UpdateLayout, DispatcherPriority.ApplicationIdle);
             var scrollViewer = window.SourceScroller;
-            viewportHeights[(width, height)] = scrollViewer.ViewportHeight;
+            layoutHeights[(width, height)] = (window.ActualHeight, scrollViewer.ViewportHeight);
             Assert.Equal(ScrollBarVisibility.Disabled, scrollViewer.HorizontalScrollBarVisibility);
             var realizedContainers = viewModel.Sources.Select(source => sourceList.ItemContainerGenerator.ContainerFromItem(source))
                 .OfType<FrameworkElement>()
@@ -692,8 +692,15 @@ public sealed class WpfBindingRegressionTests
             }
             Assert.DoesNotContain(Descendants(window), element => element is ScaleTransform);
         }
-        Assert.True(viewportHeights[(1920, 1080)] > viewportHeights[(1240, 820)],
-            $"Maximized viewport must show more content: default={viewportHeights[(1240, 820)]}, large={viewportHeights[(1920, 1080)]}.");
+        var defaultLayout = layoutHeights[(1240, 820)];
+        var largeLayout = layoutHeights[(1920, 1080)];
+        Assert.True(largeLayout.Viewport >= defaultLayout.Viewport - 1,
+            $"A larger requested window must not reduce the viewport: default={defaultLayout.Viewport}, large={largeLayout.Viewport}.");
+        if (largeLayout.Window > defaultLayout.Window + 1)
+            Assert.True(largeLayout.Viewport > defaultLayout.Viewport,
+                $"A taller realized window must show more content: default={defaultLayout}, large={largeLayout}.");
+        else
+            Console.WriteLine($"LAYOUT work area capped both requested heights: default={defaultLayout}, large={largeLayout}.");
     }
 
     private static async Task AssertLiveDragPreviewAndCleanupAsync(App app, MainWindow window, MainViewModel viewModel)
