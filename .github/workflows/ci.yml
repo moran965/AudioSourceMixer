@@ -34,7 +34,7 @@ jobs:
       - name: Build Release
         run: dotnet build .\AudioSourceMixer.sln --configuration Release --no-restore
       - name: Run .NET tests
-        run: dotnet test .\AudioSourceMixer.sln --configuration Release --no-build --no-restore
+        run: dotnet test .\AudioSourceMixer.sln --configuration Release --no-build --no-restore -m:1
       - name: Run browser extension tests
         working-directory: src/AudioSourceMixer.BrowserExtension
         run: npm test

@@ -131,7 +131,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Restore failed.' }
           dotnet build .\AudioSourceMixer.sln --configuration Release --no-restore
           if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
-          dotnet test .\AudioSourceMixer.sln --configuration Release --no-build --no-restore
+          dotnet test .\AudioSourceMixer.sln --configuration Release --no-build --no-restore -m:1
           if ($LASTEXITCODE -ne 0) { throw '.NET tests failed.' }
           Push-Location .\src\AudioSourceMixer.BrowserExtension
           try { npm test; if ($LASTEXITCODE -ne 0) { throw 'Browser extension tests failed.' } } finally { Pop-Location }

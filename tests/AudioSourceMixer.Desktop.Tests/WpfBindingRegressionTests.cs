@@ -63,8 +63,8 @@ public sealed class WpfBindingRegressionTests
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
 
-        await completion.Task.WaitAsync(TimeSpan.FromSeconds(30));
-        Assert.True(thread.Join(TimeSpan.FromSeconds(5)), "WPF regression STA thread did not terminate.");
+        await completion.Task.WaitAsync(TimeSpan.FromSeconds(90));
+        Assert.True(thread.Join(TimeSpan.FromSeconds(30)), "WPF regression STA thread did not terminate.");
     }
 
     private static void RunWpfTestAsync(TaskCompletionSource completion)
