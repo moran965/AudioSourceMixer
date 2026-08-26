@@ -38,12 +38,33 @@ function Invoke-UiSmokeTest([string] $Executable, [string] $Description, [int] $
     if (-not (Test-Path -LiteralPath $Executable)) { throw "$Description executable is missing: $Executable" }
     $arguments = @('--ui-smoke-test')
     if (-not [string]::IsNullOrWhiteSpace($Language)) { $arguments += @('--language',$Language) }
-    $process = Start-Process -FilePath $Executable -ArgumentList $arguments -WindowStyle Hidden -PassThru
-    if (-not $process.WaitForExit($TimeoutMilliseconds)) {
-        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-        throw "$Description timed out after $TimeoutMilliseconds ms."
+    $process = $null
+    try {
+        $process = Start-Process -FilePath $Executable -ArgumentList $arguments -WindowStyle Hidden -PassThru
+        if (-not $process.WaitForExit($TimeoutMilliseconds)) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            throw "$Description timed out after $TimeoutMilliseconds ms."
+        }
+        if ($process.ExitCode -ne 0) { throw "$Description failed with exit code $($process.ExitCode)." }
+    } finally {
+        if ($null -ne $process) { $process.Dispose() }
     }
-    if ($process.ExitCode -ne 0) { throw "$Description failed with exit code $($process.ExitCode)." }
+
+    $unlockDeadline = [DateTimeOffset]::UtcNow.AddSeconds(15)
+    while ($true) {
+        $stream = $null
+        try {
+            $stream = [IO.File]::Open($Executable, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None)
+            break
+        } catch [IO.IOException] {
+            if ([DateTimeOffset]::UtcNow -ge $unlockDeadline) {
+                throw "$Description executable remained locked after exit: $Executable"
+            }
+            Start-Sleep -Milliseconds 250
+        } finally {
+            if ($null -ne $stream) { $stream.Dispose() }
+        }
+    }
     Write-Output "$Description passed with exit code 0."
 }
 
