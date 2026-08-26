@@ -11,6 +11,7 @@ $publishExe = Join-Path $artifacts "staging\$version\runtime-publish\desktop\Aud
 $payloadDirectory = Join-Path $artifacts "staging\$version\installer-runtime-payload"
 $payloadExe = Join-Path $payloadDirectory 'AudioSourceMixer.exe'
 $manifestPath = Join-Path $artifacts "AudioSourceMixer-$version-build-manifest.json"
+$installedEvidenceDirectory = Join-Path $artifacts 'installed\AudioSourceMixer'
 $defaultInstall = Join-Path $env:LOCALAPPDATA 'Programs\AudioSourceMixer'
 $customSpace = Join-Path $env:LOCALAPPDATA 'Audio Source Mixer Test\Custom Path'
 $customStartup = Join-Path $env:LOCALAPPDATA 'AudioSourceMixer Startup Test'
@@ -326,6 +327,7 @@ function Wait-BrowserSetupLaunch([string] $Directory, [DateTimeOffset] $Started)
 foreach ($required in @($setup,$publishExe,$payloadExe,$manifestPath,$probeBuildDirectory,$testWave)) { if (-not (Test-Path -LiteralPath $required)) { throw "Missing verification input: $required" } }
 if (Test-Path -LiteralPath $uninstallKey) { throw 'Installer verification refuses to replace a pre-existing Audio Source Mixer installation.' }
 foreach ($path in @($defaultInstall,$customSpace,$customStartup,$customChinese)) { if (Test-Path -LiteralPath $path) { throw "Verification target already exists: $path" } }
+if (Test-Path -LiteralPath $installedEvidenceDirectory) { Remove-Item -LiteralPath $installedEvidenceDirectory -Recurse -Force }
 
 New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
 $dataExisted = Test-Path -LiteralPath $dataDirectory
@@ -445,6 +447,8 @@ try {
         }
     }
     $installedInventory = @(Get-PayloadInventory $defaultInstall)
+    New-Item -ItemType Directory -Path (Split-Path $installedEvidenceDirectory -Parent) -Force | Out-Null
+    Copy-Item -LiteralPath $defaultInstall -Destination $installedEvidenceDirectory -Recurse -Force
     Uninstall-Checked $defaultInstall -Language 'zh-CN'
     $results.publishPayloadInstalledHash = 'passed'; $results.runtimeAllowlist = 'passed'; $results.installedExtensionInventory = 'passed'; $results.silentUninstall = 'passed'
     $results.runningAppGracefulUninstall = if ($hardwareAudioEnabled) { 'passed' } else { $hardwareSkipStatus }
