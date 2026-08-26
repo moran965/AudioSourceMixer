@@ -223,7 +223,19 @@ jobs:
               throw "Trusted internal signature is incomplete: $file ($($signature.Status))"
             }
           }
-          .\scripts\package-installer.ps1 -Configuration Release -DesktopPublishPath (Split-Path $desktop -Parent) -NativeHostPublishPath (Split-Path $nativeHostExe -Parent)
+          $packageComplete = $false
+          foreach ($attempt in 1..3) {
+            try {
+              .\scripts\package-installer.ps1 -Configuration Release -DesktopPublishPath (Split-Path $desktop -Parent) -NativeHostPublishPath (Split-Path $nativeHostExe -Parent)
+              $packageComplete = $true
+              break
+            } catch {
+              if ($attempt -eq 3) { throw }
+              Write-Warning "Installer packaging attempt $attempt failed; waiting for transient file handles before retrying. $($_.Exception.Message)"
+              Start-Sleep -Seconds 3
+            }
+          }
+          if (-not $packageComplete) { throw 'Installer packaging did not complete.' }
           $stagedDesktopPublish = '.\artifacts\staging\1.0.0\runtime-publish\desktop'
           $stagedNativeHostPublish = '.\artifacts\staging\1.0.0\runtime-publish\native-host'
           New-Item -ItemType Directory -Path $stagedDesktopPublish,$stagedNativeHostPublish -Force | Out-Null
