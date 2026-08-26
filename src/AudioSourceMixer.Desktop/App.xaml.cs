@@ -2,6 +2,7 @@ using System.Drawing;
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
+using AudioSourceMixer.Core.Abstractions;
 using AudioSourceMixer.Core.Browser;
 using AudioSourceMixer.Core.Infrastructure;
 using AudioSourceMixer.Core.Persistence;
@@ -90,14 +91,32 @@ public partial class App : System.Windows.Application
 
             var profileStore = new JsonAudioProfileStore(dataDirectory);
             var settingsStore = new JsonApplicationSettingsStore(dataDirectory);
-            _audio = new WindowsAudioService(new JsonRollbackJournal(dataDirectory), _logger);
+            var diagnosticSources = diagnosticUi && !_liveMeterProcessId.HasValue
+                ? UiSmokeVerifier.CreateDiagnosticSources() : null;
+            IAudioSourceDiscovery discovery;
+            IAudioSourceController audioController;
+            IAudioOutputDeviceService outputDevices;
+            if (diagnosticSources is not null)
+            {
+                var diagnosticAudio = new UiSmokeAudioService(diagnosticSources);
+                discovery = diagnosticAudio;
+                audioController = diagnosticAudio;
+                outputDevices = diagnosticAudio;
+            }
+            else
+            {
+                _audio = new WindowsAudioService(new JsonRollbackJournal(dataDirectory), _logger);
+                discovery = _audio;
+                audioController = _audio;
+                outputDevices = _audio;
+            }
 
             _startupStage = StartupStage.BrowserBridge;
             _bridge = new BrowserBridgeServer(logger: _logger);
             _bridge.Start();
 
             _startupStage = StartupStage.ViewModel;
-            _viewModel = new MainViewModel(_audio, _audio, _audio, _bridge, profileStore, settingsStore, _logger);
+            _viewModel = new MainViewModel(discovery, audioController, outputDevices, _bridge, profileStore, settingsStore, _logger);
             await _viewModel.LoadSettingsAsync();
             var requestedLanguage = ArgumentValue(e.Args, "--language");
             if (requestedLanguage is not null)
@@ -121,8 +140,6 @@ public partial class App : System.Windows.Application
             CreateTray(visible: !diagnosticUi);
 
             _startupStage = StartupStage.AudioInitialization;
-            var diagnosticSources = diagnosticUi && !_liveMeterProcessId.HasValue
-                ? UiSmokeVerifier.CreateDiagnosticSources() : null;
             await _viewModel.InitializeAsync(diagnosticSources);
             if (_liveMeterProcessId.HasValue) _viewModel.SelectMixerForDiagnostics();
 
@@ -148,7 +165,7 @@ public partial class App : System.Windows.Application
                 }
                 if (_liveMeterProcessId is { } processId)
                 {
-                    var report = await LiveMeterVerifier.VerifyAsync(_window, _viewModel, _audio, processId,
+                    var report = await LiveMeterVerifier.VerifyAsync(_window, _viewModel, _audio!, processId,
                         _liveMeterDurationSeconds);
                     var reportPath = _liveMeterReportPath ?? Path.Combine(dataDirectory, "live-meter-report.json");
                     await LiveMeterVerifier.WriteAsync(reportPath, report);

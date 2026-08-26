@@ -4,7 +4,7 @@ This document records the release gates for the 1.0.0 candidate. Historical rele
 
 ## Why the UI smoke is real
 
-The old background-only smoke path could exit before `MainWindow.Show()` and before an `ItemsControl` generated an item container, so a failing `DataTemplate` binding could return exit code 0. The current `--ui-smoke-test` creates deterministic Windows and browser sources, calls the real `Show()` path, waits through Loaded, binding, layout, Render/ApplicationIdle, verifies at least one generated container and instantiated EQ/peak templates, audits effective binding modes, changes the peak value, and checks the rendered indicator width. Dispatcher, XAML, binding, unobserved-task, and asynchronous failures produce a nonzero exit code; cleanup restores audio and closes the process.
+The old background-only smoke path could exit before `MainWindow.Show()` and before an `ItemsControl` generated an item container, so a failing `DataTemplate` binding could return exit code 0. The current `--ui-smoke-test` creates deterministic Windows and browser sources, calls the real `Show()` path, waits through Loaded, binding, layout, Render/ApplicationIdle, verifies at least one generated container and instantiated EQ/peak templates, audits effective binding modes, changes the peak value, and checks the rendered indicator width. Its diagnostic audio boundary is deterministic as well, so hosted Windows runners without a physical default endpoint still test the real WPF path instead of failing during unrelated Core Audio discovery. Dispatcher, XAML, binding, unobserved-task, and asynchronous failures produce a nonzero exit code; cleanup restores audio and closes the process.
 
 ## Automated commands
 
