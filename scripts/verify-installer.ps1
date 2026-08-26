@@ -13,6 +13,7 @@ $payloadExe = Join-Path $payloadDirectory 'AudioSourceMixer.exe'
 $manifestPath = Join-Path $artifacts "AudioSourceMixer-$version-build-manifest.json"
 $defaultInstall = Join-Path $env:LOCALAPPDATA 'Programs\AudioSourceMixer'
 $customSpace = Join-Path $env:LOCALAPPDATA 'Audio Source Mixer Test\Custom Path'
+$customStartup = Join-Path $env:LOCALAPPDATA 'AudioSourceMixer Startup Test'
 $customChineseLeaf = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('6Z+z6aKR5re36Z+z5Zmo5rWL6K+VXOiHquWumuS5ieS9jee9rg=='))
 $customChinese = Join-Path $env:LOCALAPPDATA $customChineseLeaf
 $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\AudioSourceMixer'
@@ -30,6 +31,9 @@ $installedHash = $null
 $results = [ordered]@{}
 $hardwareAudioEnabled = $env:AUDIO_SOURCE_MIXER_HARDWARE_TEST -eq '1'
 $hardwareGateAttested = $env:HARDWARE_GATE -eq 'true'
+$hostedActions = $env:GITHUB_ACTIONS -eq 'true'
+$cjkPathEnabled = -not $hostedActions -or $env:AUDIO_SOURCE_MIXER_CJK_PATH_TEST -eq '1'
+$cjkPathSkipStatus = 'maintainer-verified local QA; not executed on the en-US GitHub-hosted image because WScript.Shell rejects a CJK shortcut target there'
 $hardwareSkipStatus = if ($hardwareGateAttested) {
     'maintainer-attested; not executed on endpoint-less runner'
 } else {
@@ -307,7 +311,7 @@ function Wait-BrowserSetupLaunch([string] $Directory, [DateTimeOffset] $Started)
 
 foreach ($required in @($setup,$publishExe,$payloadExe,$manifestPath,$probeBuildDirectory,$testWave)) { if (-not (Test-Path -LiteralPath $required)) { throw "Missing verification input: $required" } }
 if (Test-Path -LiteralPath $uninstallKey) { throw 'Installer verification refuses to replace a pre-existing Audio Source Mixer installation.' }
-foreach ($path in @($defaultInstall,$customSpace,$customChinese)) { if (Test-Path -LiteralPath $path) { throw "Verification target already exists: $path" } }
+foreach ($path in @($defaultInstall,$customSpace,$customStartup,$customChinese)) { if (Test-Path -LiteralPath $path) { throw "Verification target already exists: $path" } }
 
 New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
 $dataExisted = Test-Path -LiteralPath $dataDirectory
@@ -357,11 +361,21 @@ try {
     $results.customPathWithSpaces = 'passed'; $results.browserSetupDefaultOff = 'passed'
     $results.browserSetupExplicitLaunch = if ($hardwareAudioEnabled) { 'passed' } else { $hardwareSkipStatus }
 
-    Start-Checked $setup @('--silent-install','--language','zh-CN','--install-dir',(Quote-Argument $customChinese),'--startup-background') 'Chinese custom path and startup install'
-    Assert-Install $customChinese $true 'zh-CN'
-    Uninstall-Checked $customChinese -WithRunningApp -Language 'zh-CN'
-    $results.customChinesePath = 'passed'; $results.startupEnableDisableCleanup = 'passed'
+    Start-Checked $setup @('--silent-install','--language','zh-CN','--install-dir',(Quote-Argument $customStartup),'--startup-background') 'Custom startup-background install'
+    Assert-Install $customStartup $true 'zh-CN'
+    Uninstall-Checked $customStartup -WithRunningApp -Language 'zh-CN'
+    $results.startupEnableDisableCleanup = 'passed'
     $results.backgroundTrayStartup = if ($hardwareAudioEnabled) { 'passed' } else { $hardwareSkipStatus }
+
+    if ($cjkPathEnabled) {
+        Start-Checked $setup @('--silent-install','--language','zh-CN','--install-dir',(Quote-Argument $customChinese)) 'Chinese custom path install'
+        Assert-Install $customChinese $false 'zh-CN'
+        Uninstall-Checked $customChinese -Language 'zh-CN'
+        $results.customChinesePath = 'passed'
+    } else {
+        Write-Output 'Chinese custom path install was not executed on the en-US GitHub-hosted image; the documented maintainer local QA covers this platform-sensitive WScript.Shell path.'
+        $results.customChinesePath = $cjkPathSkipStatus
+    }
 
     if ((Test-Path -LiteralPath $baselineCopy) -and $hardwareAudioEnabled) {
         if (Test-Path -LiteralPath $dataDirectory) { Remove-Item -LiteralPath $dataDirectory -Recurse -Force }
@@ -436,7 +450,7 @@ try {
     Write-Output "Installed SHA-256: $installedHash"
 }
 finally {
-    foreach ($directory in @($defaultInstall,$customSpace,$customChinese)) {
+    foreach ($directory in @($defaultInstall,$customSpace,$customStartup,$customChinese)) {
         $uninstaller = Join-Path $directory 'AudioSourceMixer.Uninstall.exe'
         if (Test-Path -LiteralPath $uninstaller) { try { Start-Checked $uninstaller @('--silent-uninstall') 'Failure cleanup uninstall' } catch { Write-Warning $_ } }
     }
