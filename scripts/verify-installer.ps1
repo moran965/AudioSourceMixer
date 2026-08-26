@@ -28,6 +28,13 @@ $testWave = Join-Path $root 'tests\audio\short-loop.wav'
 $preexistingRun = $null
 $installedHash = $null
 $results = [ordered]@{}
+$hardwareAudioEnabled = $env:AUDIO_SOURCE_MIXER_HARDWARE_TEST -eq '1'
+$hardwareGateAttested = $env:HARDWARE_GATE -eq 'true'
+$hardwareSkipStatus = if ($hardwareGateAttested) {
+    'maintainer-attested; not executed on endpoint-less runner'
+} else {
+    'not executed: set AUDIO_SOURCE_MIXER_HARDWARE_TEST=1 on a machine with a default render endpoint'
+}
 
 if ($null -eq ('AudioSourceMixerInstallerWindowNativeMethods' -as [type])) {
     Add-Type -TypeDefinition @'
@@ -212,7 +219,7 @@ function Wait-Removed([string] $Directory) {
 function Uninstall-Checked([string] $Directory, [switch] $WithRunningApp, [switch] $RemoveUserData,
     [ValidateSet('zh-CN','en-US')][string] $Language = 'zh-CN') {
     $process = $null
-    if ($WithRunningApp) {
+    if ($WithRunningApp -and $hardwareAudioEnabled) {
         $process = Start-Process -FilePath (Join-Path $Directory 'AudioSourceMixer.exe') -ArgumentList '--background' -WindowStyle Hidden -PassThru
         Start-Sleep -Seconds 2
         $process.Refresh()
@@ -221,6 +228,8 @@ function Uninstall-Checked([string] $Directory, [switch] $WithRunningApp, [switc
             [AudioSourceMixerInstallerWindowNativeMethods]::IsWindowVisible($process.MainWindowHandle)) {
             throw 'Background startup displayed a visible main window instead of remaining in tray-only mode.'
         }
+    } elseif ($WithRunningApp) {
+        Write-Output 'Background running-app uninstall not executed because AUDIO_SOURCE_MIXER_HARDWARE_TEST=1 is not enabled.'
     }
     $arguments = @('--silent-uninstall','--language',$Language)
     if ($RemoveUserData) { $arguments += '--remove-user-data' }
@@ -323,20 +332,29 @@ try {
     $results.freshChineseInstall = 'passed'; $results.chineseUninstaller = 'passed'; $results.defaultPreservesUserData = 'passed'
 
     $browserSetupStarted = [DateTimeOffset]::Now
-    Start-Checked $setup @('--silent-install','--language','en-US','--install-dir',(Quote-Argument $customSpace),'--browser-setup') 'Fresh English custom path with browser setup install'
-    Wait-BrowserSetupLaunch $customSpace $browserSetupStarted
+    $browserSetupArguments = @('--silent-install','--language','en-US','--install-dir',(Quote-Argument $customSpace))
+    if ($hardwareAudioEnabled) { $browserSetupArguments += '--browser-setup' }
+    $browserSetupDescription = if ($hardwareAudioEnabled) {
+        'Fresh English custom path with browser setup install'
+    } else {
+        'Fresh English custom path install (browser setup launch requires hardware gate)'
+    }
+    Start-Checked $setup $browserSetupArguments $browserSetupDescription
+    if ($hardwareAudioEnabled) { Wait-BrowserSetupLaunch $customSpace $browserSetupStarted }
     Assert-Install $customSpace $false 'en-US'
     Verify-UninstallerWindow $customSpace 'en-US'
     Uninstall-Checked $customSpace -RemoveUserData -Language 'en-US'
     $results.freshEnglishInstall = 'passed'; $results.englishUninstaller = 'passed'; $results.removeUserData = 'passed'
-    $results.customPathWithSpaces = 'passed'; $results.browserSetupDefaultOff = 'passed'; $results.browserSetupExplicitLaunch = 'passed'
+    $results.customPathWithSpaces = 'passed'; $results.browserSetupDefaultOff = 'passed'
+    $results.browserSetupExplicitLaunch = if ($hardwareAudioEnabled) { 'passed' } else { $hardwareSkipStatus }
 
     Start-Checked $setup @('--silent-install','--language','zh-CN','--install-dir',(Quote-Argument $customChinese),'--startup-background') 'Chinese custom path and startup install'
     Assert-Install $customChinese $true 'zh-CN'
     Uninstall-Checked $customChinese -WithRunningApp -Language 'zh-CN'
-    $results.customChinesePath = 'passed'; $results.startupEnableDisableCleanup = 'passed'; $results.backgroundTrayStartup = 'passed'
+    $results.customChinesePath = 'passed'; $results.startupEnableDisableCleanup = 'passed'
+    $results.backgroundTrayStartup = if ($hardwareAudioEnabled) { 'passed' } else { $hardwareSkipStatus }
 
-    if (Test-Path -LiteralPath $baselineCopy) {
+    if ((Test-Path -LiteralPath $baselineCopy) -and $hardwareAudioEnabled) {
         if (Test-Path -LiteralPath $dataDirectory) { Remove-Item -LiteralPath $dataDirectory -Recurse -Force }
         Start-Checked $baselineCopy @('--silent-install') 'Install 0.2.2 upgrade baseline'
         $baselineExe = Join-Path $defaultInstall 'AudioSourceMixer.exe'
@@ -360,13 +378,21 @@ try {
         if ((Get-Sha256 (Join-Path $defaultInstall 'AudioSourceMixer.exe')) -eq $baselineHash) { throw 'Upgrade executable hash did not change.' }
         $results.inPlaceUpgradeFrom022 = 'passed'
         Uninstall-Checked $defaultInstall -Language 'en-US'
-    } else { $results.inPlaceUpgradeFrom022 = 'not executed: baseline artifact unavailable' }
+    } elseif (Test-Path -LiteralPath $baselineCopy) {
+        $results.inPlaceUpgradeFrom022 = $hardwareSkipStatus
+    } else {
+        $results.inPlaceUpgradeFrom022 = 'not executed: baseline artifact unavailable'
+    }
 
     if (Test-Path -LiteralPath $dataDirectory) { Remove-Item -LiteralPath $dataDirectory -Recurse -Force }
     Start-Checked $setup @('--silent-install','--language','zh-CN','--install-dir',(Quote-Argument $defaultInstall)) 'Final hash verification install'
     Assert-Install $defaultInstall $false 'zh-CN'
-    Verify-NormalLaunch $defaultInstall
-    Invoke-LiveMeterUiTest (Join-Path $defaultInstall 'AudioSourceMixer.exe') 'Release' (Join-Path $artifacts 'live-meter-installed.json') 'Installed live WPF meter test'
+    if ($hardwareAudioEnabled) {
+        Verify-NormalLaunch $defaultInstall
+        Invoke-LiveMeterUiTest (Join-Path $defaultInstall 'AudioSourceMixer.exe') 'Release' (Join-Path $artifacts 'live-meter-installed.json') 'Installed live WPF meter test'
+    } else {
+        Write-Output 'Normal real-audio launch and installed live-meter checks were not executed because AUDIO_SOURCE_MIXER_HARDWARE_TEST=1 is not enabled.'
+    }
     $publishHash = Get-Sha256 $publishExe; $payloadHash = Get-Sha256 $payloadExe; $installedHash = Get-Sha256 (Join-Path $defaultInstall 'AudioSourceMixer.exe')
     if ($publishHash -ne $payloadHash -or $payloadHash -ne $installedHash) { throw "Executable hash mismatch: $publishHash / $payloadHash / $installedHash" }
     $sourceExtension = Get-Inventory (Join-Path $payloadDirectory 'BrowserExtension')
@@ -383,7 +409,10 @@ try {
     }
     $installedInventory = @(Get-PayloadInventory $defaultInstall)
     Uninstall-Checked $defaultInstall -Language 'zh-CN'
-    $results.publishPayloadInstalledHash = 'passed'; $results.runtimeAllowlist = 'passed'; $results.installedExtensionInventory = 'passed'; $results.silentUninstall = 'passed'; $results.runningAppGracefulUninstall = 'passed'; $results.normalVisibleLaunch = 'passed'; $results.installedLiveMeter = 'passed'
+    $results.publishPayloadInstalledHash = 'passed'; $results.runtimeAllowlist = 'passed'; $results.installedExtensionInventory = 'passed'; $results.silentUninstall = 'passed'
+    $results.runningAppGracefulUninstall = if ($hardwareAudioEnabled) { 'passed' } else { $hardwareSkipStatus }
+    $results.normalVisibleLaunch = if ($hardwareAudioEnabled) { 'passed' } else { $hardwareSkipStatus }
+    $results.installedLiveMeter = if ($hardwareAudioEnabled) { 'passed' } else { $hardwareSkipStatus }
 
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     $manifest | Add-Member -NotePropertyName installed -NotePropertyValue ([ordered]@{
