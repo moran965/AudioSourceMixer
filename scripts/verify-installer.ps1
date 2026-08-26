@@ -56,7 +56,16 @@ function Start-Checked([string] $Path, [string[]] $Arguments, [string] $Descript
         Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
         throw "$Description timed out."
     }
-    if ($process.ExitCode -ne $Expected) { throw "$Description exited $($process.ExitCode), expected $Expected." }
+    if ($process.ExitCode -ne $Expected) {
+        $diagnostic = ''
+        if ([IO.Path]::GetFileName($Path) -like 'AudioSourceMixer-*-setup.exe') {
+            $installerLog = Join-Path ([IO.Path]::GetTempPath()) 'AudioSourceMixer-Installer.log'
+            if (Test-Path -LiteralPath $installerLog) {
+                $diagnostic = "`nInstaller log tail:`n$(@(Get-Content -LiteralPath $installerLog -Tail 40) -join "`n")"
+            }
+        }
+        throw "$Description exited $($process.ExitCode), expected $Expected.$diagnostic"
+    }
     Write-Output "$Description passed (exit $Expected)."
 }
 
