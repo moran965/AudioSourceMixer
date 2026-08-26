@@ -86,6 +86,51 @@ try {
         if ($releaseWorkflow -notmatch [regex]::Escape($requiredReleaseToken)) { throw "Release workflow is missing: $requiredReleaseToken" }
     }
 
+    $releaseNotesScript = Join-Path $root 'scripts\prepare-release-notes.ps1'
+    $releaseNotesScriptText = [IO.File]::ReadAllText($releaseNotesScript, [Text.Encoding]::UTF8)
+    if ($releaseNotesScriptText -match '[^\x00-\x7F]') {
+        throw 'prepare-release-notes.ps1 must remain ASCII-only for Windows PowerShell 5.1 compatibility.'
+    }
+    $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar)
+    $releaseNotesAuditDirectory = Join-Path $tempRoot ('AudioSourceMixer-release-notes-audit-' + [guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($releaseNotesAuditDirectory) | Out-Null
+    try {
+        $releaseNotesManifest = Join-Path $releaseNotesAuditDirectory 'manifest.json'
+        $releaseNotesOutput = Join-Path $releaseNotesAuditDirectory 'release-notes.md'
+        $auditManifest = [pscustomobject]@{
+            installer = [pscustomobject]@{
+                authenticodeStatus = 'NotSigned'
+                signerSubject = $null
+                timestampSubject = $null
+                sha256 = ('A' * 64)
+                size = 1
+            }
+        }
+        [IO.File]::WriteAllText($releaseNotesManifest, ($auditManifest | ConvertTo-Json -Depth 3), [Text.UTF8Encoding]::new($false))
+        & $releaseNotesScript -SigningMode unsigned -Tag "v$version" -Commit ('a' * 40) -ManifestPath $releaseNotesManifest -BaseNotesPath (Join-Path $root "docs\release-notes-$version.md") -OutputPath $releaseNotesOutput | Out-Null
+        $generatedReleaseNotes = Get-Content -LiteralPath $releaseNotesOutput -Raw -Encoding UTF8
+        $expectedEncodingFragments = @(
+            '5pyq562+5ZCN5a6J6KOF56iL5bqP',
+            '5q2kIHYxLjAuMCDlronoo4XnqIvluo/msqHmnIkgQXV0aGVudGljb2RlIOWPkeW4g+iAheOAgg==',
+            '5Y+R6KGM6K+B5o2u',
+            'bm9uZSAvIOaXoA=='
+        ) | ForEach-Object { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($_)) }
+        foreach ($expectedEncodingFragment in $expectedEncodingFragments) {
+            if (-not $generatedReleaseNotes.Contains($expectedEncodingFragment)) {
+                throw 'Generated release notes do not contain the expected UTF-8 Chinese text.'
+            }
+        }
+        if ($generatedReleaseNotes -match '[\u00E3\u00E5-\u00E8\uFFFD]') {
+            throw 'Generated release notes contain likely mojibake.'
+        }
+    } finally {
+        $resolvedAuditDirectory = [IO.Path]::GetFullPath($releaseNotesAuditDirectory)
+        if (-not $resolvedAuditDirectory.StartsWith($tempRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to clean unexpected release-notes audit path: $resolvedAuditDirectory"
+        }
+        if ([IO.Directory]::Exists($resolvedAuditDirectory)) { [IO.Directory]::Delete($resolvedAuditDirectory, $true) }
+    }
+
     $signingPolicy = Get-Content -LiteralPath (Join-Path $root 'CODE_SIGNING_POLICY.md') -Raw -Encoding UTF8
     foreach ($requiredPolicyText in 'Free code signing provided by SignPath.io, certificate by SignPath Foundation.','https://github.com/moran965/AudioSourceMixer','@moran965','docs/privacy.md','human') {
         if ($signingPolicy -notmatch [regex]::Escape($requiredPolicyText)) { throw "Code signing policy is missing: $requiredPolicyText" }

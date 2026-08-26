@@ -10,6 +10,21 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'common.ps1')
 
+function ConvertFrom-Base64Utf8([string] $Value) {
+    return [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Value))
+}
+
+# Keep this Windows PowerShell 5.1 entry point ASCII-only. PowerShell 5.1 reads
+# UTF-8 scripts without a BOM using the active ANSI code page, which corrupts
+# non-ASCII literals on the GitHub-hosted Windows runner.
+$unsignedHeadingCn = ConvertFrom-Base64Utf8 '5pyq562+5ZCN5a6J6KOF56iL5bqP'
+$unsignedNoticeCn = ConvertFrom-Base64Utf8 '5q2kIHYxLjAuMCDlronoo4XnqIvluo/msqHmnIkgQXV0aGVudGljb2RlIOWPkeW4g+iAheOAgldpbmRvd3Mg5Y+v6IO95pi+56S64oCc5pyq55+l5Y+R5biD6ICF4oCd5oiWIFNtYXJ0U2NyZWVuIOaPkOekuuOAguivt+WPquS7juacrOS7k+W6k+S4i+i9ve+8jOW5tuaguOWvuSBTSEEyNTZTVU1TLnR4dCDkuI4gR2l0SHViIEFydGlmYWN0IEF0dGVzdGF0aW9u44CCR2l0SHViIOadpea6kOivgeaYjuS4jeaYryBBdXRoZW50aWNvZGXjgIJTaWduUGF0aCBGb3VuZGF0aW9uIOWFjei0ueW8gOa6kOetvuWQjeWwmuacquaJueWHhueUqOS6juatpOS6jOi/m+WItuaWh+S7tuOAgg=='
+$trustedHeadingCn = ConvertFrom-Base64Utf8 '5Y+v5L+hIEFVVEhFTlRJQ09ERQ=='
+$trustedNoticeFormatCn = ConvertFrom-Base64Utf8 '562+5ZCN6Lev5b6E77yaezB944CCQXV0aGVudGljb2RlIOeKtuaAge+8mlZhbGlk44CC5Y+R5biD6ICF77yaezF944CCUkZDIDMxNjEg5pe26Ze05oiz5py65p6E77yaezJ944CC'
+$noneCn = ConvertFrom-Base64Utf8 '5peg'
+$evidenceHeadingCn = ConvertFrom-Base64Utf8 '5Y+R6KGM6K+B5o2u'
+$evidenceNoticeCn = ConvertFrom-Base64Utf8 '5pys5qyh5LiL6L2955qEIFNIQS0yNTYg5ZSv5LiA5L6d5o2u5piv5ZCM5LiAIFJlbGVhc2Ug6ZmE5bim55qEIFNIQTI1NlNVTVMudHh044CCQXJ0aWZhY3QgQXR0ZXN0YXRpb24g55So5LqO6K+B5piOIEdpdEh1YiDlt6XkvZzmtYHmnaXmupDvvIzkuI3og73mm7/ku6MgQXV0aGVudGljb2Rl44CC'
+
 $root = Get-RepositoryRoot
 $version = Get-ProductVersion
 if ($SigningMode -notin @('unsigned','signpath','azure')) { throw "Unsupported signing mode: $SigningMode" }
@@ -33,33 +48,34 @@ if ($SigningMode -eq 'unsigned') {
         throw "Unsigned release evidence is inconsistent: status=$status signer=$signer timestamp=$timestamp"
     }
     $notice = @"
-> **UNSIGNED INSTALLER / 未签名安装程序**
+> **UNSIGNED INSTALLER / $unsignedHeadingCn**
 >
 > This v1.0.0 installer has no Authenticode publisher. Windows may show an unknown-publisher or SmartScreen warning. Download it only from this repository, verify SHA256SUMS.txt, and verify GitHub Artifact Attestation. GitHub provenance is not Authenticode. SignPath Foundation free OSS signing is not yet approved for this binary.
 >
-> 此 v1.0.0 安装程序没有 Authenticode 发布者。Windows 可能显示“未知发布者”或 SmartScreen 提示。请只从本仓库下载，并核对 SHA256SUMS.txt 与 GitHub Artifact Attestation。GitHub 来源证明不是 Authenticode。SignPath Foundation 免费开源签名尚未批准用于此二进制文件。
+> $unsignedNoticeCn
 "@
 } else {
     if ($status -ne 'Valid' -or [string]::IsNullOrWhiteSpace($signer) -or [string]::IsNullOrWhiteSpace($timestamp)) {
         throw "Trusted release evidence is incomplete: status=$status signer=$signer timestamp=$timestamp"
     }
+    $trustedNoticeCn = $trustedNoticeFormatCn -f $SigningMode, $signer, $timestamp
     $notice = @"
-> **TRUSTED AUTHENTICODE / 可信 AUTHENTICODE**
+> **TRUSTED AUTHENTICODE / $trustedHeadingCn**
 >
 > Signing path: $SigningMode. Authenticode status: Valid. Publisher: $signer. RFC 3161 timestamp authority: $timestamp.
 >
-> 签名路径：$SigningMode。Authenticode 状态：Valid。发布者：$signer。RFC 3161 时间戳机构：$timestamp。
+> $trustedNoticeCn
 "@
 }
 
 $pattern = '(?s)<!-- SIGNATURE_NOTICE_START -->.*?<!-- SIGNATURE_NOTICE_END -->'
 if ($baseNotes -notmatch $pattern) { throw 'Release notes are missing signature notice markers.' }
 $baseNotes = [regex]::Replace($baseNotes, $pattern, "<!-- SIGNATURE_NOTICE_START -->`n$notice`n<!-- SIGNATURE_NOTICE_END -->")
-$publisher = if ($signer) { $signer } else { 'none / 无' }
-$timestampText = if ($timestamp) { $timestamp } else { 'none / 无' }
+$publisher = if ($signer) { $signer } else { "none / $noneCn" }
+$timestampText = if ($timestamp) { $timestamp } else { "none / $noneCn" }
 $evidence = @"
 
-## Release evidence / 发行证据
+## Release evidence / $evidenceHeadingCn
 
 - Tag: $Tag
 - Commit: $Commit
@@ -72,7 +88,7 @@ $evidence = @"
 
 The SHA-256 authority for this download is SHA256SUMS.txt attached to this same Release. Artifact Attestation proves GitHub workflow provenance and does not replace Authenticode.
 
-本次下载的 SHA-256 唯一依据是同一 Release 附带的 SHA256SUMS.txt。Artifact Attestation 用于证明 GitHub 工作流来源，不能替代 Authenticode。
+$evidenceNoticeCn
 "@
 
 $directory = Split-Path -Parent ([IO.Path]::GetFullPath($OutputPath))
