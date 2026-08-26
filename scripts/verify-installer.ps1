@@ -75,6 +75,20 @@ function Start-Checked([string] $Path, [string[]] $Arguments, [string] $Descript
 
 function Quote-Argument([string] $Value) { return ([char]34).ToString() + $Value + ([char]34).ToString() }
 
+function Start-RepairChecked([string] $Path, [string[]] $Arguments, [string] $Description) {
+    foreach ($attempt in 1..3) {
+        try {
+            Start-Checked $Path $Arguments $Description
+            return
+        } catch {
+            $transientDirectoryLock = $_.Exception.Message -match 'System\.IO\.IOException: Access to the path .+ is denied'
+            if (-not $transientDirectoryLock -or $attempt -eq 3) { throw }
+            Write-Warning "$Description attempt $attempt encountered a transient hosted-runner directory lock; retrying without modifying the existing install."
+            Start-Sleep -Seconds 3
+        }
+    }
+}
+
 function Get-Inventory([string] $Path) {
     if (-not (Test-Path -LiteralPath $Path)) { return @() }
     $prefix = [IO.Path]::GetFullPath($Path).TrimEnd('\') + '\'
@@ -330,7 +344,7 @@ try {
     Verify-UninstallerWindow $defaultInstall 'zh-CN'
     $firstHash = Get-Sha256 (Join-Path $defaultInstall 'AudioSourceMixer.exe')
     $sentinel = Join-Path $defaultInstall 'repair-sentinel.txt'; Set-Content -LiteralPath $sentinel -Value 'must be replaced'
-    Start-Checked $setup @('--silent-install','--language','zh-CN') 'Same-version Chinese repair'
+    Start-RepairChecked $setup @('--silent-install','--language','zh-CN') 'Same-version Chinese repair'
     Assert-Install $defaultInstall $false 'zh-CN'
     if (Test-Path -LiteralPath $sentinel) { throw 'Repair did not atomically replace the previous directory.' }
     $rollbackSentinel = Join-Path $defaultInstall 'rollback-sentinel.txt'; Set-Content -LiteralPath $rollbackSentinel -Value 'must survive rollback'
