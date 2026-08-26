@@ -303,6 +303,11 @@ jobs:
           }
           if ($trusted) { .\scripts\finalize-signed-release.ps1 -RequireTrustedSignature }
           else { .\scripts\finalize-signed-release.ps1 }
+          foreach ($relative in 'scripts/common.ps1','scripts/verify-installer.ps1') {
+            $qaScript = @(git show "$($env:GITHUB_SHA):$relative")
+            if ($LASTEXITCODE -ne 0 -or $qaScript.Count -eq 0) { throw "Unable to load release QA script from workflow commit: $relative" }
+            [IO.File]::WriteAllLines((Join-Path $PWD $relative), [string[]]$qaScript, [Text.UTF8Encoding]::new($false))
+          }
           .\scripts\verify-installer.ps1
           $installed = '.\artifacts\installed\AudioSourceMixer'
           foreach ($file in @((Join-Path $installed 'AudioSourceMixer.exe'),(Join-Path $installed 'AudioSourceMixer.NativeHost.exe'),(Join-Path $installed 'AudioSourceMixer.Uninstall.exe'))) {

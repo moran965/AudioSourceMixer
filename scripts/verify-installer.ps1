@@ -29,6 +29,20 @@ $preexistingRun = $null
 $installedHash = $null
 $results = [ordered]@{}
 
+if ($null -eq ('AudioSourceMixerInstallerWindowNativeMethods' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class AudioSourceMixerInstallerWindowNativeMethods
+{
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool IsWindowVisible(IntPtr windowHandle);
+}
+'@
+}
+
 function Start-Checked([string] $Path, [string[]] $Arguments, [string] $Description, [int] $Expected = 0, [int] $Timeout = 90000) {
     $process = Start-Process -FilePath $Path -ArgumentList $Arguments -WindowStyle Hidden -PassThru
     if (-not $process.WaitForExit($Timeout)) {
@@ -202,7 +216,11 @@ function Uninstall-Checked([string] $Directory, [switch] $WithRunningApp, [switc
         $process = Start-Process -FilePath (Join-Path $Directory 'AudioSourceMixer.exe') -ArgumentList '--background' -WindowStyle Hidden -PassThru
         Start-Sleep -Seconds 2
         $process.Refresh()
-        if ($process.HasExited -or $process.MainWindowHandle -ne 0) { throw 'Background startup did not remain in tray-only mode.' }
+        if ($process.HasExited) { throw 'Background startup exited instead of remaining in tray-only mode.' }
+        if ($process.MainWindowHandle -ne 0 -and
+            [AudioSourceMixerInstallerWindowNativeMethods]::IsWindowVisible($process.MainWindowHandle)) {
+            throw 'Background startup displayed a visible main window instead of remaining in tray-only mode.'
+        }
     }
     $arguments = @('--silent-uninstall','--language',$Language)
     if ($RemoveUserData) { $arguments += '--remove-user-data' }
