@@ -224,6 +224,11 @@ jobs:
             }
           }
           .\scripts\package-installer.ps1 -Configuration Release -DesktopPublishPath (Split-Path $desktop -Parent) -NativeHostPublishPath (Split-Path $nativeHostExe -Parent)
+          $stagedDesktopPublish = '.\artifacts\staging\1.0.0\runtime-publish\desktop'
+          $stagedNativeHostPublish = '.\artifacts\staging\1.0.0\runtime-publish\native-host'
+          New-Item -ItemType Directory -Path $stagedDesktopPublish,$stagedNativeHostPublish -Force | Out-Null
+          Copy-Item -LiteralPath $desktop -Destination (Join-Path $stagedDesktopPublish 'AudioSourceMixer.exe') -Force
+          Copy-Item -LiteralPath $nativeHostExe -Destination (Join-Path $stagedNativeHostPublish 'AudioSourceMixer.NativeHost.exe') -Force
 
       - name: Upload setup for SignPath
         if: inputs.signing_mode == 'signpath'
