@@ -14,6 +14,8 @@ Only a human maintainer may approve a release. The version is centralized in `Di
 
 SignPath Foundation is the preferred free trusted-signing path. Its OSS conditions require an already released project and human application/approval, so it must not indefinitely block the first release. If no free trusted signing is immediately available, v1.0.0 may be published unsigned only through the workflow's explicit `unsigned` selection, boolean opt-in, exact risk-confirmation text, and maintainer-approved `release` environment. The release must warn that Windows may show an unknown publisher or SmartScreen prompt, and that GitHub Artifact Attestation is not Authenticode. A later trusted binary must use a new patch version rather than silently replacing v1.0.0 assets.
 
+The OSS application was submitted on 2026-08-27 and is awaiting SignPath Foundation review. Do not generate a SignPath API token or populate repository signing variables until the Foundation has approved the project and provisioned the real project, artifact configurations, certificate, and production signing policies. Approval must be integrated in a new patch release; the published v1.0.0 assets remain immutable and unsigned.
+
 The public [Code signing policy](../CODE_SIGNING_POLICY.md) identifies the actual GitHub account roles, privacy links, automated-build boundary, and human approval rules required by the SignPath Foundation OSS program.
 
 ## GitHub workflow

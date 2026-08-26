@@ -3,9 +3,9 @@
 <!-- SIGNATURE_NOTICE_START -->
 > **Unsigned installer warning / 未签名安装程序警告**
 >
-> The initial v1.0.0 installer has no Authenticode publisher. Windows may show an unknown-publisher or SmartScreen warning. Download it only from this repository's v1.0.0 Release, verify the accompanying `SHA256SUMS.txt`, and verify GitHub Artifact Attestation before running it. GitHub provenance is not Authenticode. Free trusted signing through SignPath Foundation is being prepared and has not been approved for this binary.
+> The initial v1.0.0 installer has no Authenticode publisher. Windows may show an unknown-publisher or SmartScreen warning. Download it only from this repository's v1.0.0 Release, verify the accompanying `SHA256SUMS.txt`, and verify GitHub Artifact Attestation before running it. GitHub provenance is not Authenticode. The SignPath Foundation application was submitted on 2026-08-27 and is awaiting review; it has not been approved for this binary.
 >
-> 首次 v1.0.0 安装程序没有 Authenticode 发布者。Windows 可能显示“未知发布者”或 SmartScreen 提示。请只从本仓库 v1.0.0 Release 下载，运行前核对同一 Release 的 `SHA256SUMS.txt` 并验证 GitHub Artifact Attestation。GitHub 来源证明不是 Authenticode。SignPath Foundation 免费可信签名正在准备中，尚未批准用于此二进制文件。
+> 首次 v1.0.0 安装程序没有 Authenticode 发布者。Windows 可能显示“未知发布者”或 SmartScreen 提示。请只从本仓库 v1.0.0 Release 下载，运行前核对同一 Release 的 `SHA256SUMS.txt` 并验证 GitHub Artifact Attestation。GitHub 来源证明不是 Authenticode。SignPath Foundation 申请已于 2026-08-27 提交并等待审核，尚未批准用于此二进制文件。
 <!-- SIGNATURE_NOTICE_END -->
 
 ## English

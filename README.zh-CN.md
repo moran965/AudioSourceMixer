@@ -21,7 +21,7 @@ Audio Source Mixer 是一款开源 Windows 音频工具，可分别控制应用�
 
 只从本仓库的 [GitHub Releases](../../releases) 下载 `AudioSourceMixer-1.0.0-win-x64-setup.exe`，不要使用第三方网站重新打包的安装程序。安装器按当前用户安装，无需管理员权限，默认目录为 `%LocalAppData%\Programs\AudioSourceMixer`。
 
-首次 v1.0.0 安装程序在 SignPath Foundation 免费可信签名准备期间采用透明披露的未签名回退方案。Windows 可能显示“未知发布者”或 SmartScreen 提示。请只从本仓库 Release 页面下载，运行前核对 `SHA256SUMS.txt` 并验证 GitHub Artifact Attestation。GitHub 来源证明只能关联源码工作流与提交，不是 Authenticode，也不会创建 Windows 发布者身份。
+首次 v1.0.0 安装程序采用透明披露的未签名回退方案。SignPath Foundation 免费可信签名申请已于 2026-08-27 提交并等待人工审核，尚未批准用于此二进制文件。Windows 可能显示“未知发布者”或 SmartScreen 提示。请只从本仓库 Release 页面下载，运行前核对 `SHA256SUMS.txt` 并验证 GitHub Artifact Attestation。GitHub 来源证明只能关联源码工作流与提交，不是 Authenticode，也不会创建 Windows 发布者身份。
 
 SignPath 角色、构建来源、审批原则和首次未签名回退详见中英文[代码签名政策](CODE_SIGNING_POLICY.md)。
 

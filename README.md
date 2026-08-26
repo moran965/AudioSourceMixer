@@ -21,7 +21,7 @@ Audio Source Mixer is an open-source Windows audio utility for per-application a
 
 Download `AudioSourceMixer-1.0.0-win-x64-setup.exe` only from this repository's [GitHub Releases](../../releases). Do not download repackaged installers from third-party sites. The per-user installer needs no administrator rights and defaults to `%LocalAppData%\Programs\AudioSourceMixer`.
 
-The initial v1.0.0 installer uses a transparently documented unsigned fallback while free trusted signing through SignPath Foundation is being prepared. Windows may show an unknown publisher or SmartScreen warning. Download only from this repository's Release page, verify `SHA256SUMS.txt`, and verify GitHub Artifact Attestation before running it. GitHub provenance identifies the source workflow and commit; it is not Authenticode and does not create a Windows Publisher identity.
+The initial v1.0.0 installer uses a transparently documented unsigned fallback. The free trusted-signing application was submitted to SignPath Foundation on 2026-08-27 and is awaiting human review; it has not been approved for this binary. Windows may show an unknown publisher or SmartScreen warning. Download only from this repository's Release page, verify `SHA256SUMS.txt`, and verify GitHub Artifact Attestation before running it. GitHub provenance identifies the source workflow and commit; it is not Authenticode and does not create a Windows Publisher identity.
 
 See the bilingual [Code signing policy](CODE_SIGNING_POLICY.md) for SignPath roles, build provenance, approval rules, and the initial unsigned fallback.
 

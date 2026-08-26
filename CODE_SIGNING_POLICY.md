@@ -48,3 +48,7 @@ This is currently a single-maintainer project. External contributions require re
 SignPath Foundation requires application and human approval and may require an already released project. If approval is not available for the initial v1.0.0 build, the workflow's explicit unsigned fallback may publish it with prominent bilingual warnings and verified `NotSigned` status. After trusted signing becomes available, the v1.0.0 assets will not be silently replaced; a new patch release will carry the trusted signature.
 
 SignPath Foundation 需要申请和人工审批，并可能要求项目已经发布。如果首次 v1.0.0 构建尚未获得批准，工作流仅可通过显式未签名回退发布，并醒目标注中英文风险及核验后的 `NotSigned` 状态。以后获得可信签名后不会静默替换 v1.0.0 资产，而会通过新的补丁版本发行可信签名文件。
+
+The OSS signing application was submitted on 2026-08-27 and is awaiting SignPath Foundation's human review. No Foundation certificate, production signing policy, or API credential is available yet, so the existing v1.0.0 release remains truthfully `NotSigned`.
+
+开源签名申请已于 2026-08-27 提交，正在等待 SignPath Foundation 人工审核。当前尚无 Foundation 证书、生产签名策略或 API 凭据，因此现有 v1.0.0 发行仍如实保持 `NotSigned` 状态。
