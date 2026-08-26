@@ -146,10 +146,10 @@ jobs:
         shell: powershell
         run: |
           $desktop = Join-Path $env:RUNNER_TEMP 'asm-publish\desktop'
-          $host = Join-Path $env:RUNNER_TEMP 'asm-publish\native-host'
+          $nativeHostPublishDir = Join-Path $env:RUNNER_TEMP 'asm-publish\native-host'
           dotnet publish .\src\AudioSourceMixer.Desktop\AudioSourceMixer.Desktop.csproj -c Release -r win-x64 --self-contained true -o $desktop -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None
           if ($LASTEXITCODE -ne 0) { throw 'Desktop publish failed.' }
-          dotnet publish .\src\AudioSourceMixer.NativeHost\AudioSourceMixer.NativeHost.csproj -c Release -r win-x64 --self-contained true -o $host -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None
+          dotnet publish .\src\AudioSourceMixer.NativeHost\AudioSourceMixer.NativeHost.csproj -c Release -r win-x64 --self-contained true -o $nativeHostPublishDir -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None
           if ($LASTEXITCODE -ne 0) { throw 'Native Host publish failed.' }
 
       - name: Upload internal PE files for SignPath
@@ -207,15 +207,15 @@ jobs:
         shell: powershell
         run: |
           $desktop = Join-Path $env:RUNNER_TEMP 'asm-publish\desktop\AudioSourceMixer.exe'
-          $host = Join-Path $env:RUNNER_TEMP 'asm-publish\native-host\AudioSourceMixer.NativeHost.exe'
+          $nativeHostExe = Join-Path $env:RUNNER_TEMP 'asm-publish\native-host\AudioSourceMixer.NativeHost.exe'
           if ($env:SIGNING_MODE -eq 'signpath') {
             $desktopMatches = @(Get-ChildItem (Join-Path $env:RUNNER_TEMP 'signed-internal') -Filter AudioSourceMixer.exe -File -Recurse)
             $hostMatches = @(Get-ChildItem (Join-Path $env:RUNNER_TEMP 'signed-internal') -Filter AudioSourceMixer.NativeHost.exe -File -Recurse)
             if ($desktopMatches.Count -ne 1 -or $hostMatches.Count -ne 1) { throw 'SignPath did not return exactly one signed desktop and Native Host executable.' }
             $desktop = $desktopMatches[0].FullName
-            $host = $hostMatches[0].FullName
+            $nativeHostExe = $hostMatches[0].FullName
           }
-          foreach ($file in $desktop,$host) {
+          foreach ($file in $desktop,$nativeHostExe) {
             $signature = Get-AuthenticodeSignature -LiteralPath $file
             if ($env:SIGNING_MODE -eq 'unsigned') {
               if ($signature.Status -ne 'NotSigned') { throw "Unsigned internal file is not NotSigned: $file ($($signature.Status))" }
@@ -223,7 +223,7 @@ jobs:
               throw "Trusted internal signature is incomplete: $file ($($signature.Status))"
             }
           }
-          .\scripts\package-installer.ps1 -Configuration Release -DesktopPublishPath (Split-Path $desktop -Parent) -NativeHostPublishPath (Split-Path $host -Parent)
+          .\scripts\package-installer.ps1 -Configuration Release -DesktopPublishPath (Split-Path $desktop -Parent) -NativeHostPublishPath (Split-Path $nativeHostExe -Parent)
 
       - name: Upload setup for SignPath
         if: inputs.signing_mode == 'signpath'
