@@ -22,12 +22,24 @@ public sealed class BrowserBridgeServerTests
         await using var writer = new StreamWriter(client, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true };
         await writer.WriteLineAsync("""{"protocolVersion":3,"type":"tab.register","browser":"chrome","tabId":1,"title":"One","peak":0}""");
         await writer.WriteLineAsync("""{"protocolVersion":3,"type":"tab.register","browser":"chrome","tabId":2,"title":"Two","peak":0}""");
-        await WaitUntilAsync(() => server.GetTabs().Count == 2);
+        await WaitUntilAsync(() => server.GetTabs().Count == 2 && Volatile.Read(ref topologyEvents) >= 2);
+        await WaitUntilAsync(() => { lock (levels) return levels.Count >= 2; });
+        lock (levels) levels.Clear();
         var baselineTopologyEvents = Volatile.Read(ref topologyEvents);
 
         await writer.WriteLineAsync("""{"protocolVersion":3,"type":"tab.update","browser":"chrome","tabId":1,"peak":0.8}""");
         await writer.WriteLineAsync("""{"protocolVersion":3,"type":"tab.update","browser":"chrome","tabId":2,"peak":0.2}""");
-        await WaitUntilAsync(() => { lock (levels) return levels.Count >= 2; });
+        await WaitUntilAsync(() =>
+        {
+            var tabs = server.GetTabs();
+            lock (levels)
+            {
+                return tabs.Single(tab => tab.TabId == 1).Peak == 0.8f &&
+                       tabs.Single(tab => tab.TabId == 2).Peak == 0.2f &&
+                       levels.Any(level => level.Id == AudioSourceId.ForBrowserTab("chrome", 1) && level.Peak == 0.8f) &&
+                       levels.Any(level => level.Id == AudioSourceId.ForBrowserTab("chrome", 2) && level.Peak == 0.2f);
+            }
+        });
 
         Assert.Equal(baselineTopologyEvents, Volatile.Read(ref topologyEvents));
         Assert.Equal(0.8f, server.GetTabs().Single(tab => tab.TabId == 1).Peak);
